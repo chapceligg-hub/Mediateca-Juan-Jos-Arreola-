@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "movie": {
+      "title": "Movie",
+      "description": "A movie catalog entry",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "originalTitle": { "type": "string" },
+        "year": { "type": "number" },
+        "rating": { "type": "number" },
+        "duration": { "type": "string" },
+        "country": { "type": "string" },
+        "director": { "type": "string" },
+        "genre": { "type": "string" },
+        "ageRating": { "type": "string" },
+        "format": { "type": "string" },
+        "poster": { "type": "string" },
+        "synopsis": { "type": "string" },
+        "cast": { "type": "array" },
+        "script": { "type": "string" },
+        "music": { "type": "string" },
+        "photography": { "type": "string" },
+        "companies": { "type": "string" },
+        "reviews": { "type": "string" },
+        "awards": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "needsReview": { "type": "boolean" },
+        "filmaffinityId": { "type": "string" },
+        "tmdbId": { "type": "string" },
+        "posterCandidates": { "type": "array" },
+        "estante": { "type": "string" }
+      }
+    },
+    "admin": {
+      "title": "Admin",
+      "description": "An admin configuration with a user's email.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/movies/{movieId}": {
+      "schema": { "$ref": "#/entities/movie" },
+      "description": "Catalog of movies."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/admin" },
+      "description": "Collection of admin emails allowed to edit."
+    }
+  }
+}

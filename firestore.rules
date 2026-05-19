@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() { return request.auth != null; }
+    
+    function isAdmin() {
+      let email = request.auth.token.email;
+      let emailVerified = request.auth.token.email_verified == true;
+      return isSignedIn() && emailVerified && 
+             (email == "chapceligg@gmail.com" || 
+              exists(/databases/$(database)/documents/admins/$(email.lower())));
+    }
+
+    match /movies/{movieId} {
+      // Anyone can read
+      allow read: if true;
+      // Only admins can write
+      allow write: if isAdmin();
+    }
+
+    match /admins/{adminId} {
+      // Read access to admins (only admins can read?)
+      allow read: if isAdmin();
+      // Only chapceligg or existing admins can manage admins
+      allow write: if isAdmin();
+    }
+  }
+}
