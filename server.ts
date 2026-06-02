@@ -117,33 +117,68 @@ export function extractAndParseJSON(text: string): any {
   return enforceEmptyStrings(parsedObject);
 }
 
+const NATIVE_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
+const OPENROUTER_MODELS = [
+  "google/gemini-2.5-flash:free",
+  "google/gemini-2.5-flash-lite:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen-2.5-72b-instruct:free"
+];
+const GROQ_MODELS = [
+  "llama-3.3-70b-versatile",
+  "llama-3.3-70b-specdec",
+  "llama-3.1-70b-versatile"
+];
+const SAMBANOVA_MODELS = [
+  "Meta-Llama-3.3-70B-Instruct",
+  "Meta-Llama-3.1-70B-Instruct",
+  "Meta-Llama-3.1-405B-Instruct"
+];
+let currentPriorityModel = "gemini-2.5-flash";
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
 
-  // API endpoints
-  app.post("/api/catalog", async (req, res) => {
+   app.post("/api/catalog", async (req, res) => {
     try {
       const { query, searchYear } = req.body;
       const displayQuery = searchYear ? `${query} (${searchYear})` : query;
       
-      let geminiKey = process.env.GEMINI_API_KEY || "";
-      let openRouterKey = process.env.OPENROUTER_API_KEY || "";
-      const userKey = process.env.USER_API_KEY || "";
+      const cleanKey = (k: string) => {
+        if (!k) return "";
+        const stripped = k.trim().replace(/^['"]|['"]$/g, "");
+        if (stripped === "MY_GEMINI_API_KEY" || stripped === "undefined" || stripped === '""') return "";
+        return stripped;
+      };
 
-      if (userKey) {
-        if (userKey.startsWith("AIza")) {
-          geminiKey = userKey;
+      const finalGemini = cleanKey(process.env.GEMINI_API_KEY || "");
+      const finalOpenRouter = cleanKey(process.env.OPENROUTER_API_KEY || "");
+      const finalGroq = cleanKey(process.env.GROQ_API_KEY || "");
+      const finalSambaNova = cleanKey(process.env.SAMBANOVA_API_KEY || "");
+      const finalUser = cleanKey(process.env.USER_API_KEY || "");
+
+      let geminiKey = finalGemini;
+      let openRouterKey = finalOpenRouter;
+      let groqKey = finalGroq;
+      let sambanovaKey = finalSambaNova;
+
+      if (finalUser) {
+        if (finalUser.startsWith("AIza")) {
+          if (!geminiKey) geminiKey = finalUser;
+        } else if (finalUser.startsWith("gsk_")) {
+          if (!groqKey) groqKey = finalUser;
+        } else if (finalUser.startsWith("sn-") || (finalUser.length === 36 && finalUser.includes("-"))) {
+          if (!sambanovaKey) sambanovaKey = finalUser;
         } else {
-          openRouterKey = userKey;
-          if (!geminiKey) geminiKey = process.env.GEMINI_API_KEY || "";
+          if (!openRouterKey) openRouterKey = finalUser;
         }
       }
 
-      if (geminiKey === "MY_GEMINI_API_KEY" || geminiKey === '""' || geminiKey === "undefined") {
-        geminiKey = "";
+      if (!geminiKey && !openRouterKey && !groqKey && !sambanovaKey) {
+        return res.status(500).json({ error: "No se ha configurado ninguna API Key para la Inteligencia Artificial. Por favor, define USER_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, SAMBANOVA_API_KEY u OPENROUTER_API_KEY en tu entorno o panel de configuración." });
       }
 
       const systemInstruction = `Eres el motor automatizado de catalogación y crítico cinematográfico de una videoteca de alto nivel. Tu objetivo es procesar las entradas del usuario y devolver una ficha técnica perfectamente estructurada para exportación automática, manteniendo siempre un estándar de redacción limpio, moderno y premium.
@@ -153,11 +188,11 @@ REGLAS DE BÚSQUEDA PROFUNDA (Prioridad: Google Search):
 2. PROHIBIDO RENDIRSE: Si no hay resultados iniciales, reformula la búsqueda (ej. título original, director, país).
 3. RESOLUCIÓN DE AMBIGÜEDADES: Si hay remakes, usa el año proporcionado.
 4. CERO INTERVENCIÓN HUMANA: No hagas preguntas. Selecciona la fuente más confiable (IMDb, FilmAffinity, Wikipedia).
-5. INTEGRIDAD Y CLASIFICACIÓN TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
-6. DETECCIÓN Y REACOMODO INTELIGENTE: Analiza detenidamente todo el texto de entrada. Identifica cada dato (director, guion, año, actores, música, etc.), incluso si viene en desorden, en párrafos desestructurados, o en otros idiomas, y reacomódalo perfectamente en su campo correspondiente en el JSON de salida. Nunca dejes campos en blanco si la información puede ser inferida, extraída o buscada.
+5. INTEGRIDAD TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
+6. DETECCIÓN Y REACOMODO DE CAMPOS: Debes escanear exhaustivamente todo el texto de entrada y mapear de forma extremadamente rigurosa cada fragmento de información al campo del JSON correspondiente. No descartes ningún dato técnico disponible (duración, país, director, guion, elenco, música, fotografía, empresa productora, reseñas, premios, clasificación por edad, estante o formato). Si la información de entrada tiene nombres de etiquetas diferentes u otros idiomas, búscalas semánticamente y reacomódalas en el campo JSON correcto según el esquema solicitado.
 
 El usuario te enviará la información en dos formatos:
-CASO A: DATOS DE API (Contiene "DATOS_API") -> Transforma, organiza, reacomoda y enriquece.
+CASO A: DATOS DE API (Contiene "DATOS_API") -> Transforma y enriquece.
 CASO B: MODO RESCATE (Contiene "RESCATE") -> Búsqueda profunda obligatoria.
 
 REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
@@ -176,12 +211,12 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
         
         if (isRescate) {
           return `CASO B: MODO RESCATE Detectado para: "${displayQuery}".
-          Busca exhaustivamente en Google hasta encontrar la información técnica. Analiza y extrae meticulosamente todos los detalles; asocia y reacomoda cada dato en su campo correspondiente. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
+          Busca exhaustivamente en Google hasta encontrar la información técnica. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
         } else if (isDatosApi) {
-          return `CASO A: DATOS_API Detectado para: "${displayQuery}". Mapea, reorganiza y reacomoda toda la información en los campos correspondientes.`;
+          return `CASO A: DATOS_API Detectado para: "${displayQuery}".`;
         } else {
           return `CASO B: MODO RESCATE Detectado para: "${displayQuery}".
-          Aplica el MODO RESCATE. Busca exhaustivamente en Google hasta encontrar la información técnica. Determina y reacomoda todos los campos del JSON correctamente. Usa múltiples consultas y agota las opciones antes de decir "No encontrado".`;
+          Aplica el MODO RESCATE. Busca exhaustivamente en Google hasta encontrar la información técnica. Usa múltiples consultas y agota las opciones antes de decir "No encontrado".`;
         }
       };
 
@@ -198,7 +233,7 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
           country: { type: Type.STRING, description: "País de origen" },
           director: { type: Type.STRING, description: "Director de la obra" },
           script: { type: Type.STRING, description: "Guionista" },
-          cast: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de 3 a 5 actores principales" },
+          cast: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de 3 a 5 actores principales con personaje" },
           music: { type: Type.STRING, description: "Compositor de la música" },
           photography: { type: Type.STRING, description: "Director de fotografía" },
           companies: { type: Type.STRING, description: "Productora o estudio principal" },
@@ -215,28 +250,32 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
         required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "streaming", "format", "estante"]
       };
 
-      let openRouterSuccess = false;
+      let catalogSuccess = false;
+      let finalResult = null;
+      let lastError = "Exhausted all available providers";
 
-      // Fase 1: Intentamos primero con Google Gemini Nativo (con Search)
-      let geminiFailed = false;
-      if (geminiKey) {
-        const geminiModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
-        let aiSuccess = false;
+      // 1. Definimos las ejecuciones específicas de cada proveedor
+      const executeGemini = async () => {
+        const nativePriority = currentPriorityModel === "google/gemini-2.5-flash:free"
+          ? "gemini-2.5-flash"
+          : (currentPriorityModel === "google/gemini-2.5-flash-lite:free" ? "gemini-3.1-flash-lite" : currentPriorityModel);
 
-        for (const gModel of geminiModels) {
+        const nativeToTry = [
+          nativePriority,
+          ...NATIVE_MODELS.filter(m => m !== nativePriority)
+        ].filter(m => NATIVE_MODELS.includes(m));
+
+        let localError = "No native models could respond";
+        for (const gModel of nativeToTry) {
           let retryCount = 0;
           const maxRetries = 1;
-          let forceBreakAll = false;
-
           while (retryCount <= maxRetries) {
             try {
               console.log(`Intentando Gemini Nativo (${gModel}) para: ${displayQuery}`);
               const ai = new GoogleGenAI({
                 apiKey: geminiKey,
                 httpOptions: {
-                  headers: {
-                    'User-Agent': 'aistudio-build',
-                  }
+                  headers: { 'User-Agent': 'aistudio-build' }
                 }
               });
               const prompt = `${customPrompt}\n\nDevuelve la ficha técnica en JSON con todos los datos requeridos. No omitas ningún campo.`;
@@ -252,8 +291,12 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
                 },
               });
               const text = response.text;
-              console.log("Respuesta Gemini exitosa");
-              return res.json(aiResultParse(text));
+              if (text) {
+                const parsed = aiResultParse(text);
+                currentPriorityModel = gModel;
+                console.log(`¡Éxito! El modelo [${gModel}] el Gemini respondió correctamente. Establecido como nueva prioridad.`);
+                return parsed;
+              }
             } catch (googleError: any) {
               const rawMessage = googleError?.message || "";
               const errMsg = rawMessage.toLowerCase();
@@ -266,13 +309,12 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
                 }
               } catch (e) {}
 
-              console.error(`Google Gemini Nativo (${gModel}) falló:`, googleError.message);
+              console.error(`Google Gemini Nativo (${gModel}) falló en catalog:`, googleError.message);
+              localError = googleError.message;
               
-              // Si es un error de cuota agotada, no reintentes ni intentes otros modelos nativos. Pasa directo a OpenRouter.
               if (isQuotaExceeded) {
-                console.warn("Cuota de Gemini nativo agotada. Saltando directo a OpenRouter...");
-                forceBreakAll = true;
-                break;
+                console.warn("Cuota de Gemini nativo agotada. Saltando fase Gemini...");
+                throw googleError;
               }
 
               if (googleError?.message?.includes("503") || googleError?.status === 503 || googleError?.message?.includes("429") || googleError?.status === 429) {
@@ -283,21 +325,102 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
                   continue;
                 }
               }
-              break; // Mover al siguiente modelo
+              break; // Mover al siguiente modelo nativo
             }
           }
-          if (forceBreakAll) {
-            break;
+        }
+        throw new Error(localError);
+      };
+
+      const executeGroq = async () => {
+        const callGroq = async (model: string) => {
+          const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${groqKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [
+                { role: "system", content: systemInstruction },
+                { role: "user", content: `${customPrompt}
+                
+Devuelve la ficha técnica en JSON EXACTAMENTE con los siguientes campos y tipos para la búsqueda: "${displayQuery}".
+
+Campos obligatorios:
+{
+  "title": "string",
+  "originalTitle": "string",
+  "year": 1234,
+  "rating": 1.2,
+  "duration": "string",
+  "country": "string",
+  "director": "string",
+  "script": "string",
+  "cast": ["string"],
+  "music": "string",
+  "photography": "string",
+  "companies": "string",
+  "genre": "string",
+  "synopsis": "string",
+  "poster": "string",
+  "reviews": "string",
+  "awards": "string",
+  "ageRating": "string",
+  "streaming": "string",
+  "format": "string",
+  "estante": "string"
+}
+
+Si un dato no existe, usa "" (o 0 si es numérico, o [] para 'cast'). Responde SOLAMENTE con un objeto JSON válido, sin delimitadores extra.` }
+              ],
+              response_format: { type: "json_object" }
+            })
+          });
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `Groq Error ${response.status}`);
+          }
+          const result = await response.json();
+          if (result.error) {
+            throw new Error(result.error.message || "Groq internal provider error");
+          }
+          return result;
+        };
+
+        const groqPriority = GROQ_MODELS.includes(currentPriorityModel)
+          ? currentPriorityModel
+          : "llama-3.3-70b-versatile";
+
+        const groqToTry = [
+          groqPriority,
+          ...GROQ_MODELS.filter(m => m !== groqPriority)
+        ].filter(m => GROQ_MODELS.includes(m));
+
+        let localError = "No Groq models could respond";
+        for (const model of groqToTry) {
+          try {
+            console.log(`Intentando modelo Groq en catalog: ${model}`);
+            const completion = await callGroq(model);
+            const text = completion.choices?.[0]?.message?.content;
+            if (!text || text.trim() === "" || text.trim() === "[]" || text.trim() === "{}") {
+              throw new Error("Vacío o resultado inválido de Groq");
+            }
+            const parsed = aiResultParse(text);
+            currentPriorityModel = model;
+            console.log(`¡Éxito! El modelo [${model}] en Groq respondió correctamente. Establecido como nueva prioridad.`);
+            return parsed;
+          } catch (err: any) {
+            console.warn(`Modelo Groq ${model} falló en catalog:`, err.message);
+            localError = err.message;
           }
         }
-        // Si sale de este loop y no hizo return res.json(), fallaron todos.
-        geminiFailed = true;
-      } else {
-        geminiFailed = true;
-      }
+        throw new Error(localError);
+      };
 
-      // Fase 2: Si no hay clave de Google o falló, intentamos con OpenRouter
-      if (geminiFailed && openRouterKey) {
+      const executeOpenRouter = async () => {
         const callOpenRouter = async (model: string) => {
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
@@ -356,40 +479,165 @@ Si un dato no existe, usa "" (o 0 si es numérico, o [] para 'cast'). Responde S
           return result;
         };
 
-        const modelsToTry = [
-          "meta-llama/llama-3.3-70b-instruct:free",
-          "qwen/qwen-2.5-72b-instruct:free",
-          "google/gemini-2.5-flash:free",
-          "google/gemini-2.5-flash-lite:free"
-        ];
+        const openRouterPriority = currentPriorityModel === "gemini-2.5-flash" || currentPriorityModel === "gemini-3.5-flash"
+          ? "google/gemini-2.5-flash:free"
+          : (currentPriorityModel === "gemini-3.1-flash-lite" ? "google/gemini-2.5-flash-lite:free" : currentPriorityModel);
+
+        const openRouterToTry = [
+          openRouterPriority,
+          ...OPENROUTER_MODELS.filter(m => m !== openRouterPriority)
+        ].filter(m => OPENROUTER_MODELS.includes(m));
         
-        let lastError = "Unknown error";
-        for (const model of modelsToTry) {
+        let localError = "No OpenRouter models could respond";
+        for (const model of openRouterToTry) {
           try {
             console.log(`Intentando modelo OpenRouter en catalog: ${model}`);
             const completion = await callOpenRouter(model);
             const text = completion.choices?.[0]?.message?.content;
             if (!text || text.trim() === "" || text.trim() === "[]" || text.trim() === "{}") {
-              throw new Error("Vacío o resultado inválido de OpenRouter");
+               throw new Error("Vacío o resultado inválido de OpenRouter");
             }
-            return res.json(aiResultParse(text));
+            const parsed = aiResultParse(text);
+            currentPriorityModel = model;
+            console.log(`¡Éxito! El modelo [${model}] respondió correctamente en OpenRouter. Establecido como nueva prioridad.`);
+            return parsed;
           } catch (err: any) {
             console.warn(`Modelo OpenRouter ${model} falló en catalog:`, err.message);
-            lastError = err.message;
+            localError = err.message;
           }
         }
-        console.error("Todos los intentos con modelos gratuitos de OpenRouter fallaron:", lastError);
-        throw new Error(lastError);
+        throw new Error(localError);
+      };
+
+      const executeSambaNova = async () => {
+        const callSambaNova = async (model: string) => {
+          const response = await fetch("https://api.sambanova.ai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${sambanovaKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [
+                { role: "system", content: systemInstruction },
+                { role: "user", content: `${customPrompt}\nAplica los reacomodos técnicos explicados de forma estricta. Devuelve única y estrictamente el JSON.` }
+              ],
+              temperature: 0.1
+            })
+          });
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `SambaNova Error ${response.status}`);
+          }
+          const result = await response.json();
+          if (result.error) {
+            throw new Error(result.error.message || "SambaNova internal provider error");
+          }
+          return result;
+        };
+
+        const sambanovaPriority = SAMBANOVA_MODELS.includes(currentPriorityModel)
+          ? currentPriorityModel
+          : "Meta-Llama-3.3-70B-Instruct";
+
+        const sambanovaToTry = [
+          sambanovaPriority,
+          ...SAMBANOVA_MODELS.filter(m => m !== sambanovaPriority)
+        ].filter(m => SAMBANOVA_MODELS.includes(m));
+
+        let localError = "No SambaNova models could respond";
+        for (const model of sambanovaToTry) {
+          try {
+            console.log(`Intentando modelo SambaNova en catalog: ${model}`);
+            const completion = await callSambaNova(model);
+            const text = completion.choices?.[0]?.message?.content;
+            if (!text || text.trim() === "" || text.trim() === "[]" || text.trim() === "{}") {
+               throw new Error("Vacío o resultado inválido de SambaNova");
+            }
+            const parsed = aiResultParse(text);
+            currentPriorityModel = model;
+            console.log(`¡Éxito! El modelo [${model}] en SambaNova respondió correctamente. Establecido como nueva prioridad.`);
+            return parsed;
+          } catch (err: any) {
+            console.warn(`Modelo SambaNova ${model} falló en catalog:`, err.message);
+            localError = err.message;
+          }
+        }
+        throw new Error(localError);
+      };
+
+      // 2. Armamos la cola secuencial dándole prioridad al proveedor correspondiente al modelo prioritario actual
+      const phases: { name: string; hasKey: boolean; execute: () => Promise<any> }[] = [
+        {
+          name: "gemini",
+          hasKey: !!geminiKey,
+          execute: executeGemini
+        },
+        {
+          name: "groq",
+          hasKey: !!groqKey,
+          execute: executeGroq
+        },
+        {
+          name: "sambanova",
+          hasKey: !!sambanovaKey,
+          execute: executeSambaNova
+        },
+        {
+          name: "openrouter",
+          hasKey: !!openRouterKey,
+          execute: executeOpenRouter
+        }
+      ];
+
+      phases.sort((a, b) => {
+        if (!a.hasKey && b.hasKey) return 1;
+        if (a.hasKey && !b.hasKey) return -1;
+        if (!a.hasKey && !b.hasKey) return 0;
+
+        const isAPriority = 
+          (a.name === "gemini" && NATIVE_MODELS.includes(currentPriorityModel)) ||
+          (a.name === "groq" && GROQ_MODELS.includes(currentPriorityModel)) ||
+          (a.name === "sambanova" && SAMBANOVA_MODELS.includes(currentPriorityModel)) ||
+          (a.name === "openrouter" && OPENROUTER_MODELS.includes(currentPriorityModel));
+
+        const isBPriority = 
+          (b.name === "gemini" && NATIVE_MODELS.includes(currentPriorityModel)) ||
+          (b.name === "groq" && GROQ_MODELS.includes(currentPriorityModel)) ||
+          (b.name === "sambanova" && SAMBANOVA_MODELS.includes(currentPriorityModel)) ||
+          (b.name === "openrouter" && OPENROUTER_MODELS.includes(currentPriorityModel));
+
+        if (isAPriority && !isBPriority) return -1;
+        if (!isAPriority && isBPriority) return 1;
+        return 0;
+      });
+
+      for (const phase of phases) {
+        if (!phase.hasKey) continue;
+        try {
+          console.log(`Iniciando Fase secuencial de catalogación: ${phase.name}`);
+          finalResult = await phase.execute();
+          catalogSuccess = true;
+          break;
+        } catch (phaseError: any) {
+          console.warn(`Fase de catalogación ${phase.name} falló:`, phaseError.message);
+          lastError = phaseError.message;
+        }
       }
 
-      return res.status(500).json({ error: "No se pudo obtener información de ninguna fuente." });
+      if (catalogSuccess && finalResult) {
+        return res.json(finalResult);
+      }
+
+      return res.status(500).json({ error: lastError || "No se pudo obtener información de ningún proveedor disponible." });
     } catch (error: any) {
-      console.error("API Error encountered:", error);
+      console.error("API Error en catalog:", error);
       
       let clientErrorMsg = error.message || "Unknown error";
-      
       if (error.status === 429 || clientErrorMsg.includes("429") || clientErrorMsg.includes("quota")) {
-        clientErrorMsg = "La Inteligencia Artificial base (Gemini) ha agotado su cuota gratuita de Google. Para hacerlo 100% ilimitado y gratuito para el público, configura un OPENROUTER_API_KEY en tus variables globales (Recomendado: Llama 3.3).";
+        clientErrorMsg = "La Inteligencia Artificial base (Gemini) ha agotado su cuota gratuita de Google. Para cambiar a otra alternativa, configura un OPENROUTER_API_KEY o un GROQ_API_KEY.";
       }
 
       res.status(error.status || 500).json({ 
@@ -403,40 +651,83 @@ Si un dato no existe, usa "" (o 0 si es numérico, o [] para 'cast'). Responde S
     try {
       const { text, limit = 5 } = req.body;
       
-      let geminiKey = process.env.GEMINI_API_KEY || "";
-      let openRouterKey = process.env.OPENROUTER_API_KEY || "";
-      const userKey = process.env.USER_API_KEY || "";
+      const cleanKey = (k: string) => {
+        if (!k) return "";
+        const stripped = k.trim().replace(/^['"]|['"]$/g, "");
+        if (stripped === "MY_GEMINI_API_KEY" || stripped === "undefined" || stripped === '""') return "";
+        return stripped;
+      };
 
-      if (userKey) {
-        if (userKey.startsWith("AIza")) {
-          geminiKey = userKey;
+      const finalGemini = cleanKey(process.env.GEMINI_API_KEY || "");
+      const finalOpenRouter = cleanKey(process.env.OPENROUTER_API_KEY || "");
+      const finalGroq = cleanKey(process.env.GROQ_API_KEY || "");
+      const finalSambaNova = cleanKey(process.env.SAMBANOVA_API_KEY || "");
+      const finalUser = cleanKey(process.env.USER_API_KEY || "");
+
+      let geminiKey = finalGemini;
+      let openRouterKey = finalOpenRouter;
+      let groqKey = finalGroq;
+      let sambanovaKey = finalSambaNova;
+
+      if (finalUser) {
+        if (finalUser.startsWith("AIza")) {
+          if (!geminiKey) geminiKey = finalUser;
+        } else if (finalUser.startsWith("gsk_")) {
+          if (!groqKey) groqKey = finalUser;
+        } else if (finalUser.startsWith("sn-") || (finalUser.length === 36 && finalUser.includes("-"))) {
+          if (!sambanovaKey) sambanovaKey = finalUser;
         } else {
-          openRouterKey = userKey;
-          if (!geminiKey) geminiKey = process.env.GEMINI_API_KEY || "";
+          if (!openRouterKey) openRouterKey = finalUser;
         }
       }
-      if (geminiKey === "MY_GEMINI_API_KEY" || geminiKey === '""' || geminiKey === "undefined") {
-        geminiKey = "";
+
+      if (!geminiKey && !openRouterKey && !groqKey && !sambanovaKey) {
+        return res.status(500).json({ error: "No se ha configurado ninguna API Key para batch-parse." });
       }
 
-      if (!geminiKey && !openRouterKey) {
-        return res.status(500).json({ error: "No API key configured." });
-      }
+      const prompt = `Extrae las películas del siguiente texto y conviértelas a un array de objetos JSON estructurados con todos sus datos técnicos disponibles.
+El texto contiene hasta ${limit} películas pegadas con o sin emojis. Ignora los emojis. Limpia y normaliza los datos.
 
-      const prompt = `Extrae las películas del siguiente texto y conviértelas a un array de objetos JSON estructurados con todos sus datos técnicos disponibles (como título español, título original, año, calificación, guion, dirección, género, elenco, distribuidora/estudio, música, sinopsis, formato físico, estante, etc.).
-El texto contiene hasta ${limit} películas pegadas con o sin emojis. Ignora los emojis. Limpia los datos.
-Asegúrate de mapear los campos correctamente al esquema solicitado, rellenar todos los campos posibles de la ficha de forma fidedigna basándote en el texto y evitar siempre omitir información útil.
-Responde ÚNICAMENTE con un array de JSON válido.
+REGLA OBLIGATORIA DE RESILIENCIA Y SÍNTESIS:
+Si el texto de entrada es muy limitado, escueto o contiene únicamente los nombres o títulos de las películas (por ejemplo, "Gladiator (2000)"), DEBES extraer las películas indicadas y retornarlas como elementos válidos en el array JSON. Está TERMINANTEMENTE PROHIBIDO responder con mensajes de error, explicaciones sobre falta de información, o JSONs vacíos o de error alegando que no hay suficientes datos. Si no dispones de datos para campos adicionales (como director, sinopsis, etc.), simplemente colócales un string vacío "" (o 0 para rating y year, o [] para cast). Bajo ningún concepto te rindas o te niegues a estructurar los elementos que sí están presentes en el texto.
+
+Cada objeto del array dentro del JSON final debe tener EXACTAMENTE la siguiente estructura y tipos de campos:
+[
+  {
+    "title": "Título de la película en español",
+    "originalTitle": "Título original de la película",
+    "year": 1999,
+    "rating": 8.5,
+    "duration": "Formato duración (ej. 120 min o N/A)",
+    "country": "País de origen",
+    "director": "Director de la obra",
+    "script": "Guionista de la película",
+    "cast": ["Actor principal 1 (Personaje)", "Actor principal 2 (Personaje)"],
+    "music": "Compositor de la música / Banda Sonora",
+    "photography": "Director de fotografía",
+    "companies": "Productora o estudio principal",
+    "genre": "Géneros separados por barras, ej. Acción / Ciencia ficción",
+    "synopsis": "Sinopsis de la película",
+    "poster": "URL de póster si está presente en el texto, o vacío",
+    "reviews": "Reseñas críticas condensadas o consenso",
+    "awards": "Premios ganados o relevantes",
+    "ageRating": "Clasificación de edad, ej: B15, R, PG-13",
+    "format": "Formato físico o digital, ej: Blu-ray, DVD, VHS",
+    "estante": "Ubicación o estante físico de la videoteca",
+    "streaming": "Plataformas de streaming disponibles"
+  }
+]
+
+Responde ÚNICAMENTE con un array de JSON válido. Cero texto o explicaciones antes o después del JSON.
 
 Texto a procesar:
 ${text}`;
 
       let jsonText = "";
-      let geminiFailed = false;
+      let batchSuccess = false;
+      let lastError = "Exhausted all batch-parse providers";
 
-      // Fase 1: Gemini
-      if (geminiKey) {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const executeGemini = async () => {
         const responseSchema = {
           type: Type.ARRAY,
           items: {
@@ -468,23 +759,26 @@ ${text}`;
           }
         };
 
-        const geminiModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
-        let aiSuccess = false;
-        let finalResponseText = "";
-        
-        for (const gModel of geminiModels) {
+        const nativePriority = currentPriorityModel === "google/gemini-2.5-flash:free"
+          ? "gemini-2.5-flash"
+          : (currentPriorityModel === "google/gemini-2.5-flash-lite:free" ? "gemini-3.1-flash-lite" : currentPriorityModel);
+
+        const nativeToTry = [
+          nativePriority,
+          ...NATIVE_MODELS.filter(m => m !== nativePriority)
+        ].filter(m => NATIVE_MODELS.includes(m));
+
+        let localError = "No native models could respond";
+        for (const gModel of nativeToTry) {
           let retryCount = 0;
           const maxRetries = 1;
-          let forceBreakAll = false;
-
           while (retryCount <= maxRetries) {
             try {
+              console.log(`Intentando Gemini Nativo (${gModel}) en batch-parse`);
               const ai = new GoogleGenAI({
                 apiKey: geminiKey,
                 httpOptions: {
-                  headers: {
-                    'User-Agent': 'aistudio-build',
-                  }
+                  headers: { 'User-Agent': 'aistudio-build' }
                 }
               });
               const response = await ai.models.generateContent({
@@ -497,9 +791,9 @@ ${text}`;
               });
               
               if (!response.text) throw new Error("No text response");
-              finalResponseText = response.text;
-              aiSuccess = true;
-              break;
+              currentPriorityModel = gModel;
+              console.log(`¡Éxito! El modelo [${gModel}] en batch responded correctamente. Establecido como nueva prioridad.`);
+              return response.text.replace(/```json/g, "").replace(/```/g, "").trim();
             } catch (err: any) {
               const rawMessage = err?.message || "";
               const errMsg = rawMessage.toLowerCase();
@@ -512,13 +806,12 @@ ${text}`;
                 }
               } catch (e) {}
 
-              console.error(`Batch parse Gemini (${gModel}) failed:`, err.message);
+              console.error(`Batch parsing with Gemini (${gModel}) failed:`, err.message);
+              localError = err.message;
 
-              // Si es un error de cuota agotada, no reintentes ni intentes otros modelos nativos. Pasa directo a OpenRouter.
               if (isQuotaExceeded) {
-                console.warn("Cuota de Gemini nativo agotada en batch-parse. Saltando directo a OpenRouter...");
-                forceBreakAll = true;
-                break;
+                console.warn("Cuota de Gemini nativo agotada en batch-parse. Saltando fase Gemini...");
+                throw err;
               }
 
               if (err?.message?.includes("503") || err?.status === 503 || err?.message?.includes("429") || err?.status === 429) {
@@ -529,24 +822,69 @@ ${text}`;
                   continue;
                 }
               }
-              break; // Mode to next model
+              break; // Mover al siguiente modelo nativo
             }
           }
-          if (forceBreakAll || aiSuccess) break;
         }
-        
-        if (aiSuccess) {
-          jsonText = finalResponseText.replace(/```json/g, "").replace(/```/g, "").trim();
-        } else {
-          geminiFailed = true;
-        }
-      } else {
-        geminiFailed = true;
-      }
+        throw new Error(localError);
+      };
 
-      // Fase 2: OpenRouter Fallback
-      if (geminiFailed && openRouterKey) {
-        console.log("Intentando OpenRouter en batch-parse");
+      const executeGroq = async () => {
+        const callGroq = async (model: string) => {
+          const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${groqKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: "user", content: prompt }],
+              response_format: { type: "json_object" }
+            })
+          });
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `Groq Error ${response.status}`);
+          }
+          const result = await response.json();
+          if (result.error) {
+            throw new Error(result.error.message || "Groq internal provider error");
+          }
+          return result;
+        };
+
+        const groqPriority = GROQ_MODELS.includes(currentPriorityModel)
+          ? currentPriorityModel
+          : "llama-3.3-70b-versatile";
+
+        const groqToTry = [
+          groqPriority,
+          ...GROQ_MODELS.filter(m => m !== groqPriority)
+        ].filter(m => GROQ_MODELS.includes(m));
+
+        let localError = "No Groq models could respond";
+        for (const model of groqToTry) {
+          try {
+            console.log(`Intentando modelo Groq en batch: ${model}`);
+            const completion = await callGroq(model);
+            const textResponse = completion.choices?.[0]?.message?.content;
+            if (!textResponse || textResponse.trim() === "" || textResponse.trim() === "[]" || textResponse.trim() === "{}") {
+              throw new Error("Vacío o resultado inválido de Groq");
+            }
+            currentPriorityModel = model;
+            console.log(`¡Éxito! El modelo [${model}] en Groq respondió correctamente en batch. Establecido como nueva prioridad.`);
+            return textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+          } catch (err: any) {
+            console.warn(`Modelo Groq ${model} falló en batch:`, err.message);
+            localError = err.message;
+          }
+        }
+        throw new Error(localError);
+      };
+
+      const executeOpenRouter = async () => {
         const callOpenRouter = async (model: string) => {
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
@@ -573,45 +911,171 @@ ${text}`;
           return result;
         };
 
-        const modelsToTry = [
-          "meta-llama/llama-3.3-70b-instruct:free",
-          "qwen/qwen-2.5-72b-instruct:free",
-          "google/gemini-2.5-flash:free",
-          "google/gemini-2.5-flash-lite:free"
-        ];
+        const openRouterPriority = currentPriorityModel === "gemini-2.5-flash" || currentPriorityModel === "gemini-3.5-flash"
+          ? "google/gemini-2.5-flash:free"
+          : (currentPriorityModel === "gemini-3.1-flash-lite" ? "google/gemini-2.5-flash-lite:free" : currentPriorityModel);
+
+        const openRouterToTry = [
+          openRouterPriority,
+          ...OPENROUTER_MODELS.filter(m => m !== openRouterPriority)
+        ].filter(m => OPENROUTER_MODELS.includes(m));
         
-        let lastError = "Unknown error";
-        for (const model of modelsToTry) {
+        let localError = "No OpenRouter models could respond";
+        for (const model of openRouterToTry) {
           try {
             console.log(`Intentando modelo OpenRouter en batch: ${model}`);
             const completion = await callOpenRouter(model);
             const textResponse = completion.choices?.[0]?.message?.content;
             if (!textResponse || textResponse.trim() === "" || textResponse.trim() === "[]" || textResponse.trim() === "{}") {
-              throw new Error("Vacío o resultado inválido de OpenRouter");
+               throw new Error("Vacío o resultado inválido de OpenRouter");
             }
-            jsonText = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
-            break;
+            currentPriorityModel = model;
+            console.log(`¡Éxito! El modelo [${model}] respondió correctamente en OpenRouter. Establecido como nueva prioridad.`);
+            return textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
           } catch (err: any) {
             console.warn(`Modelo OpenRouter ${model} falló en batch:`, err.message);
-            lastError = err.message;
+            localError = err.message;
           }
         }
-        
-        if (!jsonText || jsonText === "") {
-          throw new Error("Batch parse by OpenRouter failed: " + lastError);
+        throw new Error(localError);
+      };
+
+      const executeSambaNova = async () => {
+        const callSambaNova = async (model: string) => {
+          const response = await fetch("https://api.sambanova.ai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${sambanovaKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [
+                { role: "user", content: prompt }
+              ],
+              temperature: 0.1
+            })
+          });
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `SambaNova Error ${response.status}`);
+          }
+          const result = await response.json();
+          if (result.error) {
+            throw new Error(result.error.message || "SambaNova internal provider error");
+          }
+          return result;
+        };
+
+        const sambanovaPriority = SAMBANOVA_MODELS.includes(currentPriorityModel)
+          ? currentPriorityModel
+          : "Meta-Llama-3.3-70B-Instruct";
+
+        const sambanovaToTry = [
+          sambanovaPriority,
+          ...SAMBANOVA_MODELS.filter(m => m !== sambanovaPriority)
+        ].filter(m => SAMBANOVA_MODELS.includes(m));
+
+        let localError = "No SambaNova models could respond";
+        for (const model of sambanovaToTry) {
+          try {
+            console.log(`Intentando modelo SambaNova en batch: ${model}`);
+            const completion = await callSambaNova(model);
+            const textResponse = completion.choices?.[0]?.message?.content;
+            if (!textResponse || textResponse.trim() === "" || textResponse.trim() === "[]" || textResponse.trim() === "{}") {
+               throw new Error("Vacío o resultado inválido de SambaNova");
+            }
+            currentPriorityModel = model;
+            console.log(`¡Éxito! El modelo [${model}] en SambaNova respondió correctamente en batch. Establecido como nueva prioridad.`);
+            return textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+          } catch (err: any) {
+            console.warn(`Modelo SambaNova ${model} falló en batch:`, err.message);
+            localError = err.message;
+          }
+        }
+        throw new Error(localError);
+      };
+
+      const phases: { name: string; hasKey: boolean; execute: () => Promise<string> }[] = [
+        {
+          name: "gemini",
+          hasKey: !!geminiKey,
+          execute: executeGemini
+        },
+        {
+          name: "groq",
+          hasKey: !!groqKey,
+          execute: executeGroq
+        },
+        {
+          name: "sambanova",
+          hasKey: !!sambanovaKey,
+          execute: executeSambaNova
+        },
+        {
+          name: "openrouter",
+          hasKey: !!openRouterKey,
+          execute: executeOpenRouter
+        }
+      ];
+
+      phases.sort((a, b) => {
+        if (!a.hasKey && b.hasKey) return 1;
+        if (a.hasKey && !b.hasKey) return -1;
+        if (!a.hasKey && !b.hasKey) return 0;
+
+        const isAPriority = 
+          (a.name === "gemini" && NATIVE_MODELS.includes(currentPriorityModel)) ||
+          (a.name === "groq" && GROQ_MODELS.includes(currentPriorityModel)) ||
+          (a.name === "sambanova" && SAMBANOVA_MODELS.includes(currentPriorityModel)) ||
+          (a.name === "openrouter" && OPENROUTER_MODELS.includes(currentPriorityModel));
+
+        const isBPriority = 
+          (b.name === "gemini" && NATIVE_MODELS.includes(currentPriorityModel)) ||
+          (b.name === "groq" && GROQ_MODELS.includes(currentPriorityModel)) ||
+          (b.name === "sambanova" && SAMBANOVA_MODELS.includes(currentPriorityModel)) ||
+          (b.name === "openrouter" && OPENROUTER_MODELS.includes(currentPriorityModel));
+
+        if (isAPriority && !isBPriority) return -1;
+        if (!isAPriority && isBPriority) return 1;
+        return 0;
+      });
+
+      for (const phase of phases) {
+        if (!phase.hasKey) continue;
+        try {
+          console.log(`Iniciando Batch-Parse en Fase secuencial: ${phase.name}`);
+          jsonText = await phase.execute();
+          console.log(`¡Fase exitosa! ${phase.name} retornó texto original:`, jsonText);
+          batchSuccess = true;
+          break;
+        } catch (phaseError: any) {
+          console.warn(`Batch-Parse Fase ${phase.name} falló:`, phaseError.message);
+          lastError = phaseError.message;
         }
       }
 
-      if (!jsonText) {
-         throw new Error("No response generated.");
+      if (!jsonText || !batchSuccess) {
+         throw new Error(lastError || "No se generó respuesta de ninguna IA.");
       }
 
       let parsedResult;
       try {
          parsedResult = extractAndParseJSON(jsonText);
+         console.log("Parsed result básico pre-sanitize en backend:", JSON.stringify(parsedResult, null, 2));
       } catch (parseErr: any) {
-         console.warn("JSON Parse Error on OpenRouter text, manual backup extract failed", parseErr.message);
-         throw new Error("No se pudo extraer un JSON válido de la respuesta de la Inteligencia Artificial.");
+         console.warn("JSON Parse Error en texto de IA:", parseErr.message);
+         throw new Error("No se pudo extraer un JSON estructurado de la respuesta de la Inteligencia Artificial.");
+      }
+
+      // Desempaquetado inteligente si la IA envolvió el array en un objeto raíz (ej. {"array": [...]})
+      if (parsedResult && typeof parsedResult === 'object' && !Array.isArray(parsedResult)) {
+        const arrayKey = Object.keys(parsedResult).find(key => Array.isArray(parsedResult[key]));
+        if (arrayKey) {
+          console.log(`Desempaquetando array interior de la propiedad raíz: "${arrayKey}"`);
+          parsedResult = parsedResult[arrayKey];
+        }
       }
 
       if (Array.isArray(parsedResult)) {

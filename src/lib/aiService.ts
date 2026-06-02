@@ -23,8 +23,8 @@ REGLAS DE BÚSQUEDA PROFUNDA (Prioridad: Google Search):
 2. PROHIBIDO RENDIRSE: Si no hay resultados iniciales, reformula la búsqueda (ej. título original, director, país).
 3. RESOLUCIÓN DE AMBIGÜEDADES: Si hay remakes, usa el año proporcionado.
 4. CERO INTERVENCIÓN HUMANA: No hagas preguntas. Selecciona la fuente más confiable (IMDb, FilmAffinity, Wikipedia).
-5. INTEGRIDAD Y CLASIFICACIÓN TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
-6. DETECCIÓN Y REACOMODO INTELIGENTE: Analiza detenidamente todo el texto de entrada. Identifica cada dato (director, guion, año, actores, música, etc.), incluso si viene en desorden o en otros idiomas, y reacomódalo perfectamente en su campo correspondiente en el JSON de salida. Nunca dejes campos en blanco si la información puede ser inferida, extraída o buscada.
+5. INTEGRIDAD TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
+6. DETECCIÓN Y REACOMODO DE CAMPOS: Debes escanear exhaustivamente todo el texto de entrada y mapear de forma extremadamente rigurosa cada fragmento de información al campo del JSON correspondiente. No descartes ningún dato técnico disponible (duración, país, director, guion, elenco, música, fotografía, empresa productora, reseñas, premios, clasificación por edad, estante o formato). Si la información de entrada tiene nombres de etiquetas diferentes u otros idiomas, búscalas semánticamente y reacomódalas en el campo JSON correcto según el esquema solicitado.
 
 REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
 - Devuelve ÚNICAMENTE un JSON VÁLIDO.
@@ -36,11 +36,11 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
     const isDatosApi = queryStr.toUpperCase().includes("DATOS_API");
     
     if (isRescate) {
-      return `CASO B: MODO RESCATE Detectado para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica. Determina, extrae y reacomoda meticulosamente cada dato en su campo correspondiente. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
+      return `CASO B: MODO RESCATE Detectado para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
     } else if (isDatosApi) {
-      return `CASO A: DATOS_API Detectado para: "${displayQuery}". Mapea, reorganiza y reacomoda toda la información en los campos correspondientes.`;
+      return `CASO A: DATOS_API Detectado para: "${displayQuery}".`;
     } else {
-      return `Aplica MODO RESCATE para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica. Determina y reacomoda todos los campos del JSON correctamente.`;
+      return `Aplica MODO RESCATE para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica.`;
     }
   };
 
@@ -71,7 +71,7 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
     required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "format"]
   };
 
-  const geminiModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+  const geminiModels = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
   
   for (const gModel of geminiModels) {
     let retryCount = 0;

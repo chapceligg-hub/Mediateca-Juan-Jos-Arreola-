@@ -1392,7 +1392,11 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
           <>
             <div 
               key={`grid-${selectedGenre}-${currentPage}`} 
-              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-6 gap-y-12 pt-4"
+              className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-6 gap-y-12 pt-4 ${
+                !searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos"
+                  ? "animate-grid-emergence" 
+                  : ""
+              }`}
             >
               {paginatedMovies.map((movie, idx) => (
                 <div 
@@ -1750,36 +1754,36 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                   
                   {/* Info bar: Premium, cine-themed containers with sleek glassmorphism and custom indicators */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
-                    <div className="group bg-white/[0.02] border border-white/[0.07] rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/30 hover:bg-white/[0.04] transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-700/60 group-hover:text-[#b41d1d]/40 transition-colors duration-300">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300 =">
                         <Clapperboard size={14} />
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-500 font-extrabold">Dirección</span>
-                      <span className="text-zinc-100 font-bold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
+                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Dirección</span>
+                      <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
                     </div>
 
-                    <div className="group bg-white/[0.02] border border-white/[0.07] rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/30 hover:bg-white/[0.04] transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-700/60 group-hover:text-[#b41d1d]/40 transition-colors duration-300">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300">
                         <CalendarDays size={14} />
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-500 font-extrabold">Año</span>
-                      <span className="text-zinc-100 font-bold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
+                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Año</span>
+                      <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
                     </div>
 
-                    <div className="group bg-white/[0.02] border border-white/[0.07] rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/30 hover:bg-white/[0.04] transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-700/60 group-hover:text-[#b41d1d]/40 transition-colors duration-300">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300">
                         <Globe size={14} />
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-500 font-extrabold">País</span>
-                      <span className="text-zinc-100 font-bold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
+                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">País</span>
+                      <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
                     </div>
 
-                    <div className="group bg-white/[0.02] border border-white/[0.07] rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/30 hover:bg-white/[0.04] transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-700/60 group-hover:text-[#b41d1d]/40 transition-colors duration-300">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300">
                         <Eye size={14} />
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-500 font-extrabold">Clasificación</span>
-                      <span className="text-zinc-100 font-bold text-sm tracking-tight pr-4">{selectedMovie.ageRating || "No disponible"}</span>
+                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Clasificación</span>
+                      <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.ageRating || "No disponible"}</span>
                     </div>
                   </div>
                   
