@@ -26,6 +26,10 @@ export function useAutoScrollVertical() {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    const isMobileOrTablet = typeof window !== 'undefined' && 
+      (window.innerWidth < 1024 || window.matchMedia('(pointer: coarse)').matches);
+    if (isMobileOrTablet) return;
+
     const container = containerRef.current;
     if (!container) return;
     

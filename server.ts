@@ -4,6 +4,119 @@ import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 
+export function sanitizeMovieData(rawData: any): any {
+  if (!rawData || typeof rawData !== 'object') {
+    rawData = {};
+  }
+
+  // Map Spanish key names back to standard Movie interface keys if the IA responded in Spanish
+  const mapped: any = {
+    title: rawData.title ?? rawData.titulo ?? rawData.title_es ?? rawData.display_title ?? "",
+    originalTitle: rawData.originalTitle ?? rawData.titulo_original ?? rawData.original_title ?? "",
+    year: Number(rawData.year ?? rawData.año ?? rawData.anio ?? rawData.year_released ?? 0) || 0,
+    rating: Number(rawData.rating ?? rawData.calificacion ?? rawData.rating_global ?? rawData.score ?? 0) || 0,
+    duration: rawData.duration ?? rawData.duracion ?? rawData.length ?? "",
+    country: rawData.country ?? rawData.pais ?? rawData.country_of_origin ?? "",
+    director: rawData.director ?? rawData.dirección ?? rawData.direction ?? "",
+    genre: rawData.genre ?? rawData.genero ?? rawData.género ?? "",
+    ageRating: rawData.ageRating ?? rawData.clasificacion ?? rawData.clasificación ?? rawData.rating_age ?? "",
+    format: rawData.format ?? rawData.formato ?? "",
+    poster: rawData.poster ?? rawData.imagen ?? rawData.poster_url ?? "",
+    synopsis: rawData.synopsis ?? rawData.sinopsis ?? rawData.argumento ?? "",
+    cast: Array.isArray(rawData.cast ?? rawData.elenco ?? rawData.actores) 
+      ? (rawData.cast ?? rawData.elenco ?? rawData.actores) 
+      : [],
+    script: rawData.script ?? rawData.guion ?? rawData.guión ?? "",
+    music: rawData.music ?? rawData.banda_sonora ?? rawData.música ?? rawData.musica ?? "",
+    photography: rawData.photography ?? rawData.fotografia ?? rawData.fotografía ?? "",
+    companies: rawData.companies ?? rawData.estudio ?? rawData.compania ?? rawData.compañía ?? rawData.estudios ?? "",
+    reviews: rawData.reviews ?? rawData.reseñas ?? rawData.critica ?? rawData.crítica ?? "",
+    awards: rawData.awards ?? rawData.premios ?? "",
+    streaming: rawData.streaming ?? rawData.plataformas ?? "",
+    estante: rawData.estante ?? rawData.ubicacion ?? rawData.ubicación ?? ""
+  };
+
+  // Convert all null/undefined values to empty strings (except year, rating, and cast which is an array)
+  for (const key in mapped) {
+    if (key === 'cast') {
+      if (!Array.isArray(mapped[key])) {
+        mapped[key] = [];
+      } else {
+        mapped[key] = mapped[key].map((item: any) => item != null ? String(item) : "");
+      }
+    } else if (key === 'year' || key === 'rating') {
+      if (typeof mapped[key] !== 'number' || isNaN(mapped[key])) {
+        mapped[key] = 0;
+      }
+    } else {
+      if (mapped[key] == null) {
+        mapped[key] = "";
+      } else {
+        mapped[key] = String(mapped[key]);
+      }
+    }
+  }
+
+  return mapped;
+}
+
+export function extractAndParseJSON(text: string): any {
+  if (!text) {
+    throw new Error("El texto devuelto por la IA está vacío.");
+  }
+  
+  // Limpiamos bloque de código markdown si existe
+  let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  
+  const enforceEmptyStrings = (obj: any): any => {
+    if (obj === null || obj === undefined) return "";
+    if (typeof obj === "string") return obj;
+    if (typeof obj === "number" || typeof obj === "boolean") return obj;
+    if (Array.isArray(obj)) return obj.map(enforceEmptyStrings);
+    if (typeof obj === "object") {
+      const newObj: any = {};
+      for (const key of Object.keys(obj)) {
+        newObj[key] = enforceEmptyStrings(obj[key]);
+      }
+      return newObj;
+    }
+    return obj;
+  };
+
+  let parsedObject = null;
+  
+  try {
+    parsedObject = JSON.parse(cleaned);
+  } catch (err) {
+    // Si falla el parse directo, intentamos extraer el primer bloque JSON delimitado por llaves o corchetes
+    const objectMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      try {
+        parsedObject = JSON.parse(objectMatch[0]);
+      } catch (e1) {
+        console.warn("Fallo al parsear el objeto extraído:", e1);
+      }
+    }
+    
+    if (!parsedObject) {
+      const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        try {
+          parsedObject = JSON.parse(arrayMatch[0]);
+        } catch (e2) {
+          console.warn("Fallo al parsear el array extraído:", e2);
+        }
+      }
+    }
+    
+    if (!parsedObject) {
+      throw new Error(`No se pudo decodificar un JSON válido de la respuesta de la IA.`);
+    }
+  }
+  
+  return enforceEmptyStrings(parsedObject);
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -40,10 +153,11 @@ REGLAS DE BÚSQUEDA PROFUNDA (Prioridad: Google Search):
 2. PROHIBIDO RENDIRSE: Si no hay resultados iniciales, reformula la búsqueda (ej. título original, director, país).
 3. RESOLUCIÓN DE AMBIGÜEDADES: Si hay remakes, usa el año proporcionado.
 4. CERO INTERVENCIÓN HUMANA: No hagas preguntas. Selecciona la fuente más confiable (IMDb, FilmAffinity, Wikipedia).
-5. INTEGRIDAD TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
+5. INTEGRIDAD Y CLASIFICACIÓN TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
+6. DETECCIÓN Y REACOMODO INTELIGENTE: Analiza detenidamente todo el texto de entrada. Identifica cada dato (director, guion, año, actores, música, etc.), incluso si viene en desorden, en párrafos desestructurados, o en otros idiomas, y reacomódalo perfectamente en su campo correspondiente en el JSON de salida. Nunca dejes campos en blanco si la información puede ser inferida, extraída o buscada.
 
 El usuario te enviará la información en dos formatos:
-CASO A: DATOS DE API (Contiene "DATOS_API") -> Transforma y enriquece.
+CASO A: DATOS DE API (Contiene "DATOS_API") -> Transforma, organiza, reacomoda y enriquece.
 CASO B: MODO RESCATE (Contiene "RESCATE") -> Búsqueda profunda obligatoria.
 
 REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
@@ -52,9 +166,8 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
 - Elenco: Máximo 4 actores en formato: Nombre del Actor (Personaje).`;
 
       const aiResultParse = (rawText: string) => {
-        let text = rawText || "{}";
-        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-        return JSON.parse(text);
+        const parsed = extractAndParseJSON(rawText);
+        return sanitizeMovieData(parsed);
       };
 
       const determinePromptParams = (queryStr: string) => {
@@ -63,12 +176,12 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
         
         if (isRescate) {
           return `CASO B: MODO RESCATE Detectado para: "${displayQuery}".
-          Busca exhaustivamente en Google hasta encontrar la información técnica. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
+          Busca exhaustivamente en Google hasta encontrar la información técnica. Analiza y extrae meticulosamente todos los detalles; asocia y reacomoda cada dato en su campo correspondiente. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
         } else if (isDatosApi) {
-          return `CASO A: DATOS_API Detectado para: "${displayQuery}".`;
+          return `CASO A: DATOS_API Detectado para: "${displayQuery}". Mapea, reorganiza y reacomoda toda la información en los campos correspondientes.`;
         } else {
           return `CASO B: MODO RESCATE Detectado para: "${displayQuery}".
-          Aplica el MODO RESCATE. Busca exhaustivamente en Google hasta encontrar la información técnica. Usa múltiples consultas y agota las opciones antes de decir "No encontrado".`;
+          Aplica el MODO RESCATE. Busca exhaustivamente en Google hasta encontrar la información técnica. Determina y reacomoda todos los campos del JSON correctamente. Usa múltiples consultas y agota las opciones antes de decir "No encontrado".`;
         }
       };
 
@@ -89,15 +202,17 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
           music: { type: Type.STRING, description: "Compositor de la música" },
           photography: { type: Type.STRING, description: "Director de fotografía" },
           companies: { type: Type.STRING, description: "Productora o estudio principal" },
-          genre: { type: Type.STRING, description: "Géneros separados por comas" },
+          genre: { type: Type.STRING, description: "Géneros separados por barras" },
           synopsis: { type: Type.STRING, description: "Sinopsis completa y sin spoilers" },
           poster: { type: Type.STRING, description: "URL de imagen jpg o png de alta calidad" },
           reviews: { type: Type.STRING, description: "Resumen de la crítica consensuada" },
           awards: { type: Type.STRING, description: "Principales premios ganados" },
           ageRating: { type: Type.STRING, description: "Clasificación de edad (Ej: B15, R, PG-13)" },
-          streaming: { type: Type.STRING, description: "Plataformas donde se puede ver" }
+          streaming: { type: Type.STRING, description: "Plataformas de streaming disponibles" },
+          format: { type: Type.STRING, description: "Formato físico o digital de la película" },
+          estante: { type: Type.STRING, description: "Ubicación o estante físico de la videoteca" }
         },
-        required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "streaming"]
+        required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "streaming", "format", "estante"]
       };
 
       let openRouterSuccess = false;
@@ -105,18 +220,26 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
       // Fase 1: Intentamos primero con Google Gemini Nativo (con Search)
       let geminiFailed = false;
       if (geminiKey) {
-        const geminiModels = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-1.5-flash"];
+        const geminiModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
         let aiSuccess = false;
 
         for (const gModel of geminiModels) {
           let retryCount = 0;
           const maxRetries = 1;
+          let forceBreakAll = false;
 
           while (retryCount <= maxRetries) {
             try {
               console.log(`Intentando Gemini Nativo (${gModel}) para: ${displayQuery}`);
-              const ai = new GoogleGenAI({ apiKey: geminiKey });
-              const prompt = `${customPrompt}\n\nDevuelve la ficha técnica en JSON EXACTAMENTE con los siguientes campos:\n{ "title": "string", "originalTitle": "string", "year": 1234, "rating": 1.2, "duration": "string", "country": "string", "director": "string", "script": "string", "cast": ["string"], "music": "string", "photography": "string", "companies": "string", "genre": "string", "synopsis": "string", "poster": "string", "reviews": "string", "awards": "string", "ageRating": "string", "streaming": "string", "format": "string", "estante": "string" }`;
+              const ai = new GoogleGenAI({
+                apiKey: geminiKey,
+                httpOptions: {
+                  headers: {
+                    'User-Agent': 'aistudio-build',
+                  }
+                }
+              });
+              const prompt = `${customPrompt}\n\nDevuelve la ficha técnica en JSON con todos los datos requeridos. No omitas ningún campo.`;
 
               const response = await ai.models.generateContent({
                 model: gModel,
@@ -125,13 +248,33 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
                   systemInstruction: systemInstruction,
                   tools: [{ googleSearch: {} }],
                   responseMimeType: "application/json",
+                  responseSchema: responseSchema
                 },
               });
               const text = response.text;
               console.log("Respuesta Gemini exitosa");
               return res.json(aiResultParse(text));
             } catch (googleError: any) {
+              const rawMessage = googleError?.message || "";
+              const errMsg = rawMessage.toLowerCase();
+              let isQuotaExceeded = errMsg.includes("quota") || errMsg.includes("exhausted") || errMsg.includes("limit") || errMsg.includes("billing") || googleError?.status === 429;
+              
+              try {
+                const parsedErr = JSON.parse(rawMessage);
+                if (parsedErr?.error?.status === "RESOURCE_EXHAUSTED" || parsedErr?.error?.code === 429) {
+                  isQuotaExceeded = true;
+                }
+              } catch (e) {}
+
               console.error(`Google Gemini Nativo (${gModel}) falló:`, googleError.message);
+              
+              // Si es un error de cuota agotada, no reintentes ni intentes otros modelos nativos. Pasa directo a OpenRouter.
+              if (isQuotaExceeded) {
+                console.warn("Cuota de Gemini nativo agotada. Saltando directo a OpenRouter...");
+                forceBreakAll = true;
+                break;
+              }
+
               if (googleError?.message?.includes("503") || googleError?.status === 503 || googleError?.message?.includes("429") || googleError?.status === 429) {
                 retryCount++;
                 if (retryCount <= maxRetries) {
@@ -142,6 +285,9 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
               }
               break; // Mover al siguiente modelo
             }
+          }
+          if (forceBreakAll) {
+            break;
           }
         }
         // Si sale de este loop y no hizo return res.json(), fallaron todos.
@@ -189,10 +335,12 @@ Campos obligatorios:
   "reviews": "string",
   "awards": "string",
   "ageRating": "string",
-  "streaming": "string"
+  "streaming": "string",
+  "format": "string",
+  "estante": "string"
 }
 
-Si un dato no existe, usa "N/A" (o 0 si es numérico). Responde SOLAMENTE con un objeto JSON válido, sin delimitadores extra.` }
+Si un dato no existe, usa "" (o 0 si es numérico, o [] para 'cast'). Responde SOLAMENTE con un objeto JSON válido, sin delimitadores extra.` }
               ]
             })
           });
@@ -201,31 +349,37 @@ Si un dato no existe, usa "N/A" (o 0 si es numérico). Responde SOLAMENTE con un
             const err = await response.json().catch(() => ({}));
             throw new Error(err.error?.message || `OpenRouter Error ${response.status}`);
           }
-          return await response.json();
+          const result = await response.json();
+          if (result.error) {
+            throw new Error(result.error.message || "OpenRouter internal provider error");
+          }
+          return result;
         };
 
         const modelsToTry = [
-          "google/gemini-2.5-flash",
           "meta-llama/llama-3.3-70b-instruct:free",
-          "qwen/qwen-2.5-7b-instruct:free",
-          "openrouter/auto",
-          "openrouter/free"
+          "qwen/qwen-2.5-72b-instruct:free",
+          "google/gemini-2.5-flash:free",
+          "google/gemini-2.5-flash-lite:free"
         ];
         
         let lastError = "Unknown error";
         for (const model of modelsToTry) {
           try {
-            console.log(`Intentando modelo OpenRouter: ${model}`);
+            console.log(`Intentando modelo OpenRouter en catalog: ${model}`);
             const completion = await callOpenRouter(model);
-            const text = completion.choices?.[0]?.message?.content || "{}";
+            const text = completion.choices?.[0]?.message?.content;
+            if (!text || text.trim() === "" || text.trim() === "[]" || text.trim() === "{}") {
+              throw new Error("Vacío o resultado inválido de OpenRouter");
+            }
             return res.json(aiResultParse(text));
           } catch (err: any) {
-            console.warn(`Modelo OpenRouter ${model} falló:`, err.message);
+            console.warn(`Modelo OpenRouter ${model} falló en catalog:`, err.message);
             lastError = err.message;
           }
         }
         console.error("Todos los intentos con modelos gratuitos de OpenRouter fallaron:", lastError);
-
+        throw new Error(lastError);
       }
 
       return res.status(500).json({ error: "No se pudo obtener información de ninguna fuente." });
@@ -269,11 +423,10 @@ Si un dato no existe, usa "N/A" (o 0 si es numérico). Responde SOLAMENTE con un
         return res.status(500).json({ error: "No API key configured." });
       }
 
-      const prompt = `Extrae las películas del siguiente texto y conviértelas a un array de objetos JSON estructurados.
+      const prompt = `Extrae las películas del siguiente texto y conviértelas a un array de objetos JSON estructurados con todos sus datos técnicos disponibles (como título español, título original, año, calificación, guion, dirección, género, elenco, distribuidora/estudio, música, sinopsis, formato físico, estante, etc.).
 El texto contiene hasta ${limit} películas pegadas con o sin emojis. Ignora los emojis. Limpia los datos.
-Asegúrate de mapear los campos correctamente al esquema solicitado. Responde ÚNICAMENTE con un array de JSON válido de tipo objeto.
-Es de extrema importancia que el sistema SIEMPRE extraiga la calificación (Rating) de la película y la convierta a número.
-Asegúrate de que el campo de formato físico se mantenga estrictamente mapeado bajo el nombre 'format' guardando el dato correctamente como string (ej. DVD Original).
+Asegúrate de mapear los campos correctamente al esquema solicitado, rellenar todos los campos posibles de la ficha de forma fidedigna basándote en el texto y evitar siempre omitir información útil.
+Responde ÚNICAMENTE con un array de JSON válido.
 
 Texto a procesar:
 ${text}`;
@@ -289,75 +442,104 @@ ${text}`;
           items: {
             type: Type.OBJECT,
             properties: {
-              title: { type: Type.STRING },
-              originalTitle: { type: Type.STRING },
-              year: { type: Type.INTEGER },
-              rating: { type: Type.NUMBER },
-              duration: { type: Type.STRING },
-              country: { type: Type.STRING },
-              director: { type: Type.STRING },
-              script: { type: Type.STRING },
-              cast: { type: Type.ARRAY, items: { type: Type.STRING } },
-              music: { type: Type.STRING },
-              photography: { type: Type.STRING },
-              companies: { type: Type.STRING },
-              genre: { type: Type.STRING },
-              synopsis: { type: Type.STRING },
-              poster: { type: Type.STRING },
-              reviews: { type: Type.STRING },
-              awards: { type: Type.STRING },
-              ageRating: { type: Type.STRING },
-              format: { type: Type.STRING },
-              estante: { type: Type.STRING }
+              title: { type: Type.STRING, description: "Título en español / México" },
+              originalTitle: { type: Type.STRING, description: "Título original" },
+              year: { type: Type.INTEGER, description: "Año de lanzamiento" },
+              rating: { type: Type.NUMBER, description: "Calificación de la obra de 0 a 10" },
+              duration: { type: Type.STRING, description: "Duración en formato: 120 min" },
+              country: { type: Type.STRING, description: "País de origen" },
+              director: { type: Type.STRING, description: "Director de la obra" },
+              script: { type: Type.STRING, description: "Guionista de la película" },
+              cast: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Actores principales en formato: Nombre (Personaje)" },
+              music: { type: Type.STRING, description: "Compositor de la música" },
+              photography: { type: Type.STRING, description: "Director de fotografía" },
+              companies: { type: Type.STRING, description: "Productora o estudio principal" },
+              genre: { type: Type.STRING, description: "Géneros separados por barras (Ej: Drama / Acción)" },
+              synopsis: { type: Type.STRING, description: "Sinopsis completa y sin spoilers" },
+              poster: { type: Type.STRING, description: "URL de póster si se menciona" },
+              reviews: { type: Type.STRING, description: "Reseñas críticas condensadas o consenso" },
+              awards: { type: Type.STRING, description: "Premios ganados o relevantes" },
+              ageRating: { type: Type.STRING, description: "Clasificación de edad (Ej: B15, R, A)" },
+              format: { type: Type.STRING, description: "Formato físico o digital del elemento pegado" },
+              estante: { type: Type.STRING, description: "Ubicación o estante físico de la videoteca" },
+              streaming: { type: Type.STRING, description: "Plataformas de streaming si se mencionan" }
             },
-            required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "format"]
+            required: ["title"]
           }
         };
 
-          const geminiModels = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-1.5-flash"];
-          let aiSuccess = false;
-          let finalResponseText = "";
-          
-          for (const gModel of geminiModels) {
-            let retryCount = 0;
-            const maxRetries = 1;
-            while (retryCount <= maxRetries) {
-              try {
-                const ai = new GoogleGenAI({ apiKey: geminiKey });
-                const response = await ai.models.generateContent({
-                  model: gModel,
-                  contents: prompt,
-                  config: {
-                    responseMimeType: "application/json",
-                    responseSchema: responseSchema
-                  },
-                });
-                
-                if (!response.text) throw new Error("No text response");
-                finalResponseText = response.text;
-                aiSuccess = true;
-                break;
-              } catch (err: any) {
-                console.error(`Batch parse Gemini (${gModel}) failed:`, err.message);
-                if (err?.message?.includes("503") || err?.status === 503 || err?.message?.includes("429") || err?.status === 429) {
-                  retryCount++;
-                  if (retryCount <= maxRetries) {
-                    console.warn(`Rate limit or 503 hit in batch-parse for ${gModel}. Retrying...`);
-                    await new Promise(resolve => setTimeout(resolve, retryCount * 3000));
-                    continue;
+        const geminiModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+        let aiSuccess = false;
+        let finalResponseText = "";
+        
+        for (const gModel of geminiModels) {
+          let retryCount = 0;
+          const maxRetries = 1;
+          let forceBreakAll = false;
+
+          while (retryCount <= maxRetries) {
+            try {
+              const ai = new GoogleGenAI({
+                apiKey: geminiKey,
+                httpOptions: {
+                  headers: {
+                    'User-Agent': 'aistudio-build',
                   }
                 }
-                break; // Move to next model
+              });
+              const response = await ai.models.generateContent({
+                model: gModel,
+                contents: prompt,
+                config: {
+                  responseMimeType: "application/json",
+                  responseSchema: responseSchema
+                },
+              });
+              
+              if (!response.text) throw new Error("No text response");
+              finalResponseText = response.text;
+              aiSuccess = true;
+              break;
+            } catch (err: any) {
+              const rawMessage = err?.message || "";
+              const errMsg = rawMessage.toLowerCase();
+              let isQuotaExceeded = errMsg.includes("quota") || errMsg.includes("exhausted") || errMsg.includes("limit") || errMsg.includes("billing") || err?.status === 429;
+
+              try {
+                const parsedErr = JSON.parse(rawMessage);
+                if (parsedErr?.error?.status === "RESOURCE_EXHAUSTED" || parsedErr?.error?.code === 429) {
+                  isQuotaExceeded = true;
+                }
+              } catch (e) {}
+
+              console.error(`Batch parse Gemini (${gModel}) failed:`, err.message);
+
+              // Si es un error de cuota agotada, no reintentes ni intentes otros modelos nativos. Pasa directo a OpenRouter.
+              if (isQuotaExceeded) {
+                console.warn("Cuota de Gemini nativo agotada en batch-parse. Saltando directo a OpenRouter...");
+                forceBreakAll = true;
+                break;
               }
+
+              if (err?.message?.includes("503") || err?.status === 503 || err?.message?.includes("429") || err?.status === 429) {
+                retryCount++;
+                if (retryCount <= maxRetries) {
+                  console.warn(`Rate limit or 503 hit in batch-parse for ${gModel}. Retrying...`);
+                  await new Promise(resolve => setTimeout(resolve, retryCount * 3000));
+                  continue;
+                }
+              }
+              break; // Mode to next model
             }
-            if (aiSuccess) break;
           }
-          
-          if (aiSuccess) {
-            jsonText = finalResponseText.replace(/```json/g, "").replace(/```/g, "").trim();
-          } else {
-            geminiFailed = true;
-          }
+          if (forceBreakAll || aiSuccess) break;
+        }
+        
+        if (aiSuccess) {
+          jsonText = finalResponseText.replace(/```json/g, "").replace(/```/g, "").trim();
+        } else {
+          geminiFailed = true;
+        }
       } else {
         geminiFailed = true;
       }
@@ -381,24 +563,32 @@ ${text}`;
           });
 
           if (!response.ok) {
-            throw new Error(`OpenRouter Error ${response.status}`);
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `OpenRouter Error ${response.status}`);
           }
-          return await response.json();
+          const result = await response.json();
+          if (result.error) {
+            throw new Error(result.error.message || "OpenRouter internal provider error");
+          }
+          return result;
         };
 
         const modelsToTry = [
-          "google/gemini-2.5-flash",
           "meta-llama/llama-3.3-70b-instruct:free",
-          "qwen/qwen-2.5-7b-instruct:free",
-          "openrouter/auto",
-          "openrouter/free"
+          "qwen/qwen-2.5-72b-instruct:free",
+          "google/gemini-2.5-flash:free",
+          "google/gemini-2.5-flash-lite:free"
         ];
         
         let lastError = "Unknown error";
         for (const model of modelsToTry) {
           try {
+            console.log(`Intentando modelo OpenRouter en batch: ${model}`);
             const completion = await callOpenRouter(model);
-            const textResponse = completion.choices?.[0]?.message?.content || "[]";
+            const textResponse = completion.choices?.[0]?.message?.content;
+            if (!textResponse || textResponse.trim() === "" || textResponse.trim() === "[]" || textResponse.trim() === "{}") {
+              throw new Error("Vacío o resultado inválido de OpenRouter");
+            }
             jsonText = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
             break;
           } catch (err: any) {
@@ -418,17 +608,20 @@ ${text}`;
 
       let parsedResult;
       try {
-         parsedResult = JSON.parse(jsonText);
-      } catch (parseErr) {
-         console.warn("JSON Parse Error on OpenRouter text, returning raw or error", jsonText);
-         // if OpenRouter didn't return pure JSON, we might want to try to extract it
-         const match = jsonText.match(/\[.*\]/s);
-         if (match) {
-             parsedResult = JSON.parse(match[0]);
-         } else {
-             throw new Error("No se pudo extraer JSON válido.");
-         }
+         parsedResult = extractAndParseJSON(jsonText);
+      } catch (parseErr: any) {
+         console.warn("JSON Parse Error on OpenRouter text, manual backup extract failed", parseErr.message);
+         throw new Error("No se pudo extraer un JSON válido de la respuesta de la Inteligencia Artificial.");
       }
+
+      if (Array.isArray(parsedResult)) {
+        parsedResult = parsedResult.map(item => sanitizeMovieData(item));
+      } else if (parsedResult && typeof parsedResult === 'object') {
+        parsedResult = [sanitizeMovieData(parsedResult)];
+      } else {
+        parsedResult = [];
+      }
+
       return res.json(parsedResult);
 
     } catch (error: any) {

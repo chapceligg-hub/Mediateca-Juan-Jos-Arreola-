@@ -6,7 +6,14 @@ export async function catalogMovieAI(query: string, searchYear?: string) {
     throw new Error("GEMINI_API_KEY_MISSING");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
   const displayQuery = searchYear ? `${query} (${searchYear})` : query;
 
   const systemInstruction = `Eres el motor automatizado de catalogación y crítico cinematográfico de una videoteca de alto nivel. Tu objetivo es procesar las entradas del usuario y devolver una ficha técnica perfectamente estructurada para exportación automática, manteniendo siempre un estándar de redacción limpio, moderno y premium.
@@ -16,7 +23,8 @@ REGLAS DE BÚSQUEDA PROFUNDA (Prioridad: Google Search):
 2. PROHIBIDO RENDIRSE: Si no hay resultados iniciales, reformula la búsqueda (ej. título original, director, país).
 3. RESOLUCIÓN DE AMBIGÜEDADES: Si hay remakes, usa el año proporcionado.
 4. CERO INTERVENCIÓN HUMANA: No hagas preguntas. Selecciona la fuente más confiable (IMDb, FilmAffinity, Wikipedia).
-5. INTEGRIDAD TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
+5. INTEGRIDAD Y CLASIFICACIÓN TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
+6. DETECCIÓN Y REACOMODO INTELIGENTE: Analiza detenidamente todo el texto de entrada. Identifica cada dato (director, guion, año, actores, música, etc.), incluso si viene en desorden o en otros idiomas, y reacomódalo perfectamente en su campo correspondiente en el JSON de salida. Nunca dejes campos en blanco si la información puede ser inferida, extraída o buscada.
 
 REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
 - Devuelve ÚNICAMENTE un JSON VÁLIDO.
@@ -28,11 +36,11 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
     const isDatosApi = queryStr.toUpperCase().includes("DATOS_API");
     
     if (isRescate) {
-      return `CASO B: MODO RESCATE Detectado para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
+      return `CASO B: MODO RESCATE Detectado para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica. Determina, extrae y reacomoda meticulosamente cada dato en su campo correspondiente. Usa múltiples consultas y agota las opciones antes de decir "No encontrado". NUNCA respondas que no encontraste ningún resultado en general.`;
     } else if (isDatosApi) {
-      return `CASO A: DATOS_API Detectado para: "${displayQuery}".`;
+      return `CASO A: DATOS_API Detectado para: "${displayQuery}". Mapea, reorganiza y reacomoda toda la información en los campos correspondientes.`;
     } else {
-      return `Aplica MODO RESCATE para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica.`;
+      return `Aplica MODO RESCATE para: "${displayQuery}". Busca exhaustivamente en Google hasta encontrar la información técnica. Determina y reacomoda todos los campos del JSON correctamente.`;
     }
   };
 
@@ -63,7 +71,7 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
     required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "format"]
   };
 
-  const geminiModels = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-1.5-flash"];
+  const geminiModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
   
   for (const gModel of geminiModels) {
     let retryCount = 0;
@@ -86,7 +94,24 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
           throw new Error("AI_NO_RESPONSE");
         }
 
-        return JSON.parse(response.text.replace(/```json/g, "").replace(/```/g, "").trim());
+        const parsedData = JSON.parse(response.text.replace(/```json/g, "").replace(/```/g, "").trim());
+        
+        const enforceEmptyStrings = (obj: any): any => {
+          if (obj === null || obj === undefined) return "";
+          if (typeof obj === "string") return obj;
+          if (typeof obj === "number" || typeof obj === "boolean") return obj;
+          if (Array.isArray(obj)) return obj.map(enforceEmptyStrings);
+          if (typeof obj === "object") {
+            const newObj: any = {};
+            for (const key of Object.keys(obj)) {
+              newObj[key] = enforceEmptyStrings(obj[key]);
+            }
+            return newObj;
+          }
+          return obj;
+        };
+
+        return enforceEmptyStrings(parsedData);
       } catch (error: any) {
         if (error?.message?.includes("503") || error?.status === 503 || error?.message?.includes("429") || error?.status === 429) {
           retryCount++;

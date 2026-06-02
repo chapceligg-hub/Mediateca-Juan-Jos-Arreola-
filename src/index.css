@@ -1,17 +1,18 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Bebas+Neue&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-bebas: "Bebas Neue", sans-serif;
+  --font-barlow-condensed: "Barlow Condensed", sans-serif;
   --color-brand-main: #B30500;
   --color-brand-light: #D10A0A;
 }
 
 @layer base {
   html {
-    @apply bg-black text-zinc-100 antialiased;
+    @apply bg-black text-zinc-100 antialiased scroll-smooth;
   }
   body {
     @apply bg-[#020202] text-zinc-100 antialiased min-h-screen;
@@ -32,5 +33,223 @@
   .custom-scrollbar-horizontal::-webkit-scrollbar-thumb {
     @apply bg-red-600 rounded-full hover:bg-red-500;
   }
-}
 
+  .card-scale-img {
+    transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  
+  .group:hover .card-scale-img {
+    transform: scale(1.04);
+  }
+  
+  .card-hover-gradient {
+    background: linear-gradient(to bottom, rgba(0,0,0,0) 55%, rgba(0,0,0,0.82) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .group:hover .card-hover-gradient {
+    opacity: 1;
+  }
+
+  .reveal-on-hover {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transition-delay: 0.05s;
+  }
+  
+  .group:hover .reveal-on-hover {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @keyframes shimmer-anim {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .shimmer-placeholder {
+    background: linear-gradient(90deg, #09090b 25%, #18181b 50%, #09090b 75%);
+    background-size: 200% 100%;
+    animation: shimmer-anim 1.5s infinite linear;
+  }
+
+  @keyframes cinematic-title-reveal {
+    0% {
+      opacity: 0;
+      filter: blur(12px);
+      letter-spacing: 0.35em;
+    }
+    12% {
+      opacity: 0.45;
+      filter: blur(8px);
+      letter-spacing: 0.31em;
+    }
+    25% {
+      opacity: 0.95;
+      filter: blur(5px);
+      letter-spacing: 0.27em;
+    }
+    38% {
+      opacity: 0.6;
+      filter: blur(3px);
+      letter-spacing: 0.23em;
+    }
+    50% {
+      opacity: 1;
+      filter: blur(1px);
+      letter-spacing: 0.21em;
+    }
+    65% {
+      opacity: 0.85;
+      filter: blur(0px);
+      letter-spacing: 0.20em;
+    }
+    100% {
+      opacity: 1;
+      filter: blur(0px);
+      letter-spacing: 0.20em;
+    }
+  }
+
+  @keyframes cinematic-sweep {
+    0% {
+      background-position: 250% 0;
+    }
+    100% {
+      background-position: -50% 0;
+    }
+  }
+
+  @keyframes cinematic-subtitle-reveal {
+    0% {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-cinematic-premium {
+    background: linear-gradient(
+      90deg,
+      #ffffff 0%,
+      #ffffff 25%,
+      rgba(180, 29, 29, 0.75) 45%,
+      #ffffff 60%,
+      #d4d4d8 100%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: 
+      cinematic-title-reveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+      cinematic-sweep 1.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  }
+
+  .animate-cinematic-subtitle {
+    animation: cinematic-subtitle-reveal 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* Split Chrome 3D font effect with Cinematic Red Scan Sweep */
+  .stranger-title-text {
+    font-family: var(--font-barlow-condensed), "Inter", sans-serif;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    line-height: 0.85;
+    background-image: 
+      linear-gradient(110deg, transparent 35%, rgba(220, 38, 38, 0) 40%, rgba(239, 68, 68, 0.95) 48%, rgba(255, 77, 77, 1) 50%, rgba(239, 68, 68, 0.95) 52%, rgba(220, 38, 38, 0) 60%, transparent 65%),
+      linear-gradient(to bottom, #ffffff 0%, #ffffff 48%, #e4e4e7 49%, #a1a1aa 100%);
+    background-size: 260% 100%, 100% 100%;
+    background-repeat: no-repeat;
+    background-position: 220% 0, 0 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 6px 4px rgba(0,0,0,0.95)) drop-shadow(0 1px 1px rgba(0,0,0,0.85));
+    transition: all 0.5s ease;
+  }
+
+  @keyframes stranger-reveal {
+    0% {
+      opacity: 0;
+      filter: blur(12px);
+      letter-spacing: 0.25em;
+    }
+    12% {
+      opacity: 0.45;
+      filter: blur(8px);
+      letter-spacing: 0.21em;
+    }
+    25% {
+      opacity: 0.95;
+      filter: blur(5px);
+      letter-spacing: 0.17em;
+    }
+    38% {
+      opacity: 0.6;
+      filter: blur(3px);
+      letter-spacing: 0.15em;
+    }
+    50% {
+      opacity: 1;
+      filter: blur(1px);
+      letter-spacing: 0.13em;
+    }
+    65% {
+      opacity: 0.85;
+      filter: blur(0px);
+      letter-spacing: 0.12em;
+    }
+    100% {
+      opacity: 1;
+      filter: blur(0px);
+      letter-spacing: 0.12em;
+    }
+  }
+
+  @keyframes stranger-sweep {
+    0%, 25% {
+      background-position: 220% 0, 0 0;
+    }
+    75%, 100% {
+      background-position: -120% 0, 0 0;
+    }
+  }
+
+  .animate-stranger-reveal {
+    animation: 
+      stranger-reveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+      stranger-sweep 4.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  }
+
+  @keyframes beam-shimmer {
+    0%, 100% {
+      opacity: 0.75;
+      transform: scaleX(0.97);
+      filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.45));
+    }
+    50% {
+      opacity: 1;
+      transform: scaleX(1.03);
+      filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.8));
+    }
+  }
+
+  .animate-beam-subtle {
+    animation: beam-shimmer 4.5s ease-in-out infinite;
+  }
+
+  .cinema-ticket-glowing {
+    filter: drop-shadow(0 0 12px rgba(180, 29, 29, 0.95)) drop-shadow(0 0 4px rgba(180, 29, 29, 0.6));
+  }
+}

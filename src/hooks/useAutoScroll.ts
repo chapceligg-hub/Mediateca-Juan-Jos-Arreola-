@@ -26,6 +26,10 @@ export function useAutoScroll() {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const isMobileOrTablet = typeof window !== 'undefined' && 
+      (window.innerWidth < 1024 || window.matchMedia('(pointer: coarse)').matches);
+    if (isMobileOrTablet) return;
+
     const container = containerRef.current;
     if (!container) return;
     

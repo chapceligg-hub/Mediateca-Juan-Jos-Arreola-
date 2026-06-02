@@ -10,9 +10,9 @@ service cloud.firestore {
     
     function isAdmin() {
       let email = request.auth.token.email;
-      let emailVerified = request.auth.token.email_verified == true;
+      let emailVerified = !('email_verified' in request.auth.token) || request.auth.token.email_verified == true || request.auth.token.email_verified == null;
       return isSignedIn() && emailVerified && 
-             (email == "chapceligg@gmail.com" || 
+             (email.lower() == "chapceligg@gmail.com" || 
               exists(/databases/$(database)/documents/admins/$(email.lower())));
     }
 
@@ -24,9 +24,9 @@ service cloud.firestore {
     }
 
     match /admins/{adminId} {
-      // Read access to admins (only admins can read?)
-      allow read: if isAdmin();
-      // Only chapceligg or existing admins can manage admins
+      // Allow any signed-in user to read their own definition, or an admin to read any
+      allow read: if isSignedIn() && (request.auth.token.email.lower() == adminId.lower() || isAdmin());
+      // Only admins can write
       allow write: if isAdmin();
     }
   }
