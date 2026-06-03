@@ -5,7 +5,7 @@ import {
   Sparkles, Loader2, AlertTriangle, Clapperboard, MonitorPlay, Trophy, Quote as QuoteIcon, 
   Zap, ImageIcon, Landmark, History as HistoryIcon, Type, ChevronRight, ChevronLeft, ChevronDown, Globe, 
   DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload,
-  ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music
+  ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv
 } from 'lucide-react';
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
@@ -341,6 +341,10 @@ export default function App() {
   const [randomQuote, setRandomQuote] = useState<QuoteType | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [copied, setCopied] = useState(false);
+  const [animateCategory, setAnimateCategory] = useState(false);
+  const prevGenreRef = useRef(selectedGenre);
+
+
   const [batchProgress, setBatchProgress] = useState({ active: false, total: 0, current: 0, currentMovie: "" });
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showAdminsModal, setShowAdminsModal] = useState(false);
@@ -443,13 +447,38 @@ export default function App() {
 
   const handleCopyFicha = () => {
     if (!selectedMovie) return;
-    const ficha = `🖼️ Póster: ${selectedMovie.poster || 'No disponible'}
-🎬 Título Videoteca: ⚠️ ${selectedMovie.title || 'No disponible'}
+    
+    const orderIndex = filteredMovies.findIndex(m => m.id === selectedMovie.id);
+    const orderNumber = orderIndex !== -1 ? orderIndex + 1 : movies.findIndex(m => m.id === selectedMovie.id) + 1 || 1;
+    
+    // Genres separated by bar (slash) e.g. Drama / Comedia
+    const cleanGenres = String(selectedMovie.genre || 'No disponible')
+      .split(/[,/|]+/)
+      .map(g => g.trim())
+      .filter(Boolean)
+      .join(' / ') || 'No disponible';
+
+    const cleanCast = Array.isArray(selectedMovie.cast) ? selectedMovie.cast.join(', ') : String(selectedMovie.cast || 'No disponible');
+    
+    let cleanDuration = selectedMovie.duration || 'No disponible';
+    if (cleanDuration && cleanDuration !== 'No disponible') {
+      const numOnly = parseInt(String(cleanDuration));
+      if (!isNaN(numOnly)) {
+        cleanDuration = `${numOnly} minutos`;
+      }
+    }
+
+    const displayTitle = selectedMovie.title || 'No disponible';
+    const headerTitle = displayTitle.replace(/^⚠️\s*/, '').toUpperCase();
+
+    const ficha = `${orderNumber}) ${headerTitle} (${selectedMovie.year || ''})
+🖼️ Póster: ${selectedMovie.poster || 'No disponible'}
+🎬 Título Videoteca: ${headerTitle}
 🏷️ Título Original: ${selectedMovie.originalTitle || 'No disponible'}
 📅 Año: ${selectedMovie.year || 'No disponible'}
-⭐ Rating Global: ${selectedMovie.rating || '0'}
-🎭 Género: ${selectedMovie.genre || 'No disponible'}
-⏱️ Duración: ${selectedMovie.duration || 'No disponible'}
+⭐ Rating Global: ${selectedMovie.rating || '0'}/10 IMDb
+🎭 Género: ${cleanGenres}
+⏱️ Duración: ${cleanDuration}
 🌍 País: ${selectedMovie.country || 'No disponible'}
 🔞 Clasificación: ${selectedMovie.ageRating || 'No disponible'}
 ✍️ Guion: ${selectedMovie.script || 'No disponible'}
@@ -459,7 +488,7 @@ export default function App() {
 📸 Fotografía: ${selectedMovie.photography || 'No disponible'}
 🏢 Estudio: ${selectedMovie.companies || 'No disponible'}
 📚 Estante (Localización): ${selectedMovie.estante || ''}
-👥 Elenco: ${Array.isArray(selectedMovie.cast) ? selectedMovie.cast.join(' / ') : selectedMovie.cast || 'No disponible'}
+👥 Elenco: ${cleanCast}
 📖 Argumento:
 Sinopsis: ${selectedMovie.synopsis || 'No disponible'}
 Reseñas críticas: ${selectedMovie.reviews || 'No disponible'}
@@ -515,64 +544,53 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         if (isDuplicate) {
           skipped.push(`"${m.title}" (${m.year || "S/A"})`);
           setBatchProgress(p => ({ ...p, current: index + 1, currentMovie: `Omitiendo duplicado: ${m.title}` }));
-          await new Promise(r => setTimeout(r, 600));
+          await new Promise(r => setTimeout(r, 200));
           index++;
           continue;
         }
 
-        setBatchProgress(p => ({ ...p, currentMovie: `Buscando ficha: ${m.title}...`, current: index }));
+        setBatchProgress(p => ({ ...p, currentMovie: `Procesando y reordenando: ${m.title}...`, current: index }));
 
-        // Realizamos la búsqueda profunda individual de forma secuencial con control de tasa / reintentos
-        let detailedMovie: any = null;
-        let retries = 3;
-        let delay = 600;
-
-        while (retries > 0) {
-          try {
-            const catRes = await fetch('/api/catalog', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ query: m.title, searchYear: m.year })
-            });
-            if (catRes.ok) {
-              detailedMovie = await catRes.json();
-              break;
-            }
-          } catch (e) {
-            console.warn(`Error en consulta de película "${m.title}". Intentos restantes: ${retries - 1}`, e);
-          }
-          retries--;
-          if (retries > 0) {
-            await new Promise(r => setTimeout(r, delay));
-            delay *= 2; // backoff exponencial
-          }
-        }
-
-        // Si fallaron los reintentos, usamos los datos básicos de la extracción como fallback
-        const baseMovie = detailedMovie || m;
-
-        // Generamos un ID robusto nativo para evitar colisiones
         const finalId = generateMovieId();
         
+        let normalizedCast: string[] = [];
+        if (Array.isArray(m.cast)) {
+          normalizedCast = m.cast.map((c: any) => String(c || "").trim()).filter(Boolean);
+        } else if (typeof m.cast === 'string' && m.cast) {
+          normalizedCast = String(m.cast).split(/[,/]+/).map(s => s.trim()).filter(Boolean);
+        }
+
         const finalMovie: Movie = {
-          ...baseMovie,
           id: finalId,
-          // fusionamos el formato, estante o rating si vinieron del texto manual pegado
-          rating: m.rating !== undefined && m.rating !== null && !isNaN(Number(m.rating)) ? Number(m.rating) : (baseMovie.rating || 0),
-          format: m.format || baseMovie.format || "No disponible",
-          estante: m.estante || baseMovie.estante || "N/A",
-          createdAt: baseMovie.createdAt || new Date().toISOString(),
+          title: m.title || "Obra sin título",
+          originalTitle: m.originalTitle || m.title || "No disponible",
+          year: Number(m.year) || 0,
+          rating: Number(m.rating) || 0,
+          duration: m.duration || "No disponible",
+          country: m.country || "No disponible",
+          director: m.director || "No disponible",
+          script: m.script || "No disponible",
+          cast: normalizedCast,
+          music: m.music || "No disponible",
+          photography: m.photography || "No disponible",
+          companies: m.companies || "No disponible",
+          genre: m.genre || "No disponible",
+          synopsis: m.synopsis || "Sin argumento registrado.",
+          poster: m.poster || DEMO_POSTER,
+          reviews: m.reviews || "Sin reseñas verificadas.",
+          awards: m.awards || "Sin premios registrados.",
+          ageRating: m.ageRating || "No disponible",
+          format: m.format || "No disponible",
+          estante: m.estante || "N/A",
+          createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          needsReview: baseMovie.needsReview || false,
-          poster: baseMovie.poster || DEMO_POSTER,
-          synopsis: baseMovie.synopsis || "Sin argumento registrado."
+          needsReview: false
         };
 
         await upsertMovie(finalMovie);
-        // NO HACEMOS push manual a setMovies, onSnapshot se encarga en tiempo real
 
         setBatchProgress(p => ({ ...p, current: index + 1 }));
-        await new Promise(r => setTimeout(r, 600)); // Pequeña pausa visual obligatoria entre llamadas
+        await new Promise(r => setTimeout(r, 100)); // Breve pausa visual
         index++;
       }
 
@@ -851,13 +869,13 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       // Calculate merged state synchronously
       const merged = { ...editForm };
       for (const key in data) {
-        if (data[key] && data[key] !== "No disponible" && data[key] !== "No encontrado") {
+        if (data[key] !== undefined && data[key] !== null && data[key] !== "") {
           merged[key] = data[key];
         }
       }
       if (data.poster && data.poster !== "No disponible" && data.poster !== "No encontrado") {
         merged.poster = data.poster;
-      } else {
+      } else if (!merged.poster) {
         merged.poster = editForm.poster;
       }
 
@@ -959,6 +977,19 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     handleMouseMove: handleMainMouseMove,
     handleMouseLeave: handleMainMouseLeave
   } = useAutoScrollVertical();
+
+  useEffect(() => {
+    if (selectedGenre !== prevGenreRef.current) {
+      setAnimateCategory(true);
+      prevGenreRef.current = selectedGenre;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (mainContentRef.current) {
+        mainContentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } else {
+      setAnimateCategory(false);
+    }
+  }, [selectedGenre, currentPage, selectedLetter, selectedYearRange, showHistoryOnly, showReviewOnly, searchTerm]);
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#0a0a0a] text-zinc-100 font-sans selection:bg-[var(--color-brand-main)]/40 overflow-hidden antialiased scroll-smooth">
@@ -1263,29 +1294,64 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
           </div>
         </div>
       )}
-      {batchProgress.active && (
-        <div className="fixed bottom-10 right-10 z-[200] bg-zinc-900 border border-white/10 shadow-2xl rounded-2xl p-6 w-[400px] animate-in slide-in-from-bottom-5 fade-in duration-300">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h3 className="text-white font-black uppercase tracking-widest text-sm">Lote Activo</h3>
-              <p className="text-zinc-400 text-xs mt-1">IA extrayendo datos...</p>
+      {batchProgress.active && (() => {
+        const progressPercentage = Math.round((batchProgress.current / Math.max(1, batchProgress.total)) * 100);
+        return (
+          <div className="fixed bottom-10 right-10 z-[200] bg-[#050507]/95 border border-[#b41d1d]/30 shadow-[0_20px_50px_rgba(0,0,0,0.9),0_0_40px_rgba(180,29,29,0.15)] rounded-2xl w-[380px] animate-in slide-in-from-bottom-5 fade-in duration-500 overflow-hidden backdrop-blur-xl">
+            {/* Tira de celuloide superior (Sprockets) */}
+            <div className="flex justify-between items-center px-4 py-2 bg-black/60 border-b border-white/[0.06] select-none">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <div key={i} className="w-2.5 h-3.5 bg-zinc-800 rounded-sm border border-black/40" />
+              ))}
             </div>
-            <Loader2 className="w-5 h-5 text-brand-main animate-spin" />
+            
+            <div className="p-5 flex flex-col gap-4">
+              <div className="flex justify-between items-start">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse inline-block" />
+                    <span className="text-zinc-500 font-mono text-[9px] font-black tracking-[0.25em] uppercase">RODAJE EN PROGRESO</span>
+                  </div>
+                  <h3 className="text-white font-black uppercase tracking-widest text-[13px] font-sans">
+                    PROCESO DE LOTE
+                  </h3>
+                </div>
+                <div className="flex items-center gap-1.5 bg-red-950/40 border border-red-500/20 px-2 py-1 rounded-md">
+                  <Clapperboard className="w-3.5 h-3.5 text-[#b41d1d] animate-pulse" />
+                  <span className="text-[10px] font-mono font-black text-red-400">{progressPercentage}%</span>
+                </div>
+              </div>
+              
+              <div className="space-y-1">
+                <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest font-mono">Título Actual</span>
+                <p className="text-white text-xs font-bold font-sans tracking-wide truncate max-w-full">
+                  {batchProgress.currentMovie || "Sincronizando obra..."}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="w-full bg-black/80 rounded-full h-2.5 overflow-hidden p-0.5 border border-white/[0.05]">
+                  <div 
+                    className="bg-gradient-to-r from-[#b41d1d] via-[#ff4d4d] to-[#ff9999] h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(239,68,68,0.5)]" 
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest">
+                  <span>TOMA {batchProgress.current}</span>
+                  <span>TOTAL: {batchProgress.total}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tira de celuloide inferior (Sprockets) */}
+            <div className="flex justify-between items-center px-4 py-2 bg-black/60 border-t border-white/[0.06] select-none">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <div key={i} className="w-2.5 h-3.5 bg-zinc-800 rounded-sm border border-black/40" />
+              ))}
+            </div>
           </div>
-          
-          <div className="w-full bg-black rounded-full h-2 overflow-hidden border border-white/5">
-            <div 
-              className="bg-brand-main h-full transition-all duration-300" 
-              style={{ width: `${(batchProgress.current / Math.max(1, batchProgress.total)) * 100}%` }}
-            />
-          </div>
-          
-          <div className="flex justify-between items-center mt-3 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-            <span className="truncate pr-4 max-w-[250px]">{batchProgress.currentMovie}</span>
-            <span className="text-brand-light shrink-0">{batchProgress.current} / {batchProgress.total}</span>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL MÚLTIPLE PEGADO */}
       {showPasteModal && (
@@ -1391,9 +1457,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         {paginatedMovies.length > 0 ? (
           <>
             <div 
-              key={`grid-${selectedGenre}-${currentPage}`} 
+              key={`grid-${selectedGenre}`} 
               className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-6 gap-y-12 pt-4 ${
-                !searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos"
+                animateCategory && !searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos"
                   ? "animate-grid-emergence" 
                   : ""
               }`}
@@ -1402,8 +1468,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                 <div 
                   key={movie.id} 
                   onClick={() => { setSelectedMovie(movie); setIsEditing(false); setIsDeleting(false); }} 
-                  className="group relative flex flex-col gap-3 cursor-pointer animate-in fade-in slide-in-from-bottom-8" 
-                  style={{ animationDelay: `${idx * 40}ms` }}
+                  className={`group relative flex flex-col gap-3 cursor-pointer ${
+                    animateCategory ? "animate-in fade-in slide-in-from-bottom-8" : ""
+                  }`}
+                  style={animateCategory ? { animationDelay: `${idx * 40}ms` } : undefined}
                 >
                   <div className="aspect-[2/3] w-full overflow-hidden relative rounded-lg shadow-[0_15px_40px_rgba(0,0,0,0.6)] border border-white/5 transition-all duration-500 group-hover:border-white/20 group-hover:-translate-y-2 group-hover:shadow-[0_20px_50px_rgba(220,38,38,0.15)] bg-zinc-900 shimmer-placeholder">
                     <img 
@@ -1442,9 +1510,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
                   <div className="flex flex-col gap-1 px-1">
                     <h3 className="text-zinc-100 font-medium text-[13px] leading-tight line-clamp-2 group-hover:text-brand-light transition-colors drop-shadow-sm tracking-normal">{toTitleCase(movie.title)}</h3>
-                    <div className="flex items-center text-zinc-500 text-[11px] font-semibold tracking-wide gap-2 mt-0.5">
+                    <div className="flex items-center text-[11px] tracking-wide gap-2 mt-0.5 text-zinc-400 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                       <span>{movie.year}</span>
-                      <span className="w-1 h-1 rounded-full bg-zinc-700" />
+                      <span className="w-1 h-1 rounded-full bg-zinc-500" />
                       <span className="truncate">{movie.director?.split(',')[0] || "Unknown"}</span>
                     </div>
                   </div>
@@ -1609,7 +1677,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                     <EditField label="Fotografía" value={editForm.photography} onChange={(v: string) => setEditForm({...editForm, photography: v})} />
                     <EditField label="Estudio" value={editForm.companies} onChange={(v: string) => setEditForm({...editForm, companies: v})} />
                     <EditField label="Estante" value={editForm.estante} onChange={(v: string) => setEditForm({...editForm, estante: v})} placeholder="Ej: Estante: 6.2" />
-                    <EditField label="Formato" value={editForm.format} onChange={(v: string) => setEditForm({...editForm, format: v})} className="col-span-1 sm:col-span-2" />
+                    <EditField label="Formato" value={editForm.format} onChange={(v: string) => setEditForm({...editForm, format: v})} className="col-span-1 md:col-span-2" />
                   </div>
 
                   <div className="relative group w-full bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.07] hover:border-white/[0.15] focus-within:border-[#b41d1d] focus-within:ring-1 focus-within:ring-[#b41d1d]/20 focus-within:bg-[#b41d1d]/[0.01] transition-all duration-300 rounded-xl p-4 flex flex-col gap-2 shadow-md">
@@ -1807,7 +1875,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
                   {/* Tech Specs */}
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-8 pt-8 border-t border-white/5">
-                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><MonitorPlay size={12} className="text-[#b41d1d]" /> Formato</span><span className="text-zinc-400 font-medium text-xs">{selectedMovie.format}</span></div>
+                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><MonitorPlay size={12} className="text-[#b41d1d]" /> Formato</span><span className="text-zinc-400 font-medium text-xs">{selectedMovie.format || "No disponible"}</span></div>
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><ClipboardList size={12} className="text-[#b41d1d]" /> Guion</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.script}>{selectedMovie.script}</span></div>
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Music size={12} className="text-[#b41d1d]" /> Música</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.music}>{selectedMovie.music}</span></div>
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><ImageIcon size={12} className="text-[#b41d1d]" /> Fotografía</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.photography}>{selectedMovie.photography}</span></div>

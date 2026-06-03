@@ -25,14 +25,15 @@ export function sanitizeMovieData(rawData: any): any {
     synopsis: rawData.synopsis ?? rawData.sinopsis ?? rawData.argumento ?? "",
     cast: Array.isArray(rawData.cast ?? rawData.elenco ?? rawData.actores) 
       ? (rawData.cast ?? rawData.elenco ?? rawData.actores) 
-      : [],
+      : (typeof (rawData.cast ?? rawData.elenco ?? rawData.actores) === 'string'
+        ? (rawData.cast ?? rawData.elenco ?? rawData.actores).split(/[,/]+/).map((a: string) => a.trim()).filter(Boolean)
+        : []),
     script: rawData.script ?? rawData.guion ?? rawData.guión ?? "",
     music: rawData.music ?? rawData.banda_sonora ?? rawData.música ?? rawData.musica ?? "",
     photography: rawData.photography ?? rawData.fotografia ?? rawData.fotografía ?? "",
     companies: rawData.companies ?? rawData.estudio ?? rawData.compania ?? rawData.compañía ?? rawData.estudios ?? "",
     reviews: rawData.reviews ?? rawData.reseñas ?? rawData.critica ?? rawData.crítica ?? "",
     awards: rawData.awards ?? rawData.premios ?? "",
-    streaming: rawData.streaming ?? rawData.plataformas ?? "",
     estante: rawData.estante ?? rawData.ubicacion ?? rawData.ubicación ?? ""
   };
 
@@ -183,13 +184,16 @@ async function startServer() {
 
       const systemInstruction = `Eres el motor automatizado de catalogación y crítico cinematográfico de una videoteca de alto nivel. Tu objetivo es procesar las entradas del usuario y devolver una ficha técnica perfectamente estructurada para exportación automática, manteniendo siempre un estándar de redacción limpio, moderno y premium.
 
+REGLA DE FORMATO DE ENTRADA OBLIGATORIA:
+Debes respetar de forma rigurosa y absoluta la información y estructura en que se suben los multipegados y las nuevas entradas. Tu tarea principal consiste únicamente en clasificar, mapear y reordenar fidedignamente la información introducida en los correspondientes campos de la ficha, sin omitir, alterar ni descartar ningún dato provisto por el usuario.
+
 REGLAS DE BÚSQUEDA PROFUNDA (Prioridad: Google Search):
 1. DEPENDENCIA TOTAL DE BÚSQUEDA: Tu herramienta principal y obligatoria es Google Search. Debes encontrar datos REALES y COMPLETOS. Está PROHIBIDO omitir campos.
 2. PROHIBIDO RENDIRSE: Si no hay resultados iniciales, reformula la búsqueda (ej. título original, director, país).
 3. RESOLUCIÓN DE AMBIGÜEDADES: Si hay remakes, usa el año proporcionado.
 4. CERO INTERVENCIÓN HUMANA: No hagas preguntas. Selecciona la fuente más confiable (IMDb, FilmAffinity, Wikipedia).
-5. INTEGRIDAD TOTAL: Debes llenar TODOS los campos del JSON solicitado. Si un dato técnico específico (ej. fotografía) es extremadamente difícil de encontrar, proporciona el dato más probable de la industria para esa obra o utiliza una fuente secundaria confiable. El objetivo es una ficha técnica completa al 100%.
-6. DETECCIÓN Y REACOMODO DE CAMPOS: Debes escanear exhaustivamente todo el texto de entrada y mapear de forma extremadamente rigurosa cada fragmento de información al campo del JSON correspondiente. No descartes ningún dato técnico disponible (duración, país, director, guion, elenco, música, fotografía, empresa productora, reseñas, premios, clasificación por edad, estante o formato). Si la información de entrada tiene nombres de etiquetas diferentes u otros idiomas, búscalas semánticamente y reacomódalas en el campo JSON correcto según el esquema solicitado.
+5. CERO INVENCIÓN Y RIGOR DE DATOS: Bajo ninguna circunstancia debes inventar, fabricar o alucinar datos técnicos (como director, guionista, fotógrafo, compositor, productora, casting o premios) si no están en la entrada ni se encuentran en la web. Si un dato no existe o no se puede hallar como verídico, coloca "No disponible" o "No encontrado". Está terminantemente prohibido inventar nombres ficticios o rellenar de forma inventiva.
+6. PRIORIDAD ABSOLUTA DEL INPUT DEL USUARIO: Debes realizar una lectura y escaneo exhaustivos de la información entregada por el usuario. Si el usuario ya suministró datos técnicos válidos (por ejemplo, el director exacto, el formato, la localización en estante, etc.), DEBES conservar esos valores exactamente como el usuario los especificó, dándoles prioridad total e indestructible sobre cualquier búsqueda externa de internet.
 
 El usuario te enviará la información en dos formatos:
 CASO A: DATOS DE API (Contiene "DATOS_API") -> Transforma y enriquece.
@@ -243,11 +247,10 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
           reviews: { type: Type.STRING, description: "Resumen de la crítica consensuada" },
           awards: { type: Type.STRING, description: "Principales premios ganados" },
           ageRating: { type: Type.STRING, description: "Clasificación de edad (Ej: B15, R, PG-13)" },
-          streaming: { type: Type.STRING, description: "Plataformas de streaming disponibles" },
           format: { type: Type.STRING, description: "Formato físico o digital de la película" },
           estante: { type: Type.STRING, description: "Ubicación o estante físico de la videoteca" }
         },
-        required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "streaming", "format", "estante"]
+        required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "format", "estante"]
       };
 
       let catalogSuccess = false;
@@ -368,7 +371,6 @@ Campos obligatorios:
   "reviews": "string",
   "awards": "string",
   "ageRating": "string",
-  "streaming": "string",
   "format": "string",
   "estante": "string"
 }
@@ -458,7 +460,6 @@ Campos obligatorios:
   "reviews": "string",
   "awards": "string",
   "ageRating": "string",
-  "streaming": "string",
   "format": "string",
   "estante": "string"
 }
@@ -685,36 +686,60 @@ Si un dato no existe, usa "" (o 0 si es numérico, o [] para 'cast'). Responde S
         return res.status(500).json({ error: "No se ha configurado ninguna API Key para batch-parse." });
       }
 
-      const prompt = `Extrae las películas del siguiente texto y conviértelas a un array de objetos JSON estructurados con todos sus datos técnicos disponibles.
-El texto contiene hasta ${limit} películas pegadas con o sin emojis. Ignora los emojis. Limpia y normaliza los datos.
+      const prompt = `IMPORTANTE - MODO REORDENACIÓN ULTRA ESTRICTA Y FIDEDIGNA: El usuario no desea búsquedas externas, alucinaciones o invención de datos. Tu ÚNICA Y EXCLUSIVA tarea es leer el texto provisto por el usuario, extraer de él los datos y reorganizarlos/clasificarlos de forma fidedigna y literal al 100% en un JSON válido estructurando los campos correspondientes. Está TERMINANTEMENTE PROHIBIDO alucinar, inventar, omitir, omitir campos o rellenar de forma diferente a lo que el usuario ha redactado en su texto. Debes mapear los datos exactamente igual a como vienen descritos.
 
-REGLA OBLIGATORIA DE RESILIENCIA Y SÍNTESIS:
-Si el texto de entrada es muy limitado, escueto o contiene únicamente los nombres o títulos de las películas (por ejemplo, "Gladiator (2000)"), DEBES extraer las películas indicadas y retornarlas como elementos válidos en el array JSON. Está TERMINANTEMENTE PROHIBIDO responder con mensajes de error, explicaciones sobre falta de información, o JSONs vacíos o de error alegando que no hay suficientes datos. Si no dispones de datos para campos adicionales (como director, sinopsis, etc.), simplemente colócales un string vacío "" (o 0 para rating y year, o [] para cast). Bajo ningún concepto te rindas o te niegues a estructurar los elementos que sí están presentes en el texto.
+REGLA DE CONSERVACIÓN TOTAL:
+Debes procesar y extraer todos y cada uno de los campos presentes en el texto del usuario. No tienes permitido omitir ningún atributo ni dejarlo en blanco o como "No disponible" si el texto de origen sí tiene un valor concreto para ese campo.
+
+DICCIONARIO DE MAPEO OBLIGATORIO DE ENTRADA A CAMPOS JSON:
+Deberás mapear exactamente los siguientes campos presentes en la entrada a sus respectivas propiedades JSON indicadas:
+1. "Póster" o "🖼️ Póster" (URL o enlace de imagen TMDB/IMDb) -> mapéalo a "poster" (conserva la URL íntegra).
+2. "Título Español" o "Título Videoteca" o "🎬 Título Español" o "🎬 Título Videoteca" -> mapéalo a "title" (IMPORTANTE: ELIMINA el emoji "⚠️" si está presente, deja solo el título limpio).
+3. "Título Original" o "🏷️ Título Original" -> mapéalo a "originalTitle".
+4. "Año" o "📅 Año" -> mapéalo a "year" (extrae el número entero).
+5. "Rating Global" o "⭐ Rating Global" -> mapéalo a "rating" (extrae el número decimal de calificación, por ejemplo de "8.5 /10 IMDb" extrae 8.5).
+6. "Género" o "🎭 Género" -> mapéalo a "genre" (conserva el listado o redacción del usuario).
+7. "Duración" o "⏱️ Duración" -> mapéalo a "duration" (conserva el texto original, ej: "155 minutos" o "155 min").
+8. "País" o "🌍 País" -> mapéalo a "country" (conserva el texto literal).
+9. "Clasificación" o "🔞 Clasificación" -> mapéalo a "ageRating" (ej: "B15").
+10. "Guion" o "Guión" o "✍️ Guion" -> mapéalo a "script" (conserva los nombres de guionistas de forma literal).
+11. "Formato" o "📺 Formato" -> mapéalo a "format" (ej: "BLU-RAY Original" o "DVD Copia" o "No disponible").
+12. "Dirección" o "🎬 Dirección" -> mapéalo a "director" (conserva el nombre literal. Elimina cualquier "Nota:" o "Nota de consistencia:").
+13. "Banda Sonora" o "Música" o "🎵 Banda Sonora" -> mapéalo a "music" (conserva el compositor literal).
+14. "Fotografía" o "📸 Fotografía" -> mapéalo a "photography" (conserva el director de foto literal).
+15. "Estudio" o "🏢 Estudio" -> mapéalo a "companies" (conserva el estudio literal).
+16. "Estante (Localización)" o "Estante" o "📚 Estante (Localización)" -> mapéalo a "estante" (conserva la localización literal).
+17. "Elenco" o "👥 Elenco" -> mapéalo a "cast" (ponlo en un array de strings. Cada elemento debe ser un actor con su personaje, ej: ["Actor (Personaje)"]).
+18. "Sinopsis" o "Sinopsis:" -> mapéalo a "synopsis" (conserva la redacción íntegra).
+19. "Reseñas críticas" o "Reseñas críticas:" -> mapéalo a "reviews" (conserva el consenso íntegro).
+20. "Premios históricos" o "Premios históricos:" -> mapéalo a "awards" (conserva los premios íntegros).
+
+REGLA DE NOTAS:
+IMPORTANTE: Elimina y descarta cualquier texto que empiece con "Nota:", "Notas:", o "(Nota de consistencia:" en cualquiera de los campos. Extrae EXCLUSIVAMENTE el valor correspondiente del atributo.
 
 Cada objeto del array dentro del JSON final debe tener EXACTAMENTE la siguiente estructura y tipos de campos:
 [
   {
-    "title": "Título de la película en español",
-    "originalTitle": "Título original de la película",
-    "year": 1999,
-    "rating": 8.5,
-    "duration": "Formato duración (ej. 120 min o N/A)",
-    "country": "País de origen",
-    "director": "Director de la obra",
-    "script": "Guionista de la película",
-    "cast": ["Actor principal 1 (Personaje)", "Actor principal 2 (Personaje)"],
-    "music": "Compositor de la música / Banda Sonora",
-    "photography": "Director de fotografía",
-    "companies": "Productora o estudio principal",
-    "genre": "Géneros separados por barras, ej. Acción / Ciencia ficción",
-    "synopsis": "Sinopsis de la película",
-    "poster": "URL de póster si está presente en el texto, o vacío",
-    "reviews": "Reseñas críticas condensadas o consenso",
-    "awards": "Premios ganados o relevantes",
-    "ageRating": "Clasificación de edad, ej: B15, R, PG-13",
-    "format": "Formato físico o digital, ej: Blu-ray, DVD, VHS",
-    "estante": "Ubicación o estante físico de la videoteca",
-    "streaming": "Plataformas de streaming disponibles"
+    "title": "...",
+    "originalTitle": "...",
+    "year": 0,
+    "rating": 0,
+    "duration": "...",
+    "country": "...",
+    "director": "...",
+    "script": "...",
+    "cast": ["..."],
+    "music": "...",
+    "photography": "...",
+    "companies": "...",
+    "genre": "...",
+    "synopsis": "...",
+    "poster": "...",
+    "reviews": "...",
+    "awards": "...",
+    "ageRating": "...",
+    "format": "...",
+    "estante": "..."
   }
 ]
 
@@ -752,10 +777,9 @@ ${text}`;
               awards: { type: Type.STRING, description: "Premios ganados o relevantes" },
               ageRating: { type: Type.STRING, description: "Clasificación de edad (Ej: B15, R, A)" },
               format: { type: Type.STRING, description: "Formato físico o digital del elemento pegado" },
-              estante: { type: Type.STRING, description: "Ubicación o estante físico de la videoteca" },
-              streaming: { type: Type.STRING, description: "Plataformas de streaming si se mencionan" }
+              estante: { type: Type.STRING, description: "Ubicación o estante físico de la videoteca" }
             },
-            required: ["title"]
+            required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "format", "estante"]
           }
         };
 
