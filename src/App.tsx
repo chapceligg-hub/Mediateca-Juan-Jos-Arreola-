@@ -663,8 +663,65 @@ export default function App() {
   const [animateCategory, setAnimateCategory] = useState(false);
   const prevGenreRef = useRef(selectedGenre);
 
+  const [isEnglish, setIsEnglish] = useState(false);
+
   const t = (key: string): string => {
-    return key;
+    if (!isEnglish) return key;
+    const dictionary: Record<string, string> = {
+      "Explorar": "Explore",
+      "ALFABÉTICO": "Alphabetical",
+      "ÉPOCAS": "Eras",
+      "CATEGORÍAS": "Categories",
+      "FILTRO DEL DIRECTOR": "Director's Pick",
+      "Actividad": "Activity",
+      "Gestión": "Management",
+      "MULTI PEGADO": "Multi Paste",
+      "GESTIONAR ADMINS": "Manage Admins",
+      "PARA REVISIÓN": "Under Review",
+      "NUEVA ENTRADA": "New Entry",
+      "Buscar título o año...": "Search title or year...",
+      "Cualquier Año": "Any Year",
+      "Administrador": "Administrator",
+      "Editor": "Editor",
+      "Todos": "All",
+      "Todos los géneros": "All genres",
+      "Cualquier época": "Any era",
+      "Todas": "All",
+      "DIALS DE CALIBRACIÓN": "Calibration Dials",
+      "LA SALA": "The Venue",
+      "EL TONO": "The Mood",
+      "LA DURACIÓN": "The Duration",
+      "Solo": "Solo / Alone",
+      "Pareja": "Couple",
+      "Grupo / Amigos": "Group / Friends",
+      "Trama / Intelectual": "Plot / Intellectual",
+      "Acción / Ritmo": "Action / Pace",
+      "Comedia / Ligera": "Comedy / Light",
+      "Drama / Emotivo": "Drama / Emotional",
+      "Suspense / Tensión": "Suspense / Tension",
+      "Terror / Atmosférico": "Horror / Atmospheric",
+      "Menos de 90 min": "Under 90 min",
+      "Entre 90 y 120 min": "90 to 120 min",
+      "Más de 120 min": "Over 120 min",
+      "PROYECTAR SELECCIÓN": "Project Selection",
+      "Diseña la experiencia cinematográfica perfecta": "Design the perfect cinematic experience",
+      "Elige con quién estás, el ritmo de historia que deseas y la duración. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.": "Choose your company, narrative pace, and duration. Our recommendation engine will hand-pick the ideal film from our repository.",
+      "OBRAS EN REVISIÓN": "Films Under Review",
+      "HISTORIAL DE CONSULTA": "Query History",
+      "Ubicación": "Location",
+      "Ubicación en Estante": "Shelf Location",
+      "Recomendaciones": "Recommendations",
+      "obra en exhibición": "film on display",
+      "obras en exhibición": "films on display",
+      "RECOMENDACIÓN DEL DIRECTOR": "DIRECTOR'S PICK",
+      "NUESTRO TOP 3 PARA TI": "OUR TOP 3 FOR YOU",
+      "No hay recomendaciones que coincidan exactamente. Ajusta los diales para encontrar otras obras del catálogo.": "No recommendations found. Try adjusting calibration dials.",
+      "REVISAR": "REVIEW",
+      "CLÁSICO": "CLASSIC",
+      "ARCHIVO": "ARCHIVE",
+      "HISTORIAL": "HISTORY",
+    };
+    return dictionary[key] || key;
   };
 
 
