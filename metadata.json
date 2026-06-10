@@ -1,5 +1,5 @@
 {
-  "name": "Remix: Videoteca",
+  "name": "Remix: Mediateca",
   "description": "Una aplicación avanzada de gestión de catálogo de películas con integración de IA para catalogación automática, búsqueda forense y persistencia en la nube.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

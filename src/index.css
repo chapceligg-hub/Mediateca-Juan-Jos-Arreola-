@@ -252,4 +252,40 @@
   .cinema-ticket-glowing {
     filter: drop-shadow(0 0 12px rgba(180, 29, 29, 0.95)) drop-shadow(0 0 4px rgba(180, 29, 29, 0.6));
   }
+
+  @keyframes glow-entrance {
+    0% {
+      opacity: 0;
+      text-shadow: 0 0 0px rgba(255, 255, 255, 0);
+      transform: scale(0.98);
+    }
+    15% {
+      opacity: 0.95;
+      text-shadow: 0 0 8px rgba(255, 255, 255, 0.9), 0 0 16px rgba(255, 255, 255, 0.6), 0 0 32px rgba(180, 29, 29, 0.5);
+      color: #ffffff;
+      transform: scale(1.015);
+    }
+    30% {
+      opacity: 1;
+      text-shadow: 0 0 12px rgba(255, 255, 255, 0.95), 0 0 24px rgba(255, 255, 255, 0.8), 0 0 45px rgba(255, 255, 255, 0.5);
+      color: #ffffff;
+      transform: scale(1.01);
+    }
+    60% {
+      opacity: 1;
+      text-shadow: 0 0 4px rgba(255, 255, 255, 0.4), 0 0 8px rgba(255, 255, 255, 0.2);
+      color: #fafafa;
+      transform: scale(1.002);
+    }
+    100% {
+      opacity: 1;
+      text-shadow: none;
+      color: #f4f4f5;
+      transform: scale(1);
+    }
+  }
+
+  .text-glow-animate {
+    animation: glow-entrance 1.6s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  }
 }

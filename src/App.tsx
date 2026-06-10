@@ -1,11 +1,13 @@
 // Modificaciones completas a App.tsx basadas en el diseño original del usuario
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  Search, Film, Star, Clock, User, Calendar, X, Plus, Edit2, Check, Trash2, 
+  Search, Film, Star, Clock, User, Calendar, X, Plus, Edit2, Check, Trash2, Video,
   Sparkles, Loader2, AlertTriangle, Clapperboard, MonitorPlay, Trophy, Quote as QuoteIcon, 
   Zap, ImageIcon, Landmark, History as HistoryIcon, Type, ChevronRight, ChevronLeft, ChevronDown, Globe, 
   DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload,
-  ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv
+  ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
+  Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, BookOpen, Shield, Orbit, Flag, Activity,
+  Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain
 } from 'lucide-react';
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
@@ -171,6 +173,18 @@ const getGenrePillClasses = (genreStr: string): { bg: string, text: string, bord
   };
 };
 
+/**
+ * Normaliza un texto convirtiéndolo a minúsculas y eliminando tildes/acentos
+ */
+export const normalizeText = (text: string | null | undefined): string => {
+  if (!text) return "";
+  return String(text)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+};
+
 export const getNormalizedGenres = (genreData: any): string[] => {
   if (!genreData) return [];
   
@@ -184,6 +198,12 @@ export const getNormalizedGenres = (genreData: any): string[] => {
   }
   
   const parts = genreStr.split(/\s*[\/,\|;]\s*|\s+-\s+| y /);
+  const ALLOWED = [
+    'Clásico', 'Acción', 'Aventuras', 'Animación', 'Biografía', 'Bélico', 
+    'Ciencia Ficción', 'Comedia', 'Crimen', 'Documental', 'Drama', 'Familia', 
+    'Fantasía', 'Historia', 'Misterio', 'Musical', 'Romance', 'Suspenso', 
+    'Terror', 'Thriller', 'Western', 'Mexicanas'
+  ];
   const normalizedGenres = new Set<string>();
   
   parts.forEach(part => {
@@ -191,65 +211,94 @@ export const getNormalizedGenres = (genreData: any): string[] => {
     if (!cleanGenre) return;
     
     cleanGenre = cleanGenre.replace(/\.$/, '');
-    let cleanLower = cleanGenre.toLowerCase();
+    const cleanLower = cleanGenre.toLowerCase();
     
-    if (["satira", "sátira", "sátira política", "satira politica", "comedia negra", "comedia dramática", "humor absurdo", "farsa", "comedias", "comedy"].includes(cleanLower)) {
-      cleanGenre = "Comedia";
-    } else if (["histórico", "historico", "historia / biografía", "drama histórico", "mitología", "bíblico", "holocausto", "historia / biografia", "épico", "epico"].includes(cleanLower)) {
-      cleanGenre = "Historia";
-    } else if (["biografía", "biografia", "biográfico", "biografico"].includes(cleanLower)) {
-      cleanGenre = "Biografía";
-    } else if (["intriga / suspenso", "suspense", "suspenso", "intriga", "suspenso psicológico", "intrigas", "psicológico", "psicologico", "drama psicológico", "judicial", "drama judicial"].includes(cleanLower)) {
-      cleanGenre = "Suspense";
-    } else if (["terror", "horror", "terror psicológico", "sobrenatural", "slasher"].includes(cleanLower)) {
-      cleanGenre = "Terror";
-    } else if (["thriller", "thriller médico", "thriller político", "thriller psicológico"].includes(cleanLower)) {
-      cleanGenre = "Thriller";
-    } else if (["crimen", "crimen / noir", "neo-noir", "cine negro", "film noir", "espionaje", "policial", "policiaco"].includes(cleanLower)) {
-      cleanGenre = "Crimen";
-    } else if (["cine de arte y culto", "cine de arte", "arte", "ensayo", "experimental", "filosófico", "espiritual", "culto", "social", "transgresión", "road movie", "folklore", "inspiracional", "antología", "antologia", "político", "politico", "politicos", "politica"].includes(cleanLower)) {
-      cleanGenre = "Drama";
-    } else if (["familia", "familiar", "family", "juvenil", "infantil", "juvenil / infantil", "coming-of-age"].includes(cleanLower)) {
-      cleanGenre = "Familia";
-    } else if (["documental", "documentary", "docudrama", "mockumentary", "falso documental", "metraje encontrado", "found footage"].includes(cleanLower)) {
-      cleanGenre = "Documental";
-    } else if (["ciencia ficción", "ciencia ficcion", "sci-fi", "scifi", "ficción", "ficcion", "superhéroes", "superheroes", "distopía", "distopia"].includes(cleanLower)) {
-      cleanGenre = "Ciencia Ficción";
-    } else if (["comedia", "comedia c"].includes(cleanLower)) {
-      cleanGenre = "Comedia";
-    } else if (["comedia musical", "musical ranchero", "musical", "música", "musica", "music", "ranchera", "cine de rumberas", "rumberas"].includes(cleanLower)) {
-      cleanGenre = "Musical";
-    } else if (["drama"].includes(cleanLower)) {
-      cleanGenre = "Drama";
-    } else if (["clásico", "clásica", "clásicas"].includes(cleanLower)) {
-      cleanGenre = "Clásico";
-    } else if (["comedia romántica", "romance", "romantico", "romántico", "romantic"].includes(cleanLower)) {
-      cleanGenre = "Romance";
+    let targetGenre: string | null = null;
+    
+    if (["satira", "sátira", "sátira política", "satira politica", "comedia negra", "comedia dramática", "humor absurdo", "farsa", "comedias", "comedy", "comedia"].includes(cleanLower)) {
+      targetGenre = "Comedia";
+    } else if (["histórico", "historico", "historia / biografía", "drama histórico", "mitología", "bíblico", "holocausto", "historia / biografia", "épico", "epico", "history", "historia"].includes(cleanLower)) {
+      targetGenre = "Historia";
+    } else if (["biografía", "biografia", "biográfico", "biografico", "biography", "biographical"].includes(cleanLower)) {
+      targetGenre = "Biografía";
+    } else if (["intriga / suspenso", "suspense", "suspenso", "intriga", "suspenso psicológico", "intrigas", "psicológico", "psicologico", "drama psicológico", "judicial", "drama judicial", "police", "policiaca", "policíaca"].includes(cleanLower)) {
+      targetGenre = "Suspenso";
+    } else if (["terror", "horror", "terror psicológico", "sobrenatural", "slasher", "miedo", "paranormal", "gótico", "gotico"].includes(cleanLower)) {
+      targetGenre = "Terror";
+    } else if (["thriller", "thriller médico", "thriller político", "thriller psicológico", "thrillers"].includes(cleanLower)) {
+      targetGenre = "Thriller";
+    } else if (["crimen", "crimen / noir", "neo-noir", "cine negro", "film noir", "espionaje", "policial", "policiaco", "crime", "gangster", "gangsters"].includes(cleanLower)) {
+      targetGenre = "Crimen";
+    } else if (["cine de arte y culto", "cine de arte", "arte", "ensayo", "experimental", "filosófico", "espiritual", "culto", "social", "transgresión", "road movie", "folklore", "inspiracional", "antología", "antologia", "político", "politico", "politicos", "politica", "drama", "dramas"].includes(cleanLower)) {
+      targetGenre = "Drama";
+    } else if (["familia", "familiar", "family", "juvenil", "infantil", "juvenil / infantil", "coming-of-age", "kids"].includes(cleanLower)) {
+      targetGenre = "Familia";
+    } else if (["documental", "documentary", "docudrama", "mockumentary", "falso documental", "metraje encontrado", "found footage", "documentales"].includes(cleanLower)) {
+      targetGenre = "Documental";
+    } else if (["ciencia ficción", "ciencia ficcion", "sci-fi", "scifi", "ficción", "ficcion", "superhéroes", "superheroes", "distopía", "distopia", "science fiction", "fiction"].includes(cleanLower)) {
+      targetGenre = "Ciencia Ficción";
+    } else if (["comedia musical", "musical ranchero", "musical", "música", "musica", "music", "ranchera", "cine de rumberas", "rumberas", "musicales", "bso", "soundtrack"].includes(cleanLower)) {
+      targetGenre = "Musical";
+    } else if (["clásico", "clásica", "clásicas", "classic", "vintage", "antiguo", "antigua"].includes(cleanLower)) {
+      targetGenre = "Clásico";
+    } else if (["comedia romántica", "romance", "romantico", "romántico", "romantic", "amor"].includes(cleanLower)) {
+      targetGenre = "Romance";
     } else if (["deporte", "deportes", "deportivo", "lucha libre", "artes marciales", "acción", "accion", "action"].includes(cleanLower)) {
-      cleanGenre = "Acción";
-    } else if (["mexicana", "mexicanas", "mexicano", "cine mexicano", "película mexicana"].includes(cleanLower) || cleanLower.includes("méxico") || cleanLower.includes("mexico")) {
-      cleanGenre = "Mexicanas";
+      targetGenre = "Acción";
+    } else if (["mexicana", "mexicanas", "mexicano", "cine mexicano", "película mexicana", "mexican"].includes(cleanLower) || cleanLower.includes("méxico") || cleanLower.includes("mexico")) {
+      targetGenre = "Mexicanas";
     } else if (["aventura", "aventuras", "adventure", "catástrofe", "catastrofe"].includes(cleanLower)) {
-      cleanGenre = "Aventuras";
-    } else if (["animacion", "animación", "animation"].includes(cleanLower)) {
-      cleanGenre = "Animación";
+      targetGenre = "Aventuras";
+    } else if (["animacion", "animación", "animation", "anime"].includes(cleanLower)) {
+      targetGenre = "Animación";
     } else if (["belico", "bélico", "guerra", "war"].includes(cleanLower)) {
-      cleanGenre = "Bélico";
+      targetGenre = "Bélico";
     } else if (["fantasía", "fantasia", "fantastico", "fantástico", "fantasy"].includes(cleanLower)) {
-      cleanGenre = "Fantasía";
+      targetGenre = "Fantasía";
     } else if (["misterio", "mystery", "enigma"].includes(cleanLower)) {
-      cleanGenre = "Misterio";
-    } else if (["western", "vaqueros"].includes(cleanLower)) {
-      cleanGenre = "Western";
+      targetGenre = "Misterio";
+    } else if (["western", "vaqueros", "del oeste", "oeste"].includes(cleanLower)) {
+      targetGenre = "Western";
     } else {
-      cleanGenre = cleanGenre.charAt(0).toUpperCase() + cleanGenre.slice(1).toLowerCase();
+      const matched = ALLOWED.find(allowedGenre => allowedGenre.toLowerCase() === cleanLower);
+      if (matched) {
+        targetGenre = matched;
+      }
     }
     
-    normalizedGenres.add(cleanGenre);
+    if (targetGenre && ALLOWED.includes(targetGenre)) {
+      normalizedGenres.add(targetGenre);
+    }
   });
   
   return Array.from(normalizedGenres);
 };
+
+const curatorGenresList = [
+  { id: 'Todos', label: 'Todos', icon: (color: string) => <Film size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Clásico', label: 'Clásico', icon: (color: string) => <Award size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Acción', label: 'Acción', icon: (color: string) => <Flame size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Aventuras', label: 'Aventuras', icon: (color: string) => <Compass size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Animación', label: 'Animación', icon: (color: string) => <Palette size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Biografía', label: 'Biografía', icon: (color: string) => <User size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Bélico', label: 'Bélico', icon: (color: string) => <Swords size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Ciencia Ficción', label: 'Ciencia Ficción', icon: (color: string) => <Rocket size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Comedia', label: 'Comedia', icon: (color: string) => <Laugh size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Crimen', label: 'Crimen', icon: (color: string) => <Fingerprint size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Documental', label: 'Documental', icon: (color: string) => <Video size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Drama', label: 'Drama', icon: (color: string) => <HeartCrack size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Familia', label: 'Familia', icon: (color: string) => <Home size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Fantasía', label: 'Fantasía', icon: (color: string) => <Wand2 size={16} color={color} className="shrink-0" /> },
+  { id: 'Historia', label: 'Historia', icon: (color: string) => <HistoryIcon size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Misterio', label: 'Misterio', icon: (color: string) => <HelpCircle size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Musical', label: 'Musical', icon: (color: string) => <Music size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Romance', label: 'Romance', icon: (color: string) => <Heart size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Suspense', label: 'Suspense', icon: (color: string) => <Eye size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Terror', label: 'Terror', icon: (color: string) => <Skull size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Thriller', label: 'Thriller', icon: (color: string) => <Zap size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Western', label: 'Western', icon: (color: string) => <Mountain size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Mexicanas', label: 'Mexicanas', icon: (color: string) => <Flag size={16} color={color} className="shrink-0 transition-colors duration-300" /> }
+];
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -266,11 +315,277 @@ export default function App() {
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [selectedYearRange, setSelectedYearRange] = useState<{ label: string, start: number, end: number } | null>(null);
   
+  // Director Filter premium curate state
+  const [isDirectorFilterActive, setIsDirectorFilterActive] = useState(false);
+  const [curatorSala, setCuratorSala] = useState<'Solo' | 'Dúo' | 'Grupo'>('Solo');
+  const [curatorTono, setCuratorTono] = useState<'Ligero' | 'Trama' | 'Intenso'>('Trama');
+  const [curatorGenero, setCuratorGenero] = useState<string>('Todos');
+  const [curatorEpoca, setCuratorEpoca] = useState<string>('Todas');
+  const [isEpochDropdownOpen, setIsEpochDropdownOpen] = useState(false);
+  const [curatorTiempo, setCuratorTiempo] = useState<'Corto (<90 min)' | 'Estándar' | 'Maratón (+2 hrs)'>('Estándar');
+  const [isGenreDropdownOpen, setIsGenreDropdownOpen] = useState(false);
+  const [isCurating, setIsCurating] = useState(false);
+  const [isClapping, setIsClapping] = useState(false);
+  const [curationError, setCurationError] = useState<string | null>(null);
+  const [curatedSessionIds, setCuratedSessionIds] = useState<string[]>([]);
+  const [curatorRecommendations, setCuratorRecommendations] = useState<any[]>([]);
+
+  // Synthesizes a real wooden clapperboard snap sound
+  const playClapSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.08);
+      
+      gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+      
+      const bufferSize = audioCtx.sampleRate * 0.05;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      
+      const noiseNode = audioCtx.createBufferSource();
+      noiseNode.buffer = buffer;
+      
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1000;
+      filter.Q.value = 2;
+      
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+      
+      noiseNode.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(audioCtx.destination);
+      
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      osc.start();
+      noiseNode.start();
+      
+      osc.stop(audioCtx.currentTime + 0.09);
+      noiseNode.stop(audioCtx.currentTime + 0.09);
+    } catch (e) {
+      console.warn("AudioContext not supported or blocked by user gesture", e);
+    }
+  };
+
+  const handleCurate = async () => {
+    if (movies.length === 0) return;
+    setIsCurating(true);
+    setCurationError(null);
+    setIsClapping(true);
+    playClapSound();
+
+    // Give some time for the clapper clack animation snap to play before launching local curation
+    await new Promise(resolve => setTimeout(resolve, 800));
+    setIsClapping(false);
+
+    try {
+      const prevIds = curatorRecommendations.map(r => r.id);
+      
+      const candidates = movies.map(m => {
+        let score = 0;
+        let isStrictMatch = true;
+
+        const movieGenreStr = Array.isArray(m.genre) ? m.genre.join(' / ') : String(m.genre || '');
+        const movieGenreUpper = movieGenreStr.toUpperCase();
+        
+        // 1. Strict Genre Matching
+        if (curatorGenero !== 'Todos' && curatorGenero !== 'Cualquier género') {
+          const genUpper = curatorGenero.toUpperCase();
+          let genMatch = false;
+          if (genUpper === "SUSPENSE" || genUpper === "SUSPENSO") {
+            if (movieGenreUpper.includes("SUSPENSO") || movieGenreUpper.includes("SUSPENSE") || movieGenreUpper.includes("INTRIGA")) {
+              genMatch = true;
+            }
+          } else {
+            if (movieGenreUpper.includes(genUpper)) {
+              genMatch = true;
+            }
+          }
+          if (!genMatch) isStrictMatch = false;
+        }
+
+        // 2. Strict Epoch Matching
+        if (curatorEpoca !== 'Todas' && curatorEpoca !== 'Cualquier época') {
+          const matchedRange = YEAR_RANGES.find(r => r.label === curatorEpoca);
+          if (matchedRange) {
+            const mYear = m.year ? parseInt(String(m.year)) : 0;
+            if (mYear < matchedRange.start || mYear >= matchedRange.end) {
+              isStrictMatch = false;
+            }
+          }
+        }
+
+        // 3. Duration Matching (Soft score)
+        const durationMin = parseInt(m.duration) || 100;
+        if (curatorTiempo === 'Corto (<90 min)') {
+          if (durationMin < 90) score += 200;
+          else if (durationMin <= 100) score += 60;
+          else score -= 100;
+        } else if (curatorTiempo === 'Maratón (+2 hrs)') {
+          if (durationMin >= 120) score += 200;
+          else if (durationMin >= 110) score += 60;
+          else score -= 100;
+        } else { // Estándar
+          if (durationMin >= 90 && durationMin < 120) score += 200;
+          else score -= 50;
+        }
+
+        // 4. Tone Matching (Soft score)
+        if (curatorTono === 'Ligero') {
+          if (movieGenreUpper.includes('COMEDIA') || movieGenreUpper.includes('ANIMACI') || movieGenreUpper.includes('AVENTURA') || movieGenreUpper.includes('FAMILIA') || movieGenreUpper.includes('FANTAS')) {
+            score += 150;
+          } else { score -= 50; }
+        } else if (curatorTono === 'Trama') {
+          if (movieGenreUpper.includes('DRAMA') || movieGenreUpper.includes('MISTERIO') || movieGenreUpper.includes('INTRIGA') || movieGenreUpper.includes('HISTOR') || movieGenreUpper.includes('ROMANCE') || movieGenreUpper.includes('DOCUMENTAL')) {
+            score += 150;
+          } else { score -= 50; }
+        } else if (curatorTono === 'Intenso') {
+          if (movieGenreUpper.includes('TERROR') || movieGenreUpper.includes('THRILLER') || movieGenreUpper.includes('CRIMEN') || movieGenreUpper.includes('ACCI') || movieGenreUpper.includes('SUSPENSO')) {
+            score += 150;
+          } else { score -= 50; }
+        }
+
+        // 5. Sala (Company) Matching (Soft score)
+        if (curatorSala === 'Solo') {
+          if (movieGenreUpper.includes('DRAMA') || movieGenreUpper.includes('DOCUMENTAL') || movieGenreUpper.includes('MISTERIO') || movieGenreUpper.includes('THRILLER') || movieGenreUpper.includes('CIENCIA FICCI') || movieGenreUpper.includes('INDIE')) {
+            score += 150;
+          }
+        } else if (curatorSala === 'Dúo') {
+          if (movieGenreUpper.includes('ROMANCE') || movieGenreUpper.includes('COMEDIA') || movieGenreUpper.includes('TERROR') || movieGenreUpper.includes('SUSPENSO')) {
+            score += 150;
+          }
+        } else if (curatorSala === 'Grupo') {
+          if (movieGenreUpper.includes('ACCI') || movieGenreUpper.includes('COMEDIA') || movieGenreUpper.includes('TERROR') || movieGenreUpper.includes('AVENTURA') || movieGenreUpper.includes('FAMILIA')) {
+            score += 150;
+          }
+        }
+        
+        // Exclude/penalize previously recommended movies to avoid immediate repetitions
+        if (prevIds.includes(m.id)) {
+          score -= 10000;
+        }
+
+        // Apply heavy penalty for recently curated movies in this session to guarantee a new diverse set
+        if (curatedSessionIds.includes(m.id)) {
+          score -= 100000;
+        }
+
+        // Add highly random variance so we get exciting, unique combinations on each click
+        score += Math.random() * 300;
+
+        return { movie: m, score, isStrictMatch };
+      });
+
+      // Filter out those that didn't strictly match Genre or Epoch
+      const exactMatches = candidates.filter(c => c.isStrictMatch);
+      
+      if (exactMatches.length === 0) {
+        throw new Error("No encontramos películas que cumplan todos estos requisitos.");
+      }
+
+      // Sort by score descending and take up to top 3
+      const sorted = exactMatches.sort((a, b) => b.score - a.score);
+      const selectedMovies = sorted.slice(0, 3).map(item => item.movie);
+
+      // Generate dynamic filmmaker-centric reasons
+      const generatedRecs = selectedMovies.map(m => {
+        const salaLabels = {
+          'Solo': 'en la soledad del cinéfilo',
+          'Dúo': 'en la calidez de un dúo cinéfilo',
+          'Grupo': 'compartiendo la fascinación colectiva en grupo'
+        };
+        const tonoLabels = {
+          'Ligero': 'divertido, relajado y lleno de vitalidad humorística',
+          'Trama': 'interesante, cautivador y de fina intriga dramática',
+          'Intenso': 'fuerte, electrizante y de una inmensa emoción cinematográfica'
+        };
+        const tiempoLabels = {
+          'Corto (<90 min)': 'de metraje ágil e idóneo para devorar de inmediato',
+          'Estándar': 'con una duración clásica perfectamente pautada',
+          'Maratón (+2 hrs)': 'bajo un formato monumental digno de maratón'
+        };
+
+        const templates = [
+          `Una obra ideal para consagrar ${salaLabels[curatorSala] || 'tu sesión'}. Su estructura posee un pulso ${tonoLabels[curatorTono] || 'exquisito'}, que florece con madurez gracias a su formato ${tiempoLabels[curatorTiempo] || 'de metraje'}. Un retrato de inestabilidad y fascinación ordinaria que desafía al conformismo cotidiano.`,
+          `El director compone aquí un viaje existencial de carretera que cruza parajes inhóspitos. Es un lienzo idóneo para ver ${salaLabels[curatorSala] || 'disfrutar'}, calibrando un compás ${tonoLabels[curatorTono] || 'magnífico'}, estructurado perfectamente con su ${tiempoLabels[curatorTiempo] || 'espectáculo'}. Puro cine de altísimo nivel.`,
+          `Una gema de incalculable valor estético que brota de la claustrofobia de la vida urbana. Altamente recomendada para ver ${salaLabels[curatorSala] || 'en tu sala'}; despliega un carácter singular que rompe con la rutina tradicional en combinación con su ${tiempoLabels[curatorTiempo] || 'característico metraje'}.`
+        ];
+        
+        // Pick template based on movie characteristics
+        const idx = Math.abs((m.title.length + m.year) % templates.length);
+        const reason = templates[idx];
+
+        return {
+          id: m.id,
+          title: m.title,
+          reason
+        };
+      });
+
+      setCuratorRecommendations(generatedRecs);
+
+      // Update session history to ensure NO repetitions of combinations.
+      // We calculate how many movies matching the active curator parameters are in the library.
+      const matchingPoolCount = movies.filter(m => {
+        let matchesGenre = true;
+        if (curatorGenero !== 'Todos' && curatorGenero !== 'Cualquier género') {
+          const genUpper = curatorGenero.toUpperCase();
+          const movieGenreStr = Array.isArray(m.genre) ? m.genre.join(' / ') : String(m.genre || '');
+          const movieGenreUpper = movieGenreStr.toUpperCase();
+          if (genUpper === "SUSPENSE" || genUpper === "SUSPENSO") {
+            matchesGenre = movieGenreUpper.includes("SUSPENSO") || movieGenreUpper.includes("SUSPENSE") || movieGenreUpper.includes("INTRIGA");
+          } else {
+            matchesGenre = movieGenreUpper.includes(genUpper);
+          }
+        }
+        let matchesEpoch = true;
+        if (curatorEpoca !== 'Todas' && curatorEpoca !== 'Cualquier época') {
+          const matchedRange = YEAR_RANGES.find(r => r.label === curatorEpoca);
+          if (matchedRange) {
+            const mYear = m.year ? parseInt(String(m.year)) : 0;
+            matchesEpoch = mYear >= matchedRange.start && mYear < matchedRange.end;
+          }
+        }
+        return matchesGenre && matchesEpoch;
+      }).length;
+
+      const newSessionIds = [...curatedSessionIds, ...selectedMovies.map(sm => sm.id)];
+      // If we've shown more than 70% of the available fitting films (or pool is small), reset history so they can cycle
+      if (newSessionIds.filter(id => movies.some(m => m.id === id)).length >= Math.max(1, matchingPoolCount * 0.7)) {
+        setCuratedSessionIds(selectedMovies.map(sm => sm.id));
+      } else {
+        setCuratedSessionIds(newSessionIds);
+      }
+    } catch (err: any) {
+      console.error("Error al curar de forma local:", err);
+      setCurationError(err.message || "Error al realizar la recomendación cinematográfica.");
+    } finally {
+      setIsCurating(false);
+    }
+  };
+
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearchTerm(searchQuery);
-    }, 300);
+      if (searchQuery.trim() !== "") {
+        setIsDirectorFilterActive(false);
+      }
+    }, 50);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
@@ -282,6 +597,8 @@ export default function App() {
     setSearchTerm("");
     setShowReviewOnly(false);
     setShowHistoryOnly(false);
+    setIsDirectorFilterActive(false);
+    setCuratorRecommendations([]);
     setCurrentPage(1);
     setIsMobileMenuOpen(false);
   };
@@ -294,6 +611,8 @@ export default function App() {
     setSearchTerm("");
     setShowReviewOnly(false);
     setShowHistoryOnly(true);
+    setIsDirectorFilterActive(false);
+    setCuratorRecommendations([]);
     setCurrentPage(1);
     setIsMobileMenuOpen(false);
   };
@@ -343,6 +662,10 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [animateCategory, setAnimateCategory] = useState(false);
   const prevGenreRef = useRef(selectedGenre);
+
+  const t = (key: string): string => {
+    return key;
+  };
 
 
   const [batchProgress, setBatchProgress] = useState({ active: false, total: 0, current: 0, currentMovie: "" });
@@ -473,7 +796,7 @@ export default function App() {
 
     const ficha = `${orderNumber}) ${headerTitle} (${selectedMovie.year || ''})
 🖼️ Póster: ${selectedMovie.poster || 'No disponible'}
-🎬 Título Videoteca: ${headerTitle}
+🎬 Título Mediateca: ${headerTitle}
 🏷️ Título Original: ${selectedMovie.originalTitle || 'No disponible'}
 📅 Año: ${selectedMovie.year || 'No disponible'}
 ⭐ Rating Global: ${selectedMovie.rating || '0'}/10 IMDb
@@ -663,8 +986,16 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       }
       setIsAuthChecking(false);
     });
-    fetchIconicQuote().then(setRandomQuote);
   }, [isBypassActive]);
+
+  // Rotación periódica de las 123 frases icónicas de cine (cada minuto) 100% client-side sin lecturas en base de datos
+  useEffect(() => {
+    fetchIconicQuote().then(setRandomQuote);
+    const quoteInterval = setInterval(() => {
+      fetchIconicQuote().then(setRandomQuote);
+    }, 60000);
+    return () => clearInterval(quoteInterval);
+  }, []);
 
   useEffect(() => {
     if (isAuthChecking) {
@@ -710,7 +1041,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     const STANDARD_GENRES = [
       "Acción", "Aventuras", "Animación", "Biografía", "Bélico", "Ciencia Ficción",
       "Comedia", "Crimen", "Documental", "Drama", "Familia", "Fantasía", "Historia", 
-      "Misterio", "Musical", "Romance", "Suspense", "Terror", "Thriller", "Western", "Mexicanas"
+      "Misterio", "Musical", "Romance", "Suspenso", "Terror", "Thriller", "Western", "Mexicanas"
     ];
     
     return ["Todos", "Clásico", ...STANDARD_GENRES];
@@ -721,10 +1052,11 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/);
       const matchSearch = searchTerms.every(term => {
         if (!term) return true;
-        const inTitle = (m.title || "").toLowerCase().includes(term);
-        const inOriginalTitle = (m.originalTitle || "").toLowerCase().includes(term);
-        const inDirector = (m.director || "").toLowerCase().includes(term);
-        const isYearExact = String(m.year) === term;
+        const normTerm = normalizeText(term);
+        const inTitle = normalizeText(m.title).includes(normTerm);
+        const inOriginalTitle = normalizeText(m.originalTitle).includes(normTerm);
+        const inDirector = normalizeText(m.director).includes(normTerm);
+        const isYearExact = String(m.year || "").includes(term);
         const inCast = Array.isArray(m.cast)
           ? m.cast.some(actor => actor.toLowerCase().includes(term))
           : String(m.cast || "").toLowerCase().includes(term);
@@ -762,6 +1094,69 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
       return matchSearch && matchGenre && matchLetter && matchYear && matchReview;
     }).sort((a, b) => {
+      if (searchTerm.trim() !== "") {
+        const normSearch = normalizeText(searchTerm);
+        
+        const getScore = (m: Movie) => {
+          const normTitle = normalizeText(m.title);
+          const normOrig = normalizeText(m.originalTitle);
+
+          // 1. Exact matches (highest priority)
+          if (normTitle === normSearch) return 1000;
+          if (normOrig === normSearch) return 950;
+          
+          // 2. Starts with phrase
+          if (normTitle.startsWith(normSearch)) return 900;
+          if (normOrig.startsWith(normSearch)) return 850;
+
+          // 3. Substring containment of entire phrase
+          if (normTitle.includes(normSearch)) return 800;
+          if (normOrig.includes(normSearch)) return 750;
+
+          // 4. Individual word matching counts on title/original title
+          const searchWords = normSearch.split(/\s+/).filter(Boolean);
+          if (searchWords.length > 0) {
+            let titleMatchCount = 0;
+            searchWords.forEach(w => {
+              if (normTitle.includes(w)) titleMatchCount++;
+            });
+            if (titleMatchCount === searchWords.length) return 700;
+            if (titleMatchCount > 0) return 400 + titleMatchCount * 10;
+          }
+
+          if (searchWords.length > 0) {
+            let origMatchCount = 0;
+            searchWords.forEach(w => {
+              if (normOrig.includes(w)) origMatchCount++;
+            });
+            if (origMatchCount === searchWords.length) return 600;
+            if (origMatchCount > 0) return 300 + origMatchCount * 10;
+          }
+
+          // 5. Director containing entire search phrase
+          const normDirector = normalizeText(m.director);
+          if (normDirector.includes(normSearch)) return 200;
+
+          // 6. Year matches
+          const mYear = String(m.year || "");
+          if (mYear === searchTerm.trim() || mYear.includes(searchTerm.trim())) return 150;
+
+          // 7. Cast containing entire search phrase
+          const inCast = Array.isArray(m.cast)
+            ? m.cast.some(actor => normalizeText(actor).includes(normSearch))
+            : normalizeText(m.cast).includes(normSearch);
+          if (inCast) return 100;
+
+          return 0;
+        };
+
+        const scoreA = getScore(a);
+        const scoreB = getScore(b);
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA; // Descending order of score
+        }
+      }
+
       if (showHistoryOnly) {
         // En modo Historial, ordenamos por última modificación (updatedAt), cayendo de regreso en fecha de alta (createdAt)
         const timeA = a.updatedAt || a.createdAt || "";
@@ -796,7 +1191,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         m.year == yearToSave
       );
       if (isDuplicate) {
-        alert(`La película "${titleToSave}" (${yearToSave}) ya existe en la videoteca.`);
+        alert(`La película "${titleToSave}" (${yearToSave}) ya existe en la mediateca.`);
         return;
       }
     }
@@ -849,7 +1244,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       const response = await fetch('/api/batch-parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: syncInput })
+        body: JSON.stringify({ text: "MODO NUEVA ENTRADA (Analiza única y exclusivamente los datos de esta película en un único objeto): " + syncInput, limit: 1 })
       });
       const textResponse = await response.text();
       let parsedData;
@@ -880,6 +1275,34 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       }
 
       setEditForm(merged);
+      
+      const cleanCast = Array.isArray(merged.cast)
+        ? merged.cast.join(', ')
+        : (merged.cast || 'No disponible');
+        
+      const formattedFicha = `🖼️ Póster: ${merged.poster || 'No disponible'}
+🎬 Título Mediateca: ${merged.title || 'No disponible'}
+🏷️ Título Original: ${merged.originalTitle || 'No disponible'}
+📅 Año: ${merged.year || 'No disponible'}
+⭐ Rating Global: ${merged.rating || '0'}/10 IMDb
+🎭 Género: ${merged.genre || 'No disponible'}
+⏱️ Duración: ${merged.duration || 'No disponible'}
+🌍 País: ${merged.country || 'No disponible'}
+🔞 Clasificación: ${merged.ageRating || 'No disponible'}
+✍️ Guion: ${merged.script || 'No disponible'}
+📺 Formato: ${merged.format || 'No disponible'}
+🎬 Dirección: ${merged.director || 'No disponible'}
+🎵 Banda Sonora: ${merged.music || 'No disponible'}
+📸 Fotografía: ${merged.photography || 'No disponible'}
+🏢 Estudio: ${merged.companies || 'No disponible'}
+📚 Estante (Localización): ${merged.estante || ''}
+👥 Elenco: ${cleanCast}
+📖 Argumento:
+Sinopsis: ${merged.synopsis || 'No disponible'}
+Reseñas críticas: ${merged.reviews || 'No disponible'}
+Premios históricos: ${merged.awards || 'No disponible'}`;
+
+      setSyncInput(formattedFicha);
       setSyncStatus("¡Ficha extraída correctamente!");
 
       if (autoSave) {
@@ -891,7 +1314,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             m.year == yearToSave
           );
           if (isDuplicate) {
-            setSyncError(`La película "${titleToSave}" (${yearToSave}) ya existe en la videoteca.`);
+            setSyncError(`La película "${titleToSave}" (${yearToSave}) ya existe en la mediateca.`);
             setIsSyncing(false);
             return;
           }
@@ -1006,7 +1429,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             <div className="flex flex-col items-center cursor-pointer group mx-auto w-[140px]" onClick={() => { window.scrollTo({top: 0, behavior: 'smooth'}); clearFiltersAndSearch(); }}>
               <img 
                 src="/android-chrome-512x512.png" 
-                alt="Videoteca Logo" 
+                alt="Mediateca Logo" 
                 className="w-full h-auto rounded-2xl object-cover border border-white/10 group-hover:scale-105 transition-transform duration-500 shadow-xl" 
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=128&auto=format&fit=crop&q=60';
@@ -1034,8 +1457,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             <div className="relative w-full bg-[#08080a] group-focus-within:bg-transparent border border-white/[0.06] group-focus-within:border-transparent rounded-2xl transition-all duration-300 group-focus-within:shadow-[0_0_30px_rgba(229,62,62,0.45)] z-10 flex items-center">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400/80 group-focus-within:text-[#e53e3e] group-focus-within:scale-110 transition-all duration-300 ease-out z-20" />
               <input 
+                id="sidebar-search-input"
                 type="text" 
-                placeholder="Buscar título o año..." 
+                placeholder={t("Buscar título o año...")} 
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
                 onKeyDown={(e) => { e.stopPropagation(); if(e.key === 'Enter') setIsMobileMenuOpen(false); }} 
@@ -1049,7 +1473,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
              
              {/* GROUP: EXPLORAR */}
              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-[0.12em] text-white/[0.28] font-bold px-5 mb-1 mt-5 select-none block">Explorar</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/[0.28] font-bold px-5 mb-1 mt-5 select-none block">{t("Explorar")}</span>
                 <div className="flex flex-col gap-1">
                    {/* Archive */}
                    <button 
@@ -1057,7 +1481,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                      onClick={clearFiltersAndSearch}
                    >
                      <Clapperboard className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
-                     <span>ARCHIVE</span>
+                     <span>{t("ARCHIVO")}</span>
                    </button>
                    
                    {/* ALFABÉTICO */}
@@ -1068,14 +1492,14 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                      >
                        <span className="flex items-center gap-4">
                          <ArrowDownAZ className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
-                         <span>ALFABÉTICO</span>
+                         <span>{t("ALFABÉTICO")}</span>
                        </span>
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isAlphabetOpen ? 'rotate-180' : ''}`} />
                      </button>
                      <div className={`flex flex-wrap gap-1.5 px-5 overflow-hidden transition-all duration-300 ${isAlphabetOpen ? 'max-h-48 opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
-                       <button onClick={() => { setSelectedLetter(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); }} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${!selectedLetter ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>ALL</button>
+                       <button onClick={() => { setSelectedLetter(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${!selectedLetter ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{t("Todos")}</button>
                        {ALPHABET.map(l => (
-                         <button key={l} onClick={() => { setSelectedLetter(l); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); }} className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all ${selectedLetter === l ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{l}</button>
+                         <button key={l} onClick={() => { setSelectedLetter(l); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all ${selectedLetter === l ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{l}</button>
                        ))}
                      </div>
                    </div>
@@ -1088,14 +1512,14 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                      >
                        <span className="flex items-center gap-4">
                          <CalendarDays className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
-                         <span>ÉPOCAS</span>
+                         <span>{t("ÉPOCAS")}</span>
                        </span>
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isErasOpen ? 'rotate-180' : ''}`} />
                      </button>
                      <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isErasOpen ? 'max-h-[800px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
-                       <button onClick={() => { setSelectedYearRange(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${!selectedYearRange ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>Cualquier Año</button>
+                       <button onClick={() => { setSelectedYearRange(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${!selectedYearRange ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>Cualquier Año</button>
                        {YEAR_RANGES.map(range => (
-                         <button key={range.label} onClick={() => { setSelectedYearRange(range); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${selectedYearRange?.label === range.label ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{range.label}</button>
+                         <button key={range.label} onClick={() => { setSelectedYearRange(range); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${selectedYearRange?.label === range.label ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{range.label}</button>
                        ))}
                      </div>
                    </div>
@@ -1108,18 +1532,39 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                      >
                        <span className="flex items-center gap-4">
                          <LayoutGrid className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
-                         <span>CATEGORÍAS</span>
+                         <span>{t("CATEGORÍAS")}</span>
                        </span>
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isCategoriesOpen ? 'rotate-180' : ''}`} />
                      </button>
                      <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isCategoriesOpen ? 'max-h-[3000px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
                        {dynamicGenres.map(g => (
-                         <button key={g} onClick={() => { setSelectedGenre(g); setShowHistoryOnly(false); setShowReviewOnly(false); setCurrentPage(1); setIsMobileMenuOpen(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all flex justify-between items-center ${selectedGenre === g ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                         <button key={g} onClick={() => { setSelectedGenre(g); setShowHistoryOnly(false); setShowReviewOnly(false); setCurrentPage(1); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all flex justify-between items-center ${selectedGenre === g ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
                            <span>{g}</span>
                          </button>
                        ))}
                      </div>
                    </div>
+
+                   {/* FILTRO DEL DIRECTOR */}
+                   <button 
+                     className={getArchiveSidebarClass(isDirectorFilterActive)} 
+                     onClick={() => {
+                       setSelectedLetter(null);
+                       setSelectedYearRange(null);
+                       setSelectedGenre("Todos");
+                       setSearchQuery("");
+                       setSearchTerm("");
+                       setShowReviewOnly(false);
+                       setShowHistoryOnly(false);
+                       setIsDirectorFilterActive(true);
+                       setCuratorRecommendations([]);
+                       setCurrentPage(1);
+                       setIsMobileMenuOpen(false);
+                     }}
+                   >
+                     <Video className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" strokeWidth={1.5} /> 
+                     <span className="font-extrabold tracking-widest text-[11px]">{t("FILTRO DEL DIRECTOR")}</span>
+                   </button>
                 </div>
              </div>
 
@@ -1135,7 +1580,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                      className={getHistorySidebarClass(showHistoryOnly)}
                    >
                      <HistoryIcon className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
-                     <span>HISTORY</span>
+                     <span>{t("HISTORIAL")}</span>
                    </button>
                 </div>
              </div>
@@ -1155,21 +1600,21 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                            className={`${getSidebarItemClass(false)} disabled:opacity-50`}
                          >
                            <ClipboardList className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                           <span>MULTI PEGADO</span>
+                           <span>{t("MULTI PEGADO")}</span>
                          </button>
                          <button 
                            onClick={() => setShowAdminsModal(true)} 
                            className={getSidebarItemClass(false)}
                          >
                            <Users className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                           <span>GESTIONAR ADMINS</span>
+                           <span>{t("GESTIONAR ADMINS")}</span>
                          </button>
                          <button 
                            onClick={() => { const newVal = !showReviewOnly; setShowReviewOnly(newVal); if (newVal) setShowHistoryOnly(false); }} 
                            className={getReviewSidebarClass(showReviewOnly)}
                          >
                            <AlertTriangle className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                           <span>PARA REVISIÓN</span>
+                           <span>{t("PARA REVISIÓN")}</span>
                          </button>
                       </div>
                    </div>
@@ -1192,7 +1637,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
               {/* Inner container to mask and display the premium label */}
               <span className="absolute inset-[1.5px] bg-[#0c0c0e] rounded-[10px] group-hover:bg-[#121215] transition-colors duration-300 z-10 flex items-center justify-center gap-2 text-white font-black uppercase tracking-[0.2em] text-xs">
                 <Plus size={16} className="text-[#b41d1d] group-hover:text-white transition-colors duration-300" />
-                <span>New Entry</span>
+                <span>{t("NUEVA ENTRADA")}</span>
               </span>
             </button>
           )}
@@ -1202,7 +1647,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
               <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}&background=random`} alt="Avatar" className="w-10 h-10 rounded-full border border-white/10" />
               <div className="flex flex-col overflow-hidden">
                  <span className="text-white font-bold text-xs truncate">{user.displayName || 'Curator Profile'}</span>
-                 <span className="text-zinc-500 text-[10px] truncate uppercase tracking-widest">{isAdmin ? 'Admin / Editor' : 'Videoteca Viewer'}</span>
+                 <span className="text-zinc-500 text-[10px] truncate uppercase tracking-widest">{isAdmin ? `${t("Administrador")} / ${t("Editor")}` : 'Mediateca Viewer'}</span>
               </div>
               <button onClick={() => { setIsBypassActive(false); logout(); }} className="ml-auto text-zinc-600 hover:text-brand-light p-1"><LogOut size={14}/></button>
             </div>
@@ -1233,7 +1678,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { window.scrollTo({top: 0, behavior: 'smooth'}); clearFiltersAndSearch(); }}>
            <img 
              src="/android-chrome-512x512.png" 
-             alt="Videoteca Logo" 
+             alt="Mediateca Logo" 
              className="w-10 h-10 rounded-lg object-cover border border-white/10" 
              onError={(e) => {
                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=128&auto=format&fit=crop&q=60';
@@ -1257,24 +1702,6 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
           <CinematicBackground selectedGenre={selectedGenre} />
         )}
-
-      {/* Global Status Overlay */}
-      {firestoreError && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[200] max-w-md w-full px-4 animate-in slide-in-from-top-5 duration-300">
-          <div className="bg-amber-900/90 backdrop-blur-xl border border-amber-500/50 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-4">
-            <div className="p-2 bg-amber-500/20 rounded-xl">
-              <ShieldAlert className="w-5 h-5 text-amber-400" />
-            </div>
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-widest text-amber-400 mb-0.5">Estado de Conexión</p>
-              <p className="text-[12px] font-bold text-amber-50 text-balance">{firestoreError}</p>
-            </div>
-            <button onClick={() => setFirestoreError(null)} className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors">
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-      )}
       
       {/* Auth Denied Alert */}
       {authDenied && (
@@ -1392,7 +1819,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                 onChange={(e) => setPastedText(e.target.value)}
                 onKeyDown={(e) => e.stopPropagation()}
                 className="w-full h-80 bg-transparent border-none p-0 text-zinc-100 text-sm font-semibold tracking-normal outline-none focus:ring-0 placeholder-zinc-700 transition-all resize-none font-sans leading-relaxed custom-scrollbar"
-                placeholder={`Pega aquí la información de tus películas...\n\nPóster: https://...\nTítulo Videoteca: El Padrino\nAño: 1972\n... (Soporta hasta ${pasteLimit} películas al mismo tiempo)`}
+                placeholder={`Pega aquí la información de tus películas...\n\nPóster: https://...\nTítulo Mediateca: El Padrino\nAño: 1972\n... (Soporta hasta ${pasteLimit} películas al mismo tiempo)`}
               />
             </div>
             
@@ -1429,7 +1856,8 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       )}
 
       {/* GALERÍA PAGINADA (CUADRÍCULA 7x3) */}
-      <div className="relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-20">
+      {!isDirectorFilterActive && (
+        <div className="relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-20">
         
         {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
         {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
@@ -1508,7 +1936,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                     )}
                   </div>
 
-                  <div className="flex flex-col gap-1 px-1">
+                  <div translate="no" className="flex flex-col gap-1 px-1 notranslate">
                     <h3 className="text-zinc-100 font-medium text-[13px] leading-tight line-clamp-2 group-hover:text-brand-light transition-colors drop-shadow-sm tracking-normal">{toTitleCase(movie.title)}</h3>
                     <div className="flex items-center text-[11px] tracking-wide gap-2 mt-0.5 text-zinc-400 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                       <span>{movie.year}</span>
@@ -1521,12 +1949,47 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             </div>
           </>
         ) : (
-          <div className="py-32 px-4 text-center flex flex-col items-center justify-center gap-6 max-w-md mx-auto">
-            <div className="w-16 h-16 rounded-full bg-white/[0.04] border border-white/5 flex items-center justify-center text-zinc-500 mb-2">
-              <Film size={28} />
+          <div className="py-32 px-4 text-center flex flex-col items-center justify-center gap-6 max-w-md mx-auto relative">
+            {/* Highly Polished Circular Celluloid Film Reel Logo */}
+            <div className="relative mb-2 group select-none flex items-center justify-center">
+              {/* Soft dark red cinema light glow behind the reel - only visible on hover */}
+              <div className="absolute -inset-10 bg-[#b41d1d]/15 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
+              
+              {/* Outer Reel Disk Container */}
+              <div className="relative w-24 h-24 rounded-full bg-[#121214] border border-zinc-800/80 shadow-[0_20px_50px_rgba(0,0,0,0.9)] flex items-center justify-center overflow-hidden transition-all duration-700 group-hover:border-[#b41d1d]/50 group-hover:scale-105 group-hover:rotate-[45deg]">
+                
+                {/* Radial Sprocket Holes (Circular Perforaciones) */}
+                {[...Array(12)].map((_, i) => (
+                  <div 
+                    key={i} 
+                    className="absolute w-2 h-2.5 bg-[#08080a] border border-zinc-800/60 rounded-[1.5px] before:absolute before:inset-[1.2px] before:bg-zinc-950"
+                    style={{
+                      transform: `rotate(${i * 30}deg) translateY(-38px)`
+                    }}
+                  />
+                ))}
+
+                {/* Inner Metallic Spokes of the Cinema Reel */}
+                {[...Array(6)].map((_, i) => (
+                  <div 
+                    key={i}
+                    className="absolute h-[64px] w-[1px] bg-zinc-800/40 pointer-events-none"
+                    style={{ transform: `rotate(${i * 30}deg)` }}
+                  />
+                ))}
+
+                {/* Inner Central Film Cartridge Core */}
+                <div className="relative w-13 h-13 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center z-10 shadow-inner transition-all duration-700 group-hover:border-[#b41d1d]/40 group-hover:rotate-[-45deg]">
+                  <Film size={20} className="text-zinc-500 group-hover:text-[#b41d1d] group-hover:drop-shadow-[0_0_8px_rgba(180,29,29,0.73)] transition-all duration-500" />
+                </div>
+                
+                {/* Glossy overlay reflection across the circular reel disk */}
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
+              </div>
             </div>
+
             <h2 className="text-lg font-bold text-white tracking-tight leading-snug">
-              {searchTerm ? `Sin resultados para "${searchTerm}"` : "No se encontraron obras"}
+              {searchTerm ? `No se encontraron películas para "${searchTerm}"` : "No se encontraron películas"}
             </h2>
             <p className="text-xs text-zinc-500 leading-relaxed max-w-xs -mt-2">
               Prueba un término más general, verifica la ortografía o cambia los filtros de Épocas y Categorías seleccionados.
@@ -1541,7 +2004,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             )}
           </div>
         )}
-      </div>
+
+
+        </div>
+      )}
 
       {/* MODAL DETALLES / CATALOGACIÓN */}
       {(selectedMovie || isAddingNew) && (
@@ -1549,7 +2015,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
           <div className={`bg-[#050507] border border-[#b41d1d]/20 w-full max-w-7xl rounded-2xl overflow-hidden relative shadow-[0_30px_100px_rgba(0,0,0,0.95),0_0_80px_rgba(180,29,29,0.15)] flex flex-col ${(isEditing || isAddingNew) ? 'md:flex-row-reverse' : 'md:flex-row'} max-h-[95vh] my-auto animate-in zoom-in-95 duration-500`}>
             <button 
               onClick={() => { setSelectedMovie(null); setIsAddingNew(false); setIsEditing(false); setIsDeleting(false); }} 
-              className="absolute top-6 right-6 p-2.5 bg-white/5 text-zinc-400 rounded-full z-[110] hover:bg-[#b41d1d]/10 hover:border-[#b41d1d]/80 hover:text-[#b41d1d] transition-all active:scale-95 border border-white/10"
+              className="absolute top-6 right-6 p-2.5 bg-neutral-900/60 text-neutral-400 border border-neutral-800/80 rounded-full z-[110] transition-all duration-300 hover:scale-110 hover:bg-neutral-950 hover:text-white hover:border-[#b41d1d] hover:shadow-[0_0_12px_rgba(180,29,29,0.59)] active:scale-95"
             >
               <X size={20} />
             </button>
@@ -1605,17 +2071,34 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
               {isEditing || isAddingNew ? (
                 <div className="space-y-12 pb-10 font-sans">
                   <div className="flex items-center gap-4 border-b border-[#b41d1d]/20 pb-6">
-                    <div className="p-2.5 bg-[#b41d1d]/10 border border-[#b41d1d]/30 text-white rounded-xl">
-                      <Clapperboard size={20} className="text-[#b41d1d] animate-pulse" />
+                    <div className="relative w-14 h-14 rounded-full flex items-center justify-center shrink-0 group/icon select-none overflow-hidden">
+                      {/* Premium Ambient Aura behind the lens badge */}
+                      <div className="absolute -inset-1 bg-gradient-to-tr from-[#b41d1d] to-[#fa5252] rounded-full blur-[10px] opacity-40 group-hover/icon:opacity-75 transition-opacity duration-500 pointer-events-none" />
+                      
+                      {/* Shiny Outer Chrome/Reflective Ring */}
+                      <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-[#3f3f46] via-[#18181b] to-zinc-700 p-[1px] shadow-[0_4px_20px_rgba(0,0,0,0.8)]">
+                        {/* Deep Dark Mirror Core */}
+                        <div className="w-full h-full rounded-full bg-black flex items-center justify-center relative overflow-hidden">
+                          {/* Subtle Circular Highlight */}
+                          <div className="absolute inset-[3px] rounded-full border border-white/[0.04]" />
+                          <div className="absolute inset-[6px] rounded-full border border-[#b41d1d]/20" />
+                          
+                          {/* Lens Flare Glow overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-tr from-[#b41d1d]/10 via-transparent to-white/[0.05] pointer-events-none" />
+                          
+                          {/* Centered Premium Clapperboard and gentle hover scaling */}
+                          <Clapperboard size={18} className="text-[#e23636] relative z-10 transition-all duration-300 drop-shadow-[0_0_6px_rgba(180,29,29,0.7)] group-hover/icon:scale-110 group-hover/icon:text-white group-hover/icon:drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
+                        </div>
+                      </div>
                     </div>
-                    <h2 className="text-xl font-black uppercase tracking-[0.15em] text-white font-sans">{isAddingNew ? "NUEVA ENTRADA DE CINE" : "EDITAR REGISTRO TÉCNICO"}</h2>
+                    <h2 className="text-xl font-black uppercase tracking-[0.15em] text-white font-sans">{isAddingNew ? "NUEVA PELÍCULA" : "EDITAR PELÍCULA"}</h2>
                   </div>
                   
                   <div className="bg-white/[0.01] border border-white/[0.05] p-6 rounded-2xl space-y-5 font-sans shadow-lg">
                     <div className="flex items-center gap-3 text-white font-extrabold text-xs uppercase tracking-[0.25em]"><Sparkles size={16} className="text-[#b41d1d]" /> Extracción Inteligente</div>
                     <div className="flex flex-col gap-4">
                       <textarea 
-                        placeholder="Pega aquí los datos en bruto..." 
+                        placeholder="Pega aquí los datos de la película..." 
                         value={syncInput} 
                         onChange={(e) => setSyncInput(e.target.value)} 
                         onKeyDown={(e) => e.stopPropagation()} 
@@ -1753,7 +2236,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                     >
                       <span className="absolute inset-[1px] bg-[#0c0c0e] rounded-[11px] group-hover/btn-save:bg-[#121215] transition-colors duration-300 z-10 flex items-center justify-center gap-2 text-white font-black uppercase tracking-[0.2em] text-[10px] w-[calc(100%-2px)] h-[calc(100%-2px)]">
                         <Check size={14} className="text-[#b41d1d] group-hover/btn-save:text-white transition-colors duration-300" />
-                        <span>{isAddingNew ? "Guardar Nueva Entrada" : "Actualizar Registro"}</span>
+                        <span>{isAddingNew ? "Guardar película" : "Guardar película"}</span>
                       </span>
                     </button>
                   </div>
@@ -1764,27 +2247,12 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                   {/* Badges & Duration */}
                   <div className="flex flex-wrap items-center gap-3">
                     {getNormalizedGenres(selectedMovie.genre).map((genre, index) => {
-                      const colors = getGenrePillClasses(genre);
-                      let displayGenre = genre;
-                      if (genre.length > 0) {
-                        displayGenre = genre.charAt(0).toUpperCase() + genre.slice(1).toLowerCase();
-                      }
                       return (
                         <span 
                           key={index}
-                          style={{
-                            backgroundColor: colors.bg,
-                            color: colors.text,
-                            borderColor: colors.border,
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            padding: '3px 10px',
-                            borderRadius: '20px',
-                            letterSpacing: '0.06em',
-                          }}
-                          className="border uppercase transition-colors inline-block"
+                          className="rounded-full px-4 py-1.5 flex items-center justify-center bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 text-[11px] font-semibold uppercase tracking-[0.06em] cursor-default"
                         >
-                          {displayGenre}
+                          {genre}
                         </span>
                       );
                     })}
@@ -1793,7 +2261,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                   
                   {/* Title & Prominent Rating Box */}
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/5 pb-6">
-                    <div className="flex flex-col gap-1">
+                    <div translate="no" className="flex flex-col gap-1 notranslate">
                       <h2 
                         className={`font-bebas leading-[0.95] tracking-[0.02em] drop-shadow-lg text-white uppercase ${
                           (selectedMovie.title || "").length > 25 
@@ -1805,49 +2273,49 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                       >
                         {selectedMovie.title}
                       </h2>
-                      <h3 className="text-sm md:text-base text-white/55 font-light tracking-[0.2em]">{selectedMovie.originalTitle}</h3>
+                      <h3 className="font-barlow-condensed text-sm md:text-base text-zinc-400 font-semibold uppercase tracking-[0.25em]">{selectedMovie.originalTitle}</h3>
                     </div>
 
                     {/* Prominent Rating Unit */}
-                    <div className="flex flex-col items-start md:items-end shrink-0 select-none bg-white/[0.03] border border-white/[0.05] p-3 rounded-2xl md:text-right min-w-[130px]">
-                      <div className="flex items-center gap-2">
-                        <Star size={24} fill="#f59e0b" className="text-[#f59e0b] -mt-1" />
-                        <span className="font-bebas text-[28px] tracking-[0.02em] text-white leading-none">
+                    <div className="flex flex-col items-center justify-center shrink-0 select-none bg-white/[0.03] border border-white/[0.05] p-2.5 px-4 rounded-xl min-w-[110px] text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Star size={20} fill="#f59e0b" className="text-[#f59e0b]" />
+                        <span className="font-bebas text-3xl tracking-[0.02em] text-white leading-none">
                           {Number(selectedMovie.rating || 0).toFixed(1)}
                         </span>
                       </div>
-                      <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold mt-1">Calificación</span>
+                      <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-extrabold mt-1.5">Calificación</span>
                     </div>
                   </div>
                   
                   {/* Info bar: Premium, cine-themed containers with sleek glassmorphism and custom indicators */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300 =">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                         <Clapperboard size={14} />
                       </div>
                       <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Dirección</span>
-                      <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
+                      <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
                     </div>
 
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                         <CalendarDays size={14} />
                       </div>
                       <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Año</span>
                       <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
                     </div>
 
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                         <Globe size={14} />
                       </div>
                       <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">País</span>
                       <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
                     </div>
 
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d]/50 hover:bg-black/85 transition-all duration-300 relative overflow-hidden">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d]/60 transition-colors duration-300">
+                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                         <Eye size={14} />
                       </div>
                       <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Clasificación</span>
@@ -1864,11 +2332,11 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                   {/* Reviews & Awards with Left borders */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                      <div className="bg-white/5 border border-l-[3px] border-y-white/5 border-r-white/5 border-l-[#b41d1d] rounded-r-xl p-6 flex flex-col gap-3">
-                       <h5 className="text-[10px] uppercase tracking-[0.3em] text-zinc-500 font-black flex items-center gap-2"><Quote size={14} className="text-[#b41d1d]"/> Investigación Crítica</h5>
+                       <h5 className="text-[10px] uppercase tracking-[0.3em] text-zinc-500 font-black flex items-center gap-2"><Quote size={14} className="text-[#b41d1d]"/> Reseñas Críticas</h5>
                        <p className="text-sm text-zinc-300 leading-relaxed font-medium">{selectedMovie.reviews}</p>
                      </div>
                      <div className="bg-white/5 border border-l-[3px] border-y-white/5 border-r-white/5 border-l-[#f59e0b] rounded-r-xl p-6 flex flex-col gap-3">
-                       <h5 className="text-[10px] uppercase tracking-[0.3em] text-zinc-500 font-black flex items-center gap-2"><Trophy size={14} className="text-[#f59e0b]"/> Palmarés Histórico</h5>
+                       <h5 className="text-[10px] uppercase tracking-[0.3em] text-zinc-500 font-black flex items-center gap-2"><Trophy size={14} className="text-[#f59e0b]"/> Premios históricos</h5>
                        <p className="text-sm text-zinc-300 leading-relaxed font-medium">{selectedMovie.awards}</p>
                      </div>
                   </div>
@@ -1899,7 +2367,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                             className="bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 hover:text-white px-3 py-1.5 text-[13px] rounded-[20px] transition-all font-medium border border-white/5 active:scale-95 flex items-center gap-1.5"
                           >
                             <User size={12} className="text-zinc-500" />
-                            <span>{actor}</span>
+                            <span translate="no" className="notranslate">{actor}</span>
                           </button>
                         ))}
                       </div>
@@ -1936,7 +2404,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                         <span className="absolute inset-[-400%] bg-[conic-gradient(from_0deg,#b41d1d_0deg,#ffffff_120deg,#0a0a0c_180deg,#b41d1d_240deg,#ffffff_300deg,#b41d1d_360deg)] animate-[spin_4s_linear_infinite] z-0 opacity-0 group-hover/btn-edit:opacity-100 transition-opacity duration-300" />
                         <span className="absolute inset-[1px] bg-[#0c0c0e] rounded-[11px] group-hover/btn-edit:bg-[#121215] border border-white/5 group-hover/btn-edit:border-transparent transition-all duration-300 z-10 flex items-center justify-center gap-2.5 text-zinc-300 group-hover/btn-edit:text-white font-extrabold uppercase tracking-[0.2em] text-[10px] font-sans w-[calc(100%-2px)] h-[calc(100%-2px)]">
                           <Edit2 size={13} className="text-[#b41d1d] group-hover/btn-edit:text-white transition-colors duration-300" /> 
-                          <span>EDITAR DE RESEÑA</span>
+                          <span>EDITAR PELÍCULA</span>
                         </span>
                       </button>
 
@@ -1957,21 +2425,35 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                       <button 
                         type="button"
                         onClick={() => setIsDeleting(true)} 
-                        className="relative group/btn-delete overflow-hidden h-14 w-14 rounded-xl z-10 flex items-center justify-center p-[1px] transition-all duration-300 active:scale-90 shadow-[0_4px_12px_rgba(180,29,29,0.05)] shrink-0"
+                        className="h-14 w-14 bg-[#0c0c0e] hover:bg-[#121215] border border-white/5 hover:border-[#b41d1d]/40 text-neutral-400 hover:text-[#b41d1d] hover:shadow-[0_0_12px_rgba(180,29,29,0.35)] rounded-xl transition-all duration-300 flex items-center justify-center active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)] shrink-0"
                       >
-                        {/* Red spine border without white on hover */}
-                        <span className="absolute inset-[-400%] bg-[conic-gradient(from_0deg,#b41d1d_0deg,#500a0a_120deg,#000000_180deg,#b41d1d_240deg,#500a0a_300deg,#b41d1d_360deg)] animate-[spin_4s_linear_infinite] z-0 opacity-0 group-hover/btn-delete:opacity-100 transition-opacity duration-300" />
-                        <span className="absolute inset-[1px] bg-[#1a0808] group-hover/btn-delete:bg-[#250b0b] rounded-[11px] border border-[#b41d1d]/20 group-hover/btn-delete:border-transparent transition-all duration-300 z-10 flex items-center justify-center text-[#ff4444] group-hover/btn-delete:text-white font-sans w-[calc(100%-2px)] h-[calc(100%-2px)]">
-                          <Trash2 size={16} />
-                        </span>
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   )}
                   {isDeleting && (
-                    <div className="flex flex-col gap-5 p-6 bg-[#b91c1c]/10 border border-[#b91c1c]/20 rounded-xl animate-in zoom-in-95">
-                      <div className="flex items-center gap-3 text-red-400"><AlertTriangle size={24} /><h4 className="text-base font-bold uppercase tracking-tight">Confirmar Eliminación</h4></div>
-                      <p className="text-zinc-300 text-sm font-medium">¿Estás seguro de que deseas eliminar <span className="text-white font-bold">"{selectedMovie.title}"</span>?</p>
-                      <div className="flex gap-3"><button onClick={handleDelete} className="flex-1 bg-[#b91c1c] hover:bg-[#dc2626] text-white font-bold py-3 rounded-lg text-xs uppercase transition-all active:scale-95">ELIMINAR</button><button onClick={() => setIsDeleting(false)} className="flex-1 bg-white/10 text-white font-bold py-3 rounded-lg text-xs uppercase hover:bg-white/20 transition-all active:scale-95">CANCELAR</button></div>
+                    <div className="flex flex-col gap-4 p-5 bg-neutral-950/60 border border-[#b41d1d]/30 shadow-[0_0_15px_rgba(180,29,29,0.15)] rounded-xl animate-in zoom-in-95 font-sans">
+                      <div className="flex items-center gap-2.5 text-[#b41d1d] font-bold uppercase text-[11px] tracking-[0.2em] select-none">
+                        <AlertTriangle size={14} />
+                        <span>Confirmar Eliminación</span>
+                      </div>
+                      <p className="text-zinc-300 text-sm font-medium leading-relaxed">
+                        ¿Estás seguro de que deseas eliminar <span translate="no" className="text-white font-bold notranslate">"{selectedMovie.title}"</span>? Esta acción es permanente.
+                      </p>
+                      <div className="flex gap-3 pt-1">
+                        <button 
+                          onClick={handleDelete} 
+                          className="flex-1 py-3 rounded-lg bg-[#b41d1d]/10 hover:bg-[#b41d1d] text-[#b41d1d] hover:text-white border border-[#b41d1d]/40 hover:border-[#b41d1d] shadow-[0_0_10px_rgba(180,29,29,0.1)] hover:shadow-[0_0_15px_rgba(180,29,29,0.4)] text-[10px] font-extrabold uppercase tracking-[0.2em] transition-all duration-300 active:scale-95"
+                        >
+                          Eliminar
+                        </button>
+                        <button 
+                          onClick={() => setIsDeleting(false)} 
+                          className="flex-1 py-3 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-350 hover:text-white border border-white/5 hover:border-white/10 text-[10px] font-extrabold uppercase tracking-[0.2em] transition-all duration-300 active:scale-95"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1986,7 +2468,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         <div className="max-w-7xl mx-auto flex flex-col items-center pt-2 space-y-12">
           
           {/* BOTONES DE PAGINACIÓN */}
-          {totalPages > 1 && (
+          {totalPages > 1 && !isDirectorFilterActive && (
             <div className="flex flex-col items-center gap-6 my-6 font-sans">
               <div className="flex flex-wrap justify-center items-center gap-2">
                 <button 
@@ -2003,8 +2485,11 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                       return (
                         <div 
                           key={pageNumber}
-                          className="relative w-[72px] h-10 flex items-center justify-center group select-none z-20"
+                          className="relative w-[76px] h-[42px] flex items-center justify-center group select-none z-20 mr-1"
                         >
+                          {/* Gentle cinematic ticket glow from previous design */}
+                          <div className="absolute inset-0 bg-[#b41d1d]/20 rounded-lg blur-md animate-pulse pointer-events-none" />
+                          
                           <svg 
                             viewBox="0 0 72 40" 
                             className="absolute inset-0 w-full h-full cinema-ticket-glowing transition-all duration-300"
@@ -2013,13 +2498,40 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                             strokeWidth="1.5"
                           >
                             <path d="M 6,0 L 66,0 A 6,6 0 0,1 72,6 L 72,13 A 7,7 0 0,0 72,27 L 72,34 A 6,6 0 0,1 66,40 L 6,40 A 6,6 0 0,1 0,34 L 0,27 A 7,7 0 0,0 0,13 L 0,6 A 6,6 0 0,1 6,0 Z" />
-                            {/* Perforation lines */}
-                            <line x1="15" y1="4" x2="15" y2="36" stroke="#b41d1d" strokeWidth="1.2" strokeDasharray="2,3" opacity="0.45" />
-                            <line x1="57" y1="4" x2="57" y2="36" stroke="#b41d1d" strokeWidth="1.2" strokeDasharray="2,3" opacity="0.45" />
+                            {/* Inner crimson frame detail */}
+                            <path 
+                              d="M 6,2 L 66,2 A 4,4 0 0,1 70,6 L 70,13 A 5,5 0 0,0 70,27 L 70,34 A 4,4 0 0,1 66,38 L 6,38 A 4,4 0 0,1 2,34 L 2,27 A 5,5 0 0,0 2,13 L 2,6 A 4,4 0 0,1 6,2 Z" 
+                              fill="none" 
+                              stroke="#ef4444" 
+                              strokeWidth="0.8" 
+                              strokeDasharray="2,2" 
+                              opacity="0.45" 
+                            />
+                            {/* Barcode line stamps */}
+                            <g fill="#b41d1d" opacity="0.3">
+                              <rect x="5" y="6" width="1" height="28" />
+                              <rect x="7" y="6" width="1.5" height="28" />
+                              <rect x="10" y="6" width="0.7" height="28" />
+                              <rect x="12" y="6" width="1.2" height="28" />
+                            </g>
+                            {/* Right stub star decorations */}
+                            <g fill="#ef4444" opacity="0.5">
+                              <circle cx="64" cy="12" r="1.2" />
+                              <circle cx="64" cy="20" r="1.2" />
+                              <circle cx="64" cy="28" r="1.2" />
+                            </g>
+                            {/* Ticket perforations */}
+                            <line x1="15" y1="3" x2="15" y2="37" stroke="#b41d1d" strokeWidth="1" strokeDasharray="1,2" opacity="0.6" />
+                            <line x1="57" y1="3" x2="57" y2="37" stroke="#b41d1d" strokeWidth="1" strokeDasharray="1,2" opacity="0.6" />
                           </svg>
-                          <span className="relative z-10 text-white font-black text-sm tracking-normal drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                            {pageNumber}
-                          </span>
+
+                          <div className="relative z-10 flex flex-col items-center justify-center leading-none">
+                            <span className="text-[6.5px] font-mono text-zinc-400 font-extrabold uppercase tracking-widest opacity-60">TKT</span>
+                            <span className="text-white font-black text-sm tracking-wide font-mono mt-0.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+                              {pageNumber < 10 ? `0${pageNumber}` : pageNumber}
+                            </span>
+                            <span className="text-[6.5px] font-mono text-[#ef4444] font-bold uppercase tracking-widest mt-0.5 opacity-80">ADMIT</span>
+                          </div>
                         </div>
                       );
                     } else {
@@ -2027,9 +2539,34 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
                         <button 
                           key={pageNumber} 
                           onClick={() => { setCurrentPage(pageNumber); window.scrollTo({ top: 300, behavior: 'smooth' }); }} 
-                          className="w-10 h-10 rounded-xl text-xs font-semibold bg-zinc-900/60 border border-white/[0.05] text-zinc-500 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-all duration-200 flex items-center justify-center z-20 select-none shadow-md"
+                          className="relative w-[76px] h-[42px] flex items-center justify-center group select-none z-20 outline-none mr-1"
                         >
-                          {pageNumber}
+                          <svg 
+                            viewBox="0 0 72 40" 
+                            className="absolute inset-0 w-full h-full transition-all duration-300"
+                            fill="#16161a" 
+                            stroke="rgba(255,255,255,0.08)" 
+                            strokeWidth="1.2"
+                          >
+                            <path d="M 6,0 L 66,0 A 6,6 0 0,1 72,6 L 72,13 A 7,7 0 0,0 72,27 L 72,34 A 6,6 0 0,1 66,40 L 6,40 A 6,6 0 0,1 0,34 L 0,27 A 7,7 0 0,0 0,13 L 0,6 A 6,6 0 0,1 6,0 Z" className="group-hover:stroke-zinc-500/60 transition-colors" />
+                            <path 
+                              d="M 6,2 L 66,2 A 4,4 0 0,1 70,6 L 70,13 A 5,5 0 0,0 70,27 L 70,34 A 4,4 0 0,1 66,38 L 6,38 A 4,4 0 0,1 2,34 L 2,27 A 5,5 0 0,0 2,13 L 2,6 A 4,4 0 0,1 6,2 Z" 
+                              fill="none" 
+                              stroke="rgba(255,255,255,0.02)" 
+                              strokeWidth="0.8" 
+                              strokeDasharray="2,2" 
+                            />
+                            <line x1="15" y1="3" x2="15" y2="37" stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="1,2" />
+                            <line x1="57" y1="3" x2="57" y2="37" stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="1,2" />
+                          </svg>
+
+                          <div className="relative z-10 flex flex-col items-center justify-center leading-none transition-transform group-hover:scale-105 duration-200">
+                            <span className="text-[6.5px] font-mono text-zinc-500 font-semibold uppercase tracking-widest opacity-40 transition-colors group-hover:text-zinc-400">TKT</span>
+                            <span className="text-zinc-500 group-hover:text-zinc-200 font-bold text-sm tracking-wide font-mono mt-0.5 transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                              {pageNumber < 10 ? `0${pageNumber}` : pageNumber}
+                            </span>
+                            <span className="text-[6.5px] font-mono text-zinc-500 font-semibold uppercase tracking-widest mt-0.5 opacity-40 transition-colors group-hover:text-zinc-400">PASS</span>
+                          </div>
                         </button>
                       );
                     }
@@ -2053,50 +2590,598 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             </div>
           )}
 
-          {/* DIVISOR CINTA DE CINE */}
-          <div className="w-full h-12 opacity-80 my-12">
-            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <pattern id="film-strip" x="0" y="0" width="80" height="48" patternUnits="userSpaceOnUse">
-                  <animate attributeName="x" from="0" to="80" dur="6s" repeatCount="indefinite" />
-                  <rect x="0" y="0" width="80" height="48" fill="#27272a" />
-                  <rect x="8" y="4" width="14" height="8" fill="#000" rx="1" />
-                  <rect x="48" y="4" width="14" height="8" fill="#000" rx="1" />
-                  <rect x="8" y="36" width="14" height="8" fill="#000" rx="1" />
-                  <rect x="48" y="36" width="14" height="8" fill="#000" rx="1" />
-                  <rect x="4" y="16" width="72" height="16" fill="#18181b" rx="1" />
-                </pattern>
-              </defs>
-              <rect x="0" y="0" width="100%" height="100%" fill="url(#film-strip)" />
-            </svg>
-          </div>
-
-          <div className="w-full flex flex-col items-center text-center space-y-10 animate-in fade-in duration-1000">
-            {randomQuote ? (
-              <>
-                <QuoteIcon className="text-brand-main/60 w-12 h-12" />
-                <p className="text-lg md:text-xl font-black italic tracking-tighter leading-relaxed text-zinc-100 max-w-2xl px-4">"{randomQuote.text}"</p>
-                <div className="flex flex-col items-center gap-2">
-                  <div className="h-px w-20 bg-brand-main mb-2 shadow-[0_0_10px_rgba(179,5,0,0.5)]" /><span className="text-brand-main text-[10px] font-black uppercase tracking-[0.5em]">{randomQuote.character}</span><span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest italic">{randomQuote.movie}</span>
+          {/* SECCIÓN CURACIÓN: FILTRO DEL DIRECTOR / DIAL DEL DIRECTOR */}
+          {isDirectorFilterActive && (
+            <div 
+              className="relative z-10 w-full max-w-5xl mx-auto mt-8 font-sans bg-black/40 border border-neutral-800/80 rounded-3xl p-8 backdrop-blur-md overflow-visible transition-all duration-500 shadow-2xl"
+              style={{ backgroundImage: 'radial-gradient(circle at center, rgba(180, 29, 29, 0.05) 0%, transparent 85%)' }}
+            >
+              {/* Header Content */}
+              {curatorRecommendations.length === 0 && !isCurating && (
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-white/[0.04] pb-6 text-left animate-in fade-in duration-300">
+                  <div className="flex flex-col gap-1.5 items-start">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#b41d1d] animate-pulse inline-block shadow-[0_0_8px_rgba(180,29,29,0.8)]" />
+                      <span className="text-[#b41d1d] font-mono text-[9px] tracking-[0.35em] uppercase font-bold">FILTRO DEL DIRECTOR</span>
+                    </div>
+                    <h3 className="text-[#eeeeee] font-barlow-condensed uppercase tracking-[0.14em] font-normal text-2xl md:text-3xl lg:text-4xl mt-1.5 leading-tight">
+                      Diseña la experiencia cinematográfica perfecta
+                    </h3>
+                    <p className="text-xs md:text-sm text-neutral-400 font-light tracking-wide mt-1.5 max-w-2xl leading-relaxed">
+                      Elige con quién estás, el ritmo de historia que deseas y la duración. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.
+                    </p>
+                  </div>
                 </div>
-              </>
-            ) : (
-               <div className="h-40 flex items-center justify-center"><Loader2 className="animate-spin text-zinc-900" size={32} /></div>
-            )}
-          </div>
+              )}
+
+              {/* CURATING IMMERSIVE STATE */}
+              {isCurating && (
+                <div className="flex flex-col items-center justify-center text-center gap-5 py-12 animate-in fade-in duration-500 w-full">
+                  <div className="relative w-14 h-14 flex items-center justify-center">
+                    <Loader2 className="animate-spin text-[#b41d1d]" size={42} />
+                    <Sparkles className="absolute text-neutral-400 animate-pulse" size={16} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-neutral-300 text-xs font-mono font-light uppercase tracking-widest animate-pulse">
+                      EL DIRECTOR ESTÁ BUSCANDO LAS MEJORES PELÍCULAS...
+                    </p>
+                    <p className="text-[10px] text-neutral-500 font-light font-sans">
+                      Filtrando el catálogo para recomendarte las películas perfectas...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* CURATION ERROR */}
+              {curationError && !isCurating && (
+                <div className="mb-6 p-4 bg-red-950/20 border border-[#b41d1d]/30 text-rose-300 text-xs rounded-xl flex items-center gap-3 w-full">
+                  <AlertTriangle size={15} className="text-[#b41d1d] shrink-0" />
+                  <span className="font-light tracking-wide">{curationError}</span>
+                  <button 
+                    onClick={() => { setCurationError(null); }}
+                    className="ml-auto text-[10px] underline hover:text-white"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              )}
+
+              {/* DIALS ENGINE (Show ONLY if no recommendations and not curating) */}
+              {curatorRecommendations.length === 0 && !isCurating && (
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center text-left animate-in fade-in duration-300">
+                  
+                  {/* Selectors Column */}
+                  <div className="col-span-1 md:col-span-8 space-y-8">
+                    
+                    {/* Line 1: LA SALA */}
+                    <div className="space-y-3">
+                      <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
+                        1. ¿CON QUIÉN VERÁS LA PELÍCULA?
+                      </div>
+                      <div className="flex flex-col sm:flex-row border border-neutral-800/80 bg-[#09090b]/60 rounded-2xl p-1 gap-1 max-w-lg">
+                        {(['Solo', 'Dúo', 'Grupo'] as const).map((opt) => {
+                          const active = curatorSala === opt;
+                          const displayLabels = {
+                            'Solo': 'Solo',
+                            'Dúo': 'Duo',
+                            'Grupo': 'En grupo'
+                          };
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => setCuratorSala(opt)}
+                              className={`flex-1 px-5 py-2.5 rounded-xl text-xs font-light tracking-wide transition-all duration-300 ${
+                                active 
+                                  ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.03]'
+                                  : 'bg-neutral-900/60 border border-neutral-800/80 text-neutral-400 hover:text-neutral-200 hover:scale-[1.02] shadow-[0_0_8px_rgba(180,29,29,0.2)]'
+                              }`}
+                            >
+                              {displayLabels[opt]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Line 2: EL TONO */}
+                    <div className="space-y-3">
+                      <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
+                        2. ¿QUÉ RITMO O ÁNIMO BUSCAS?
+                      </div>
+                      <div className="flex flex-col sm:flex-row border border-neutral-800/80 bg-[#09090b]/60 rounded-2xl p-1 gap-1 max-w-lg">
+                        {(['Ligero', 'Trama', 'Intenso'] as const).map((opt) => {
+                          const active = curatorTono === opt;
+                          const displayLabels = {
+                            'Ligero': 'Divertido y relajado',
+                            'Trama': 'Interesante y de intriga',
+                            'Intenso': 'Fuerte y emocionante'
+                          };
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => setCuratorTono(opt)}
+                              className={`flex-1 px-5 py-2.5 rounded-xl text-xs font-light tracking-wide transition-all duration-300 ${
+                                active 
+                                  ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.03]'
+                                  : 'bg-neutral-900/60 border border-neutral-800/80 text-neutral-400 hover:text-neutral-200 hover:scale-[1.02] shadow-[0_0_8px_rgba(180,29,29,0.2)]'
+                              }`}
+                            >
+                              {displayLabels[opt]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Line 3: EL GÉNERO */}
+                    <div className="space-y-3 relative">
+                      <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
+                        3. ¿QUÉ GÉNERO PREFIERES?
+                      </div>
+                      <div className="relative inline-block w-full sm:w-80">
+                        {/* Selector principal en forma de píldora que se abre */}
+                        <button
+                          type="button"
+                          onClick={() => setIsGenreDropdownOpen(!isGenreDropdownOpen)}
+                          className={`w-full rounded-2xl px-5 py-3 text-xs font-light tracking-wide transition-all duration-300 flex items-center justify-between focus:outline-none ${
+                            curatorGenero !== 'Todos'
+                              ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.03]'
+                              : 'bg-[#09090b]/60 border border-neutral-800/80 text-white hover:text-white hover:border-[#b41d1d]/40 shadow-[0_0_15px_rgba(0,0,0,0.5)]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {(() => {
+                              const currentSelected = curatorGenresList.find(g => g.id === curatorGenero) || curatorGenresList[0];
+                              return currentSelected.icon("rgb(239, 68, 68)");
+                            })()}
+                            <span>{curatorGenero === 'Todos' ? 'Todos los géneros' : curatorGenero}</span>
+                          </div>
+                          <svg className={`w-4 h-4 text-neutral-500 transition-transform duration-300 ${isGenreDropdownOpen ? 'rotate-180 text-white' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                          </svg>
+                        </button>
+
+                        {/* Listado de géneros flotante con scroll */}
+                        {isGenreDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsGenreDropdownOpen(false)} />
+                            <div className="absolute left-0 right-0 mt-2 z-50 max-h-60 overflow-y-auto bg-neutral-950/95 border border-neutral-800/95 rounded-2xl p-2 shadow-[0_15px_30px_rgba(0,0,0,0.9)] backdrop-blur-md flex flex-col gap-1 custom-scrollbar">
+                              {curatorGenresList.map((g) => {
+                                const active = curatorGenero === g.id;
+                                return (
+                                  <button
+                                    key={g.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setCuratorGenero(g.id);
+                                      setIsGenreDropdownOpen(false);
+                                    }}
+                                    className={`w-full rounded-xl px-4 py-2.5 text-xs font-light transition-all duration-200 flex items-center justify-between ${
+                                      active
+                                        ? "bg-neutral-950 border border-[#b41d1d] text-white font-medium shadow-[0_0_15px_rgba(180,29,29,0.75)]"
+                                        : "hover:bg-neutral-900/60 text-neutral-400 hover:text-white"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      {g.icon(active ? "rgb(239, 68, 68)" : "rgb(163, 163, 163)")}
+                                      <span>{g.label}</span>
+                                    </div>
+                                    {active && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#b41d1d] shadow-[0_0_6px_rgba(180,29,29,0.8)]" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Line 4: LA ÉPOCA */}
+                    <div className="space-y-3 relative">
+                      <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
+                        4. ¿QUÉ ÉPOCA PREFIERES?
+                      </div>
+                      <div className="relative inline-block w-full sm:w-80">
+                        {/* Selector principal en forma de píldora que se abre */}
+                        <button
+                          type="button"
+                          onClick={() => setIsEpochDropdownOpen(!isEpochDropdownOpen)}
+                          className={`w-full rounded-2xl px-5 py-3 text-xs font-light tracking-wide transition-all duration-300 flex items-center justify-between focus:outline-none ${
+                            curatorEpoca !== 'Todas'
+                              ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.03]'
+                              : 'bg-[#09090b]/60 border border-neutral-800/80 text-white hover:text-white hover:border-[#b41d1d]/40 shadow-[0_0_15px_rgba(0,0,0,0.5)]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <CalendarDays size={16} color="rgb(239, 68, 68)" className="shrink-0 transition-colors duration-300" />
+                            <span>{curatorEpoca === 'Todas' ? 'Cualquier época' : `Años ${curatorEpoca}`}</span>
+                          </div>
+                          <svg className={`w-4 h-4 text-neutral-500 transition-transform duration-300 ${isEpochDropdownOpen ? 'rotate-180 text-white' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                          </svg>
+                        </button>
+
+                        {/* Listado de décadas flotante con scroll */}
+                        {isEpochDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsEpochDropdownOpen(false)} />
+                            <div className="absolute left-0 right-0 mt-2 z-50 max-h-60 overflow-y-auto bg-neutral-950/95 border border-neutral-800/95 rounded-2xl p-2 shadow-[0_15px_30px_rgba(0,0,0,0.9)] backdrop-blur-md flex flex-col gap-1 custom-scrollbar">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCuratorEpoca('Todas');
+                                  setIsEpochDropdownOpen(false);
+                                }}
+                                className={`w-full rounded-xl px-4 py-2.5 text-xs font-light transition-all duration-200 flex items-center justify-between ${
+                                  curatorEpoca === 'Todas'
+                                    ? "bg-neutral-950 border border-[#b41d1d] text-white font-medium shadow-[0_0_15px_rgba(180,29,29,0.75)]"
+                                    : "hover:bg-neutral-900/60 text-neutral-400 hover:text-white"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <CalendarDays size={16} color={curatorEpoca === 'Todas' ? "rgb(239, 68, 68)" : "rgb(163, 163, 163)"} className="shrink-0 transition-colors duration-300" />
+                                  <span>Cualquier época</span>
+                                </div>
+                                {curatorEpoca === 'Todas' && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#b41d1d] shadow-[0_0_6px_rgba(180,29,29,0.8)]" />
+                                )}
+                              </button>
+                              
+                              {YEAR_RANGES.map((r) => {
+                                const active = curatorEpoca === r.label;
+                                return (
+                                  <button
+                                    key={r.label}
+                                    type="button"
+                                    onClick={() => {
+                                      setCuratorEpoca(r.label);
+                                      setIsEpochDropdownOpen(false);
+                                    }}
+                                    className={`w-full rounded-xl px-4 py-2.5 text-xs font-light transition-all duration-200 flex items-center justify-between ${
+                                      active
+                                        ? "bg-neutral-950 border border-[#b41d1d] text-white font-medium shadow-[0_0_15px_rgba(180,29,29,0.75)]"
+                                        : "hover:bg-neutral-900/60 text-neutral-400 hover:text-white"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <CalendarDays size={16} color={active ? "rgb(239, 68, 68)" : "rgb(163, 163, 163)"} className="shrink-0 transition-colors duration-300" />
+                                      <span>Años {r.label}</span>
+                                    </div>
+                                    {active && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#b41d1d] shadow-[0_0_6px_rgba(180,29,29,0.8)]" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Line 5: EL TIEMPO */}
+                    <div className="space-y-3">
+                      <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
+                        5. ¿QUÉ DURACIÓN?
+                      </div>
+                      <div className="flex flex-col sm:flex-row border border-neutral-800/80 bg-[#09090b]/60 rounded-2xl p-1 gap-1 max-w-lg">
+                        {(['Corto (<90 min)', 'Estándar', 'Maratón (+2 hrs)'] as const).map((opt) => {
+                          const active = curatorTiempo === opt;
+                          const displayLabels = {
+                            'Corto (<90 min)': 'Menos de 90 min',
+                            'Estándar': 'De 1.5 a 2 horas',
+                            'Maratón (+2 hrs)': 'Más de 2 horas'
+                          };
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => setCuratorTiempo(opt)}
+                              className={`flex-1 px-3 py-2.5 rounded-xl text-xs font-light tracking-wide transition-all duration-300 ${
+                                active 
+                                  ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.03]'
+                                  : 'bg-neutral-900/60 border border-neutral-800/80 text-neutral-400 hover:text-neutral-200 hover:scale-[1.02] shadow-[0_0_8px_rgba(180,29,29,0.2)]'
+                              }`}
+                            >
+                              {displayLabels[opt]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Trigger Column */}
+                  <div className="col-span-1 md:col-span-4 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-neutral-800/60 pt-8 md:pt-0 md:pl-8">
+                    <button
+                      type="button"
+                      onClick={handleCurate}
+                      disabled={isCurating || movies.length === 0}
+                      className="group flex flex-col items-center gap-5 transition-all duration-300 disabled:opacity-40"
+                    >
+                      <div className="relative w-36 h-36 flex items-center justify-center p-4 border border-neutral-800/50 rounded-full bg-neutral-950/20 group-hover:bg-neutral-950/40 group-hover:border-[#b41d1d]/30 transition-all duration-300 shadow-[0_0_30px_rgba(180,29,29,0.01)] group-hover:shadow-[0_0_40px_rgba(180,29,29,0.15)]">
+                        
+                        {/* Clean Vector Clapperboard SVG */}
+                        <svg 
+                          viewBox="0 0 100 100" 
+                          className="w-20 h-20 transition-transform duration-300 group-active:scale-95"
+                        >
+                          {/* Top Arm of clapperboard */}
+                          <g 
+                            className={`origin-[20px_45px] transition-transform duration-300 ease-out ${
+                              isClapping 
+                                ? 'rotate-0' 
+                                : 'group-hover:rotate-[-16deg]'
+                            }`}
+                          >
+                            {/* Top arm of clapperboard with white stripes */}
+                            <path 
+                              d="M 21 28 L 79 28 L 79 40 L 21 40 Z" 
+                              fill="#0c0c0e" 
+                              stroke="#b41d1d" 
+                              strokeWidth="2" 
+                            />
+                            {/* Clean minimal stripes painted as lines */}
+                            <line x1="32" y1="28" x2="40" y2="40" stroke="#b41d1d" strokeWidth="2.5" />
+                            <line x1="48" y1="28" x2="56" y2="40" stroke="#b41d1d" strokeWidth="2.5" />
+                            <line x1="64" y1="28" x2="72" y2="40" stroke="#b41d1d" strokeWidth="2.5" />
+                          </g>
+                          
+                          {/* Bottom Main Board */}
+                          <g className={isClapping ? 'translate-y-[-1px]' : ''}>
+                            <path 
+                              d="M 21 44 L 79 44 L 79 76 L 21 76 Z" 
+                              fill="#030303" 
+                              stroke="#b41d1d" 
+                              strokeWidth="2" 
+                              strokeLinejoin="round"
+                            />
+                            {/* Slates white chalk stripes on body */}
+                            <line x1="32" y1="44" x2="24" y2="56" stroke="#b41d1d" strokeWidth="2" opacity="0.4" />
+                            <line x1="48" y1="44" x2="40" y2="56" stroke="#b41d1d" strokeWidth="2" opacity="0.4" />
+                            <line x1="64" y1="44" x2="56" y2="56" stroke="#b41d1d" strokeWidth="2" opacity="0.4" />
+                            
+                            {/* Subtle play geometry inside board body */}
+                            <polygon points="48,56 48,64 55,60" fill="#b41d1d" opacity="0.8" />
+                          </g>
+                          
+                          {/* Pivot screw */}
+                          <circle cx="21" cy="44" r="3" fill="#b41d1d" />
+                        </svg>
+                        
+                      </div>
+                      
+                      <span className="text-xs md:text-sm font-mono tracking-[0.25em] text-[#eeeeee]/80 group-hover:text-white transition-colors duration-300 text-center uppercase">
+                        {isCurating ? 'BUSCANDO...' : '¡BUSCAR RECOMENDACIONES!'}
+                      </span>
+                    </button>
+                  </div>
+
+                </div>
+              )}
+
+              {/* TOP 3 PREMIUM RENDERED (Show only if recommendations exist and not curating) */}
+              {curatorRecommendations.length > 0 && !isCurating && (
+                <div className="w-full space-y-10 animate-in fade-in duration-500 text-center">
+                  <div className="flex flex-col items-center justify-center space-y-2">
+                    <span className="text-[9px] tracking-[0.3em] font-mono font-light text-[#b41d1d] uppercase">RECOMENDACIÓN LISTA EN BASE A TUS GUSTOS</span>
+                    <h2 className="text-xl md:text-2xl font-light tracking-widest text-[#eeeeee] uppercase">NUESTRO TOP 3 PARA TI</h2>
+                    <p className="text-[10px] text-neutral-500 tracking-wide font-normal">Aquí tienes las 3 mejores opciones que seleccionó el Director de acuerdo a lo que buscas.</p>
+                  </div>
+
+                  {/* CAROUSEL/GRID DUAL LAYOUT: Horizontal scroll in mobile, 3 columns grid on desktop */}
+                  <div 
+                    className="flex flex-row md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-visible pb-6 md:pb-0 snap-x snap-mandatory scrollbar-none max-w-5xl mx-auto px-4 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                  >
+                    {(() => {
+                      const recs = curatorRecommendations.slice(0, 3);
+                      if (recs.length === 0) return null;
+
+                      return recs.map((rec, index) => {
+                        // Lookup details
+                        const movieDetails = movies.find(m => 
+                          m.id === rec.id || 
+                          m.title?.toLowerCase().trim() === rec.title?.toLowerCase().trim() ||
+                          m.originalTitle?.toLowerCase().trim() === rec.title?.toLowerCase().trim()
+                        );
+                        
+                        const titleToUse = movieDetails?.title || rec.title;
+                        const cleanTitle = titleToUse.replace(/\s*\(.*?\)\s*/g, "").trim();
+                        const posterToUse = movieDetails?.poster || DEMO_POSTER;
+                        const yearToUse = movieDetails?.year || "N/A";
+                        const ratingToUse = movieDetails?.rating || 0;
+                        const genreToUse = movieDetails?.genre || "Cine de Autor";
+                        const romanRanks = ["I", "II", "III"];
+                        
+                        const directorToUse = movieDetails?.director || "Director Desconocido";
+                        const originalTitleToUse = movieDetails?.originalTitle || "";
+                        const durationToUse = movieDetails?.duration ? `${movieDetails.duration}` : "Cine";
+                        const ageRatingToUse = movieDetails?.ageRating || "N/A";
+                        const countryToUse = movieDetails?.country || "Internacional";
+
+                        return (
+                          <div 
+                            key={rec.id || index}
+                            onClick={() => {
+                              if (movieDetails) {
+                                setSelectedMovie(movieDetails);
+                                setIsEditing(false);
+                                setIsDeleting(false);
+                              }
+                            }}
+                            className="group relative flex flex-col bg-[#050507] border border-neutral-900 hover:border-red-600/35 rounded-xl overflow-hidden cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(180,29,29,0.12)] text-left snap-start min-w-[290px] sm:min-w-[340px] md:min-w-0"
+                          >
+                            {/* Roman indicator and Rank Number beautifully displayed */}
+                            <div className="absolute top-5 right-6 text-[80px] font-black leading-none text-[#b41d1d]/4 group-hover:text-[#b41d1d]/10 transition-colors duration-500 font-mono select-none pointer-events-none z-20">
+                              0{index + 1}
+                            </div>
+
+                            {/* Complete uncropped Poster Section inside standard portrait 2:3 container */}
+                            <div className="relative aspect-[2/3] w-full overflow-hidden bg-neutral-950 border-b border-neutral-900/60 flex items-center justify-center p-3">
+                              {/* Blurred ambient background image to fill gaps premium style */}
+                              <img 
+                                src={posterToUse} 
+                                alt="" 
+                                className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-20 scale-110 pointer-events-none"
+                                referrerPolicy="no-referrer"
+                                onError={(e: any) => e.target.src = DEMO_POSTER}
+                              />
+                              
+                              {/* Sharp foreground complete uncropped vertical poster */}
+                              <img 
+                                src={posterToUse} 
+                                alt={cleanTitle} 
+                                className="relative z-10 w-full h-full object-contain rounded-md shadow-2xl transition-transform duration-700 group-hover:scale-[1.02]"
+                                referrerPolicy="no-referrer"
+                                onError={(e: any) => e.target.src = DEMO_POSTER}
+                              />
+                              
+                              {/* Subtle dark cinematic vignette overlay */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 z-15" />
+
+                              {/* Award Rank Badge */}
+                              <div className="absolute top-4 left-4 bg-black/80 backdrop-blur-md border border-neutral-800/80 text-white text-[8px] font-mono font-medium tracking-[0.18em] px-2.5 py-1 rounded select-none z-20 flex items-center gap-1.5 shadow-lg">
+                                <Trophy size={10} className="text-yellow-600 shrink-0" />
+                                <span>SELECCIÓN {romanRanks[index] || (index + 1)}</span>
+                              </div>
+
+                              {/* Film score badge (matched to archive version) */}
+                              {ratingToUse > 0 && (
+                                <div className="absolute bottom-4 right-4 flex items-center gap-1.5 text-[11px] text-white font-mono font-bold bg-black/80 border border-neutral-800/80 px-2.5 py-1 rounded shadow-md backdrop-blur-sm z-20">
+                                  <Star size={10} fill="currentColor" className="text-yellow-500" />
+                                  <span>{Number(ratingToUse).toFixed(1)}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Premium Info Panel */}
+                            <div className="p-6 flex-1 flex flex-col justify-between bg-gradient-to-b from-[#050508] to-neutral-950 relative">
+                              <div className="space-y-4">
+                                {/* Metadata Strip */}
+                                <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono tracking-wider gap-2">
+                                  <span className="truncate pr-2 max-w-[150px] uppercase font-bold text-neutral-300 bg-neutral-900/30 border border-neutral-800/60 px-2.5 py-1 rounded">{genreToUse.split('/')[0]?.trim()}</span>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {ageRatingToUse && ageRatingToUse !== "N/A" && ageRatingToUse !== "No disponible" && (
+                                      <span className="border border-neutral-800/60 bg-neutral-950 px-2 py-1 text-neutral-500 font-mono text-[9px] font-bold tracking-wider rounded">
+                                        {ageRatingToUse}
+                                      </span>
+                                    )}
+                                    <span className="font-mono text-[9px] tracking-[0.12em] font-black text-red-500/90 bg-red-950/15 border border-red-900/40 px-2.5 py-1 rounded">{yearToUse}</span>
+                                  </div>
+                                </div>
+
+                                {/* Title & Original Title */}
+                                <div translate="no" className="space-y-1 notranslate">
+                                  <h3 className="text-base md:text-lg font-bold tracking-tight text-neutral-100 group-hover:text-white transition-colors duration-300">
+                                    {cleanTitle}
+                                  </h3>
+                                  {originalTitleToUse && originalTitleToUse !== cleanTitle && (
+                                    <p className="text-xs text-neutral-400 font-light truncate italic">
+                                      {originalTitleToUse}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* Technical details list (Country, director and duration) */}
+                                <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-[11px] text-neutral-400 border-t border-neutral-900/60 pt-3.5">
+                                  <div className="flex items-center gap-1.5 truncate">
+                                    <User size={12} className="text-[#b41d1d]/80 shrink-0" />
+                                    <span translate="no" className="notranslate truncate font-medium">{directorToUse}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 justify-end shrink-0">
+                                    <Clock size={12} className="text-[#b41d1d]/80 shrink-0" />
+                                    <span>{durationToUse}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 truncate col-span-2">
+                                    <Globe size={11} className="text-[#b41d1d]/80 shrink-0" />
+                                    <span className="truncate text-[10px] text-neutral-400">{countryToUse}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Visual cue to open specs details */}
+                              <div className="mt-5 pt-3 border-t border-white/[0.04] flex items-center justify-between text-[9px] font-mono text-zinc-500 group-hover:text-white transition-all duration-300">
+                                <span className="tracking-widest">VER MÁS</span>
+                                <ChevronRight size={11} className="transform group-hover:translate-x-1.5 text-[#b41d1d] transition-transform duration-300" />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+
+                  {/* Reset selection bottom button */}
+                  <div className="flex justify-center pt-4">
+                    <button 
+                      onClick={() => { setCuratorRecommendations([]); setCurationError(null); }} 
+                      className="px-6 py-2.5 border border-neutral-800 hover:border-[#b41d1d]/40 rounded-xl text-[10px] font-medium tracking-[0.2em] text-neutral-400 hover:text-white transition-all uppercase active:scale-95 shrink-0"
+                    >
+                      Cambiar Opciones / Volver a Empezar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* DIVISOR CINTA DE CINE */}
+          {selectedGenre === "Todos" && !isDirectorFilterActive && (
+            <div className="w-full h-12 opacity-80 my-12">
+              <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id="film-strip" x="0" y="0" width="80" height="48" patternUnits="userSpaceOnUse">
+                    <animate attributeName="x" from="0" to="80" dur="6s" repeatCount="indefinite" />
+                    <rect x="0" y="0" width="80" height="48" fill="#27272a" />
+                    <rect x="8" y="4" width="14" height="8" fill="#000" rx="1" />
+                    <rect x="48" y="4" width="14" height="8" fill="#000" rx="1" />
+                    <rect x="8" y="36" width="14" height="8" fill="#000" rx="1" />
+                    <rect x="48" y="36" width="14" height="8" fill="#000" rx="1" />
+                    <rect x="4" y="16" width="72" height="16" fill="#18181b" rx="1" />
+                  </pattern>
+                </defs>
+                <rect x="0" y="0" width="100%" height="100%" fill="url(#film-strip)" />
+              </svg>
+            </div>
+          )}
+
+          {selectedGenre === "Todos" && !isDirectorFilterActive && (
+            <div className="w-full flex flex-col items-center text-center space-y-10 animate-in fade-in duration-1000">
+              {randomQuote ? (
+                <>
+                  <QuoteIcon className="text-brand-main/60 w-12 h-12" />
+                  <p key={randomQuote.text} className="text-glow-animate text-lg md:text-xl font-black italic tracking-tighter leading-relaxed text-zinc-100 max-w-2xl px-4">"{randomQuote.text}"</p>
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-px w-20 bg-brand-main mb-2 shadow-[0_0_10px_rgba(179,5,0,0.5)]" />
+                    <span translate="no" className="notranslate text-brand-main text-[10px] font-black uppercase tracking-[0.5em]">{randomQuote.character}</span>
+                    <span translate="no" className="notranslate text-zinc-600 text-[9px] font-black uppercase tracking-widest italic">{randomQuote.movie}</span>
+                  </div>
+                </>
+              ) : (
+                 <div className="h-40 flex items-center justify-center"><Loader2 className="animate-spin text-zinc-900" size={32} /></div>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-col items-center space-y-8 w-full pt-16 border-t border-white/5 opacity-40">
             <div className="flex flex-col items-center space-y-3">
               <img 
                 src="/android-chrome-512x512.png" 
-                alt="Videoteca Logo" 
+                alt="Mediateca Logo" 
                 className="w-12 h-12 rounded-xl object-cover border border-white/10 opacity-80"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=128&auto=format&fit=crop&q=60';
                 }}
               />
             </div>
-            <p className="text-[8px] font-bold text-zinc-600 tracking-[0.6em] uppercase text-center leading-relaxed">© MMXXVI — VIDEOTECA PROFESIONAL — ALL RIGHTS RESERVED</p>
+            <p className="text-[8px] font-bold text-zinc-600 tracking-[0.6em] uppercase text-center leading-relaxed">© MMXXVI — MEDIATECA PROFESIONAL — ALL RIGHTS RESERVED</p>
           </div>
         </div>
       </footer>
@@ -2147,8 +3232,8 @@ const EditField = ({ label, value, onChange, type = "text", className = "", plac
     if (norm.includes('género') || norm.includes('genero')) return <LayoutGrid size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
     if (norm.includes('durac')) return <Clock size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
     if (norm.includes('país') || norm.includes('pais')) return <Globe size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
-    if (norm.includes('clasific')) return <AlertTriangle size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
-    if (norm.includes('direcc')) return <User size={14} className="text-[#b41d1d] transition-colors duration-300" />;
+    if (norm.includes('clasific')) return <Eye size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
+    if (norm.includes('direcc')) return <User size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
     if (norm.includes('guion')) return <ClipboardList size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
     if (norm.includes('música') || norm.includes('musica')) return <Music size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
     if (norm.includes('fotografía') || norm.includes('foto')) return <ImageIcon size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />;
