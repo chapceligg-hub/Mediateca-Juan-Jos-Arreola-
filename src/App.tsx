@@ -12,7 +12,7 @@ import {
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
-  fetchMoviesOptimized, fetchAdminsOptimized, subscribeMovies, generateMovieId
+  fetchMoviesOptimized, fetchAdminsOptimized, syncMoviesIncremental, generateMovieId
 } from './lib/firebase';
 import { Movie, Quote as QuoteType } from './types';
 import { ALPHABET, YEAR_RANGES, DEMO_POSTER } from './constants';
@@ -1059,7 +1059,8 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       return;
     }
 
-    // 1. Estrategia Cache-First Obligatoria: Cargar primero datos de forma instantánea de la caché local
+    // 1. TRÍPTICO DE CARGA INCREMENTAL (FUSIÓN DE CACHÉ)
+    // Lee e inyecta inmediatamente en el estado global de React el catálogo guardado en localStorage.
     try {
       const offlineData = localStorage.getItem("videoteca_movies_cache");
       if (offlineData) {
@@ -1072,21 +1073,20 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       console.warn("Error leyendo la caché inicial de películas:", e);
     }
 
-    // 2. Conectar la suscripción en tiempo real con limpieza correcta ante desmontaje
-    const unsubscribe = subscribeMovies(
-      (moviesList) => {
-        setMovies(moviesList);
+    // Acto seguido, realiza una consulta única y pasiva a Firestore y fusiona.
+    const loadIncremental = async () => {
+      try {
+        const unifiedMovies = await syncMoviesIncremental();
+        setMovies(unifiedMovies);
         setFirestoreError(null);
-      },
-      (err) => {
-        console.error("Error en tiempo real al sincronizar películas:", err);
-        setFirestoreError(err.message || "Error al sincronizar datos en tiempo real");
+      } catch (err: any) {
+        console.error("Error en sincronización incremental:", err);
+        setFirestoreError(err.message || "Error al sincronizar datos");
       }
-    );
-
-    return () => {
-      unsubscribe();
     };
+    
+    loadIncremental();
+
   }, [isAuthChecking]);
 
   useEffect(() => {
