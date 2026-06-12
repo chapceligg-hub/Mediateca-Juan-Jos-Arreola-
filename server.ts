@@ -137,12 +137,10 @@ const SAMBANOVA_MODELS = [
 ];
 let currentPriorityModel = "gemini-2.5-flash";
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+export const app = express();
 
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
    app.post("/api/catalog", async (req, res) => {
     try {
@@ -1376,7 +1374,10 @@ ${JSON.stringify(lightweightMovies, null, 2)}`;
     }
   });
 
-  // Vite middleware for development
+// Setup Vite and Listen only when not on Vercel
+async function setupViteAndListen() {
+  const PORT = 3000;
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1396,4 +1397,8 @@ ${JSON.stringify(lightweightMovies, null, 2)}`;
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  setupViteAndListen();
+}
+
+export default app;
