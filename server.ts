@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
@@ -1379,7 +1378,8 @@ async function setupViteAndListen() {
   const PORT = 3000;
 
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    const vitePkg = await import("vite");
+    const vite = await vitePkg.createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
