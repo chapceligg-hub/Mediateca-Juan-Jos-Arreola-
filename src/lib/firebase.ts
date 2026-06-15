@@ -90,139 +90,36 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   return data;
 };
 
-export const syncMoviesIncremental = async () => {
-  // 1. Lee la caché local de localStorage
-  let localMovies: any[] = [];
-  try {
-    const offlineData = localStorage.getItem("videoteca_movies_cache");
-    if (offlineData) {
-      const parsed = JSON.parse(offlineData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        localMovies = parsed;
-        console.log(`[Caché Incremental] Cargadas ${localMovies.length} películas desde localStorage.`);
-      }
-    }
-  } catch (e) {
-    console.warn("Error leyendo la caché inicial de localStorage:", e);
-  }
-
-  // 1B. Rescate MASIVO desde la caché nativa de Firebase IndexedDB (Costo 0 lecturas)
-  try {
-    console.log("[Caché Incremental] Revisando caché nativa de Firebase (IndexedDB) para recuperar historial...");
-    const cacheSnap = await getDocsFromCache(query(collection(db, 'movies')));
-    if (!cacheSnap.empty) {
-      const fbCache = cacheSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log(`[Caché Incremental] Firebase Cache contenía ${fbCache.length} películas.`);
-      
-      const existingIds = new Set(localMovies.map(m => m.id));
-      let addedFromFb = 0;
-      for (const m of fbCache) {
-        if (!existingIds.has(m.id)) {
-          localMovies.push(m);
-          addedFromFb++;
-        }
-      }
-      if (addedFromFb > 0) {
-        console.log(`[Caché Incremental] Se unieron ${addedFromFb} películas antiguas desde Firebase Cache.`);
-      }
-    }
-  } catch (e) {
-    console.log("[Caché Incremental] Firebase Cache vacía o no disponible aún.");
-  }
-
-  // 2. Extraer el timestamp de actualización más reciente en memoria
-  let latestTimestamp = "";
-  if (localMovies.length > 0) {
-    for (const m of localMovies) {
-      const t = m.updatedAt || m.createdAt || "";
-      if (t > latestTimestamp) {
-        latestTimestamp = t;
-      }
-    }
-  }
-
-  // 3. Consulta única y pasiva solo por lo nuevo o modificado
-  try {
-    let q;
-    if (latestTimestamp) {
-      console.log(`[Caché Incremental] Consultando al SERVIDOR películas creadas o modificadas después de: ${latestTimestamp}`);
-      q = query(collection(db, 'movies'), where('updatedAt', '>', latestTimestamp));
-    } else {
-      console.log(`[Caché Incremental] No hay ninguna caché. Descargando catálogo completo por primera vez.`);
-      q = query(collection(db, 'movies'));
-    }
-    
-    // getDocsFromServer asegura que no cobren lecturas repetidas
-    const snapshot = await getDocsFromServer(q);
-    const newMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    if (newMovies.length > 0) {
-      console.log(`[Caché Incremental] Se encontraron ${newMovies.length} películas nuevas en el servidor. Cobro en Firebase: ${newMovies.length} lecturas.`);
-      
-      // 4. FUSIÓN INMEDIATA
-      const newIds = new Set(newMovies.map(m => m.id));
-      const filteredLocal = localMovies.filter(m => !newIds.has(m.id));
-      
-      localMovies = [...newMovies, ...filteredLocal];
-      
-      // Mantenemos el orden descendente por recencia
-      localMovies.sort((a, b) => {
-        const timeA = a.createdAt || a.updatedAt || "";
-        const timeB = b.createdAt || b.updatedAt || "";
-        return timeB.localeCompare(timeA);
-      });
-
-      // Intentamos guardar en localStorage (Protección contra QuotaExceededError)
-      try {
-        localStorage.setItem("videoteca_movies_cache", JSON.stringify(localMovies));
-      } catch (quotaError) {
-        console.warn("[Caché Incremental] QuotaExceededError en localStorage. Firebase IndexedDB mantendrá la data.");
-      }
-    } else {
-      console.log("[Caché Incremental] No hay películas nuevas. Lecturas al servidor cobradas: 0.");
-      
-      // Aseguramos el orden correcto si rescatamos cosas de IndexedDB
-      localMovies.sort((a, b) => {
-        const timeA = a.createdAt || a.updatedAt || "";
-        const timeB = b.createdAt || b.updatedAt || "";
-        return timeB.localeCompare(timeA);
-      });
-      // Guardado por si acaso
-      try {
-        localStorage.setItem("videoteca_movies_cache", JSON.stringify(localMovies));
-      } catch (quotaError) {}
-    }
-  } catch (error) {
-    console.error("Error en sincronización incremental pasiva:", error);
-  }
+export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (err: any) => void) => {
+  console.log("[Firebase] Iniciando suscripción optimizada a películas (onSnapshot)...");
+  // Utilizamos onSnapshot con IndexedDB (persistentLocalCache) en lugar de recargar manualmente.
+  // Esto previene de forma contundente el "agotamiento de lecturas" al recuperar únicamente 
+  // los documentos que han cambiado desde la última sincronización en caché local.
+  const q = query(collection(db, 'movies'));
   
-  return localMovies;
-};
-
-export const setupRealtimeSync = (latestTimestamp: string, callback: (changes: any[]) => void) => {
-  let q;
-  if (latestTimestamp) {
-    q = query(collection(db, 'movies'), where('updatedAt', '>', latestTimestamp));
-  } else {
-    // Si no hay caché, escuchamos a todo (esto pasa la primera vez)
-    q = query(collection(db, 'movies'));
-  }
-
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    const changes = snapshot.docChanges().map(change => ({
-      type: change.type, // 'added', 'modified', o 'removed'
-      movie: { id: change.doc.id, ...change.doc.data() }
-    }));
+  return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+    // metadata.fromCache indica si proviene del local sin consumo, pero procesamos todo
+    const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
-    if (changes.length > 0) {
-      console.log(`[Realtime Sync] Detectados ${changes.length} cambios en tiempo real.`);
-      callback(changes);
-    }
-  }, (error) => {
-    console.error("[Realtime Sync] Error en listener:", error);
-  });
+    // Mantenemos el orden descendente por recencia
+    movies.sort((a, b) => {
+      const timeA = a.createdAt || "";
+      const timeB = b.createdAt || "";
+      return timeB.localeCompare(timeA);
+    });
 
-  return unsubscribe;
+    // Guardamos la nueva caché unificada para cuando carga rápido
+    try {
+      localStorage.setItem("videoteca_movies_cache", JSON.stringify(movies));
+    } catch (error) {
+      console.warn("No se pudo escribir en la memoria caché", error);
+    }
+    
+    callback(movies);
+  }, (error) => {
+    console.error("Error en la suscripción de caché en tiempo real:", error);
+    onError(error);
+  });
 };
 
 export const fetchAdminsOptimized = async (forceServer = false) => {

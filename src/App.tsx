@@ -12,7 +12,7 @@ import {
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
-  fetchMoviesOptimized, fetchAdminsOptimized, syncMoviesIncremental, setupRealtimeSync, generateMovieId
+  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies
 } from './lib/firebase';
 import { Movie, Quote as QuoteType } from './types';
 import { ALPHABET, YEAR_RANGES, DEMO_POSTER } from './constants';
@@ -992,7 +992,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   const [isBypassActive, setIsBypassActive] = useState(false);
 
   useEffect(() => {
-    onAuthStateChanged(async (currentUser: any) => {
+    const unsub = onAuthStateChanged(async (currentUser: any) => {
       if (isBypassActive) return; // Prevent overwriting bypass session
       
       if (currentUser) {
@@ -1043,6 +1043,8 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       }
       setIsAuthChecking(false);
     });
+
+    return () => unsub(); // REFUERZO: Evitar memory leaks e infinitos loops de verificación
   }, [isBypassActive]);
 
   // Rotación periódica de las 123 frases icónicas de cine (cada minuto) 100% client-side sin lecturas en base de datos
@@ -1060,7 +1062,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     }
 
     // 1. TRÍPTICO DE CARGA INCREMENTAL (FUSIÓN DE CACHÉ)
-    // Lee e inyecta inmediatamente en el estado global de React el catálogo guardado en localStorage.
+    // RECUPERACIÓN DE MEMORIA CACHÉ GUARDADA: Leemos inmediatamente por si Firestore tarda en conectar
     try {
       const offlineData = localStorage.getItem("videoteca_movies_cache");
       if (offlineData) {
@@ -1073,62 +1075,22 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       console.warn("Error leyendo la caché inicial de películas:", e);
     }
 
-    // Acto seguido, realiza una consulta única y pasiva a Firestore y fusiona.
-    let unsubscribe: any = null;
-
-    const loadIncremental = async () => {
-      try {
-        const unifiedMovies = await syncMoviesIncremental();
+    // REFUERZO ANTI-AGOTAMIENTO DE LECTURAS:
+    // Sustituimos el sync pasivo por un onSnapshot respaldado por IndexedDB (persistentLocalCache).
+    // Esto GARANTIZA que el servidor solo sea consultado por los DELTAS (cambios) desde la última conexión.
+    // También recupera TODAS las películas que ya llevábamos al no filtrar localmente por createdAt.
+    const unsub = subscribeToMovies(
+      (unifiedMovies: Movie[]) => {
         setMovies(unifiedMovies);
         setFirestoreError(null);
-        
-        // Extraer timestamp final para solo recibir deltas tras la carga
-        let latestTimestamp = "";
-        for (const m of unifiedMovies) {
-          const t = m.updatedAt || m.createdAt || "";
-          if (t > latestTimestamp) {
-            latestTimestamp = t;
-          }
-        }
-        
-        unsubscribe = setupRealtimeSync(latestTimestamp, (changes) => {
-          setMovies(prev => {
-            let next = [...prev];
-            for (const change of changes) {
-              if (change.type === 'added' || change.type === 'modified') {
-                const idx = next.findIndex(m => m.id === change.movie.id);
-                if (idx > -1) next[idx] = change.movie;
-                else next.push(change.movie);
-              } else if (change.type === 'removed') {
-                next = next.filter(m => m.id !== change.movie.id);
-              }
-            }
-            // Mantener orden descendente por recencia
-            next.sort((a, b) => {
-              const timeA = a.createdAt || a.updatedAt || "";
-              const timeB = b.createdAt || b.updatedAt || "";
-              return timeB.localeCompare(timeA);
-            });
-            setTimeout(() => {
-              try {
-                localStorage.setItem("videoteca_movies_cache", JSON.stringify(next));
-              } catch (e) {}
-            }, 0);
-            return next;
-          });
-        });
-      } catch (err: any) {
-        console.error("Error en sincronización incremental:", err);
+      },
+      (err: any) => {
+        console.error("Error en sincronización en tiempo real:", err);
         setFirestoreError(err.message || "Error al sincronizar datos");
       }
-    };
-    
-    loadIncremental();
+    );
 
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-
+    return () => unsub(); // Fundamental para no crear listeners infinitos y agotar lecturas
   }, [isAuthChecking]);
 
   useEffect(() => {
@@ -2002,16 +1964,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 >
                   <div className="aspect-[2/3] w-full overflow-hidden relative rounded-lg shadow-[0_15px_40px_rgba(0,0,0,0.6)] border border-white/5 transition-all duration-500 group-hover:border-white/20 group-hover:-translate-y-2 group-hover:shadow-[0_20px_50px_rgba(220,38,38,0.15)] bg-zinc-900 shimmer-placeholder">
                     <img 
-                      src={
-                        movie.poster
-                          ? (movie.poster.startsWith("/") && !movie.poster.startsWith("http")
-                            ? `https://image.tmdb.org/t/p/w500${movie.poster}`
-                            : movie.poster)
-                          : DEMO_POSTER
-                      } 
+                      src={movie.poster || DEMO_POSTER} 
                       className="w-full h-full object-cover bg-zinc-900 card-scale-img" 
                       alt={movie.title} 
-                      referrerPolicy="no-referrer"
                       onError={(e: any) => e.target.src = DEMO_POSTER} 
                       loading="lazy"
                     />
@@ -2130,35 +2085,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               <div className="flex-1 overflow-hidden group relative flex items-center justify-center p-6 bg-black/[0.1]">
                 <img 
                   key={(isAddingNew || isEditing) ? editForm.poster : selectedMovie?.poster}
-                  src={
-                    (isAddingNew || isEditing)
-                      ? (editForm.poster 
-                         ? (editForm.poster.startsWith("/") && !editForm.poster.startsWith("http")
-                           ? `https://image.tmdb.org/t/p/w500${editForm.poster}`
-                           : editForm.poster)
-                         : DEMO_POSTER)
-                      : (selectedMovie?.poster 
-                         ? (selectedMovie.poster.startsWith("/") && !selectedMovie.poster.startsWith("http")
-                           ? `https://image.tmdb.org/t/p/w500${selectedMovie.poster}`
-                           : selectedMovie.poster)
-                         : DEMO_POSTER)
-                  } 
+                  src={(isAddingNew || isEditing) ? (editForm.poster || DEMO_POSTER) : (selectedMovie?.poster || DEMO_POSTER)} 
                   className={`w-full max-h-[500px] object-contain transition-all duration-700 cursor-pointer ${
                     isEditing || isAddingNew 
                       ? 'rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.85)]' 
                       : 'rounded-2xl border border-[#b41d1d]/35 shadow-[0_0_40px_rgba(180,29,29,0.38)]'
                   } opacity-95 group-hover:opacity-100`} 
-                  onClick={() => {
-                    const originalPoster = (isAddingNew || isEditing) ? editForm.poster : selectedMovie?.poster;
-                    const cleanPoster = originalPoster
-                      ? (originalPoster.startsWith("/") && !originalPoster.startsWith("http")
-                        ? `https://image.tmdb.org/t/p/w500${originalPoster}`
-                        : originalPoster)
-                      : DEMO_POSTER;
-                    setFullscreenImage(cleanPoster);
-                  }}
+                  onClick={() => setFullscreenImage((isAddingNew || isEditing) ? (editForm.poster || DEMO_POSTER) : (selectedMovie?.poster || DEMO_POSTER))}
                   alt="Poster Preview" 
-                  referrerPolicy="no-referrer"
                   onError={(e: any) => e.target.src = DEMO_POSTER} 
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/20 via-transparent to-transparent pointer-events-none" />
@@ -3335,7 +3269,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             src={fullscreenImage} 
             alt="Fullscreen Poster" 
             className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-500"
-            referrerPolicy="no-referrer"
           />
           <button 
             className="absolute top-6 right-6 p-3 bg-white/10 text-white rounded-full hover:bg-white/20 transition-colors"

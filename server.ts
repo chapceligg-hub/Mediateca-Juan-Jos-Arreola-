@@ -8,14 +8,6 @@ export function sanitizeMovieData(rawData: any): any {
     rawData = {};
   }
 
-  let rawPoster = rawData.poster ?? rawData.imagen ?? rawData.poster_url ?? "";
-  if (typeof rawPoster === "string") {
-    rawPoster = rawPoster.trim();
-    if (rawPoster.startsWith("/") && !rawPoster.startsWith("//") && !rawPoster.includes("://")) {
-      rawPoster = `https://image.tmdb.org/t/p/w500${rawPoster}`;
-    }
-  }
-
   // Map Spanish key names back to standard Movie interface keys if the IA responded in Spanish
   const mapped: any = {
     title: rawData.title ?? rawData.titulo ?? rawData.title_es ?? rawData.display_title ?? "",
@@ -28,7 +20,7 @@ export function sanitizeMovieData(rawData: any): any {
     genre: rawData.genre ?? rawData.genero ?? rawData.género ?? "",
     ageRating: rawData.ageRating ?? rawData.clasificacion ?? rawData.clasificación ?? rawData.rating_age ?? "",
     format: rawData.format ?? rawData.formato ?? "",
-    poster: rawPoster,
+    poster: rawData.poster ?? rawData.imagen ?? rawData.poster_url ?? "",
     synopsis: rawData.synopsis ?? rawData.sinopsis ?? rawData.argumento ?? "",
     cast: Array.isArray(rawData.cast ?? rawData.elenco ?? rawData.actores) 
       ? (rawData.cast ?? rawData.elenco ?? rawData.actores) 
