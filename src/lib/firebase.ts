@@ -130,23 +130,23 @@ export const syncMoviesIncremental = async () => {
     console.log("[Caché Incremental] Firebase Cache vacía o no disponible aún.");
   }
 
-  // 2. Extraer el timestamp de la película más reciente en memoria
+  // 2. Extraer el timestamp de actualización más reciente en memoria
   let latestTimestamp = "";
   if (localMovies.length > 0) {
     for (const m of localMovies) {
-      const t = m.createdAt || "";
+      const t = m.updatedAt || m.createdAt || "";
       if (t > latestTimestamp) {
         latestTimestamp = t;
       }
     }
   }
 
-  // 3. Consulta única y pasiva solo por lo nuevo
+  // 3. Consulta única y pasiva solo por lo nuevo o modificado
   try {
     let q;
     if (latestTimestamp) {
-      console.log(`[Caché Incremental] Consultando al SERVIDOR películas creadas después de: ${latestTimestamp}`);
-      q = query(collection(db, 'movies'), where('createdAt', '>', latestTimestamp));
+      console.log(`[Caché Incremental] Consultando al SERVIDOR películas creadas o modificadas después de: ${latestTimestamp}`);
+      q = query(collection(db, 'movies'), where('updatedAt', '>', latestTimestamp));
     } else {
       console.log(`[Caché Incremental] No hay ninguna caché. Descargando catálogo completo por primera vez.`);
       q = query(collection(db, 'movies'));
