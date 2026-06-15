@@ -199,6 +199,32 @@ export const syncMoviesIncremental = async () => {
   return localMovies;
 };
 
+export const setupRealtimeSync = (latestTimestamp: string, callback: (changes: any[]) => void) => {
+  let q;
+  if (latestTimestamp) {
+    q = query(collection(db, 'movies'), where('updatedAt', '>', latestTimestamp));
+  } else {
+    // Si no hay caché, escuchamos a todo (esto pasa la primera vez)
+    q = query(collection(db, 'movies'));
+  }
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const changes = snapshot.docChanges().map(change => ({
+      type: change.type, // 'added', 'modified', o 'removed'
+      movie: { id: change.doc.id, ...change.doc.data() }
+    }));
+    
+    if (changes.length > 0) {
+      console.log(`[Realtime Sync] Detectados ${changes.length} cambios en tiempo real.`);
+      callback(changes);
+    }
+  }, (error) => {
+    console.error("[Realtime Sync] Error en listener:", error);
+  });
+
+  return unsubscribe;
+};
+
 export const fetchAdminsOptimized = async (forceServer = false) => {
   const q = collection(db, 'admins');
   

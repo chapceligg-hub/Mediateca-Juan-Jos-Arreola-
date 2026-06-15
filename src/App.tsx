@@ -12,7 +12,7 @@ import {
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
-  fetchMoviesOptimized, fetchAdminsOptimized, syncMoviesIncremental, generateMovieId
+  fetchMoviesOptimized, fetchAdminsOptimized, syncMoviesIncremental, setupRealtimeSync, generateMovieId
 } from './lib/firebase';
 import { Movie, Quote as QuoteType } from './types';
 import { ALPHABET, YEAR_RANGES, DEMO_POSTER } from './constants';
@@ -1074,11 +1074,49 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     }
 
     // Acto seguido, realiza una consulta única y pasiva a Firestore y fusiona.
+    let unsubscribe: any = null;
+
     const loadIncremental = async () => {
       try {
         const unifiedMovies = await syncMoviesIncremental();
         setMovies(unifiedMovies);
         setFirestoreError(null);
+        
+        // Extraer timestamp final para solo recibir deltas tras la carga
+        let latestTimestamp = "";
+        for (const m of unifiedMovies) {
+          const t = m.updatedAt || m.createdAt || "";
+          if (t > latestTimestamp) {
+            latestTimestamp = t;
+          }
+        }
+        
+        unsubscribe = setupRealtimeSync(latestTimestamp, (changes) => {
+          setMovies(prev => {
+            let next = [...prev];
+            for (const change of changes) {
+              if (change.type === 'added' || change.type === 'modified') {
+                const idx = next.findIndex(m => m.id === change.movie.id);
+                if (idx > -1) next[idx] = change.movie;
+                else next.push(change.movie);
+              } else if (change.type === 'removed') {
+                next = next.filter(m => m.id !== change.movie.id);
+              }
+            }
+            // Mantener orden descendente por recencia
+            next.sort((a, b) => {
+              const timeA = a.createdAt || a.updatedAt || "";
+              const timeB = b.createdAt || b.updatedAt || "";
+              return timeB.localeCompare(timeA);
+            });
+            setTimeout(() => {
+              try {
+                localStorage.setItem("videoteca_movies_cache", JSON.stringify(next));
+              } catch (e) {}
+            }, 0);
+            return next;
+          });
+        });
       } catch (err: any) {
         console.error("Error en sincronización incremental:", err);
         setFirestoreError(err.message || "Error al sincronizar datos");
@@ -1086,6 +1124,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     };
     
     loadIncremental();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
 
   }, [isAuthChecking]);
 
