@@ -3056,7 +3056,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                   {/* CAROUSEL/GRID DUAL LAYOUT: Horizontal scroll in mobile, 3 columns grid on desktop */}
                   <div 
-                    className="flex flex-row md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-visible pb-6 md:pb-0 snap-x snap-mandatory scrollbar-none max-w-5xl mx-auto px-4 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
+                    className="flex flex-row md:grid md:grid-cols-3 gap-16 sm:gap-20 md:gap-12 lg:gap-16 overflow-x-auto md:overflow-visible pb-12 md:pb-0 pt-16 snap-x snap-mandatory scrollbar-none max-w-6xl mx-auto pl-24 pr-8 md:px-14 lg:px-20 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                   >
                     {(() => {
@@ -3066,9 +3066,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       return recs.map((rec, index) => {
                         // Lookup details
                         const movieDetails = movies.find(m => 
-                          m.id === rec.id || 
-                          m.title?.toLowerCase().trim() === rec.title?.toLowerCase().trim() ||
-                          m.originalTitle?.toLowerCase().trim() === rec.title?.toLowerCase().trim()
+                           m.id === rec.id || 
+                           m.title?.toLowerCase().trim() === rec.title?.toLowerCase().trim() ||
+                           m.originalTitle?.toLowerCase().trim() === rec.title?.toLowerCase().trim()
                         );
                         
                         const titleToUse = movieDetails?.title || rec.title;
@@ -3109,12 +3109,16 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                 setIsDeleting(false);
                               }
                             }}
-                            className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-hidden cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start min-w-[290px] sm:min-w-[340px] md:min-w-0"
+                            className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-visible cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start min-w-[290px] sm:min-w-[340px] md:min-w-0 isolate"
                           >
 
+                            {/* Huge Background Silhouette Number behind the card sticking out on the left edge */}
+                            <div className="absolute top-1/2 -translate-y-1/2 left-0 -translate-x-[62%] -z-10 select-none pointer-events-none opacity-25 text-white font-black tracking-tighter text-[10rem] sm:text-[12rem] md:text-[13rem] lg:text-[15rem] leading-none transition-all duration-500 group-hover:opacity-45 group-hover:scale-105">
+                              {index + 1}
+                            </div>
 
                             {/* Complete uncropped Poster Section inside standard portrait 2:3 container */}
-                            <div className="relative aspect-[2/3] w-full overflow-hidden bg-neutral-950 border-b border-neutral-900/60 flex items-center justify-center p-3">
+                            <div className="relative z-10 aspect-[2/3] w-full overflow-hidden bg-neutral-950 border-b border-neutral-900/60 flex items-center justify-center p-3 rounded-t-xl">
                               {/* Blurred ambient background image to fill gaps premium style */}
                               <img 
                                 src={posterToUse} 
@@ -3128,19 +3132,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                               <img 
                                 src={posterToUse} 
                                 alt={cleanTitle} 
-                                className="relative z-10 w-full h-full object-contain rounded-md shadow-2xl transition-transform duration-700 group-hover:scale-[1.02]"
+                                className="relative z-10 w-full h-full object-contain rounded-md shadow-[0_20px_40px_rgba(0,0,0,0.9)] transition-transform duration-700 group-hover:scale-[1.02]"
                                 referrerPolicy="no-referrer"
                                 onError={(e: any) => e.target.src = DEMO_POSTER}
                               />
                                 
                               {/* Subtle dark cinematic vignette overlay */}
-                              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 z-15" />
-
-                              {/* Award Rank Badge - Uniform premium monochrome design with golden award touch */}
-                              <div className="absolute top-4 left-4 bg-black/90 backdrop-blur-md border border-neutral-800/80 hover:border-amber-500/30 hover:shadow-[0_0_12px_rgba(245,158,11,0.1)] text-neutral-100 text-[8px] font-mono font-bold tracking-[0.22em] px-3 py-1.5 rounded-md select-none z-20 flex items-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.6)] transition-all duration-300">
-                                <Trophy size={10} className="text-amber-500 shrink-0" />
-                                <span>SELECCIÓN {romanRanks[index] || (index + 1)}</span>
-                              </div>
+                              <div className="absolute inset-0 bg-gradient-to-t from-[#050508] via-transparent to-transparent opacity-80 z-15" />
 
                               {/* Film score badge (matched to archive version) */}
                               {ratingToUse > 0 && (
@@ -3152,7 +3150,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                             </div>
 
                             {/* Premium Info Panel */}
-                            <div className="p-6 flex-1 flex flex-col justify-between bg-gradient-to-b from-[#050508] to-neutral-950 relative">
+                            <div className="p-6 flex-1 flex flex-col justify-between bg-gradient-to-b from-[#050508] to-neutral-950 relative z-10 rounded-b-xl">
                               <div className="space-y-4">
                                 {/* Metadata Strip */}
                                 <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono tracking-wider gap-2">
