@@ -3054,9 +3054,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <p className="text-[10px] text-neutral-500 tracking-wide font-normal">Aquí tienes las 3 mejores opciones que seleccionó el Director de acuerdo a lo que buscas.</p>
                   </div>
 
-                  {/* CAROUSEL/GRID DUAL LAYOUT: Horizontal scroll in mobile, 3 columns grid on desktop */}
+                  {/* CAROUSEL/GRID DUAL LAYOUT: Horizontal scroll in mobile, flex wrap on desktop */}
                   <div 
-                    className="flex flex-row md:grid md:grid-cols-3 gap-16 sm:gap-20 md:gap-12 lg:gap-16 overflow-x-auto md:overflow-visible pb-12 md:pb-0 pt-16 snap-x snap-mandatory scrollbar-none max-w-6xl mx-auto pl-24 pr-8 md:px-14 lg:px-20 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
+                    className="flex flex-row md:flex-wrap md:justify-center gap-24 sm:gap-28 md:gap-24 lg:gap-32 overflow-x-auto md:overflow-visible pb-12 md:pb-8 pt-16 snap-x snap-mandatory scrollbar-none max-w-[90rem] mx-auto pl-28 sm:pl-32 pr-8 md:px-16 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                   >
                     {(() => {
@@ -3109,11 +3109,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                 setIsDeleting(false);
                               }
                             }}
-                            className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-visible cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start min-w-[290px] sm:min-w-[340px] md:min-w-0 isolate"
+                            className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-visible cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start shrink-0 w-[290px] sm:w-[340px] md:w-[320px] lg:w-[340px] isolate"
                           >
 
                             {/* Huge Background Silhouette Number behind the card sticking out on the left edge */}
-                            <div className="absolute top-1/2 -translate-y-1/2 left-0 -translate-x-[62%] -z-10 select-none pointer-events-none opacity-25 text-white font-black tracking-tighter text-[10rem] sm:text-[12rem] md:text-[13rem] lg:text-[15rem] leading-none transition-all duration-500 group-hover:opacity-45 group-hover:scale-105">
+                            <div className="absolute top-1/2 -translate-y-1/2 left-0 -translate-x-[55%] -z-10 select-none pointer-events-none opacity-30 text-white font-black tracking-tighter text-[10rem] sm:text-[12rem] md:text-[13rem] lg:text-[14rem] leading-none transition-all duration-500 group-hover:opacity-50 group-hover:scale-105">
                               {index + 1}
                             </div>
 
