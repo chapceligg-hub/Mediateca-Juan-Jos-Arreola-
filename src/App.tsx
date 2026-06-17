@@ -200,7 +200,7 @@ export const getNormalizedGenres = (genreData: any): string[] => {
   const parts = genreStr.split(/\s*[\/,\|;]\s*|\s+-\s+| y /);
   const ALLOWED = [
     'Clásico', 'Acción', 'Aventuras', 'Animación', 'Biografía', 'Bélico', 
-    'Ciencia Ficción', 'Comedia', 'Crimen', 'Documental', 'Drama', 'Familia', 
+    'Sci-Fi', 'Comedia', 'Crimen', 'Documental', 'Drama', 'Familia', 
     'Fantasía', 'Historia', 'Misterio', 'Musical', 'Romance', 'Suspenso', 
     'Terror', 'Thriller', 'Western', 'Mexicanas'
   ];
@@ -236,7 +236,7 @@ export const getNormalizedGenres = (genreData: any): string[] => {
     } else if (["documental", "documentary", "docudrama", "mockumentary", "falso documental", "metraje encontrado", "found footage", "documentales"].includes(cleanLower)) {
       targetGenre = "Documental";
     } else if (["ciencia ficción", "ciencia ficcion", "sci-fi", "scifi", "ficción", "ficcion", "superhéroes", "superheroes", "distopía", "distopia", "science fiction", "fiction"].includes(cleanLower)) {
-      targetGenre = "Ciencia Ficción";
+      targetGenre = "Sci-Fi";
     } else if (["comedia musical", "musical ranchero", "musical", "música", "musica", "music", "ranchera", "cine de rumberas", "rumberas", "musicales", "bso", "soundtrack"].includes(cleanLower)) {
       targetGenre = "Musical";
     } else if (["clásico", "clásica", "clásicas", "classic", "vintage", "antiguo", "antigua"].includes(cleanLower)) {
@@ -282,7 +282,7 @@ const curatorGenresList = [
   { id: 'Animación', label: 'Animación', icon: (color: string) => <Palette size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
   { id: 'Biografía', label: 'Biografía', icon: (color: string) => <User size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
   { id: 'Bélico', label: 'Bélico', icon: (color: string) => <Swords size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
-  { id: 'Ciencia Ficción', label: 'Ciencia Ficción', icon: (color: string) => <Rocket size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
+  { id: 'Sci-Fi', label: 'Sci-Fi', icon: (color: string) => <Rocket size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
   { id: 'Comedia', label: 'Comedia', icon: (color: string) => <Laugh size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
   { id: 'Crimen', label: 'Crimen', icon: (color: string) => <Fingerprint size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
   { id: 'Documental', label: 'Documental', icon: (color: string) => <Video size={16} color={color} className="shrink-0 transition-colors duration-300" /> },
@@ -322,7 +322,7 @@ export default function App() {
   const [curatorGenero, setCuratorGenero] = useState<string>('Todos');
   const [curatorEpoca, setCuratorEpoca] = useState<string>('Todas');
   const [isEpochDropdownOpen, setIsEpochDropdownOpen] = useState(false);
-  const [curatorTiempo, setCuratorTiempo] = useState<'Corto (<90 min)' | 'Estándar' | 'Maratón (+2 hrs)'>('Estándar');
+
   const [isGenreDropdownOpen, setIsGenreDropdownOpen] = useState(false);
   const [isCurating, setIsCurating] = useState(false);
   const [isClapping, setIsClapping] = useState(false);
@@ -396,110 +396,160 @@ export default function App() {
       const prevIds = curatorRecommendations.map(r => r.id);
       
       const candidates = movies.map(m => {
-        let score = 0;
-        let isStrictMatch = true;
-
-        const movieGenreStr = Array.isArray(m.genre) ? m.genre.join(' / ') : String(m.genre || '');
-        const movieGenreUpper = movieGenreStr.toUpperCase();
+        const movieGenreUpper = getNormalizedGenres(m.genre).map(g => g.toUpperCase());
+        const movieGenreStrRaw = (Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || '')).toUpperCase();
         
-        // 1. Strict Genre Matching
+        // 1. Genre Matching
+        let matchesGenre = false;
         if (curatorGenero !== 'Todos' && curatorGenero !== 'Cualquier género') {
           const genUpper = curatorGenero.toUpperCase();
-          let genMatch = false;
-          if (genUpper === "SUSPENSE" || genUpper === "SUSPENSO") {
-            if (movieGenreUpper.includes("SUSPENSO") || movieGenreUpper.includes("SUSPENSE") || movieGenreUpper.includes("INTRIGA")) {
-              genMatch = true;
-            }
-          } else {
-            if (movieGenreUpper.includes(genUpper)) {
-              genMatch = true;
-            }
+          if (movieGenreUpper.includes(genUpper)) {
+            matchesGenre = true;
           }
-          if (!genMatch) isStrictMatch = false;
+        } else {
+          matchesGenre = true;
         }
 
-        // 2. Strict Epoch Matching
+        // 2. Epoch Matching
+        let matchesEpoch = false;
         if (curatorEpoca !== 'Todas' && curatorEpoca !== 'Cualquier época') {
           const matchedRange = YEAR_RANGES.find(r => r.label === curatorEpoca);
           if (matchedRange) {
             const mYear = m.year ? parseInt(String(m.year)) : 0;
-            if (mYear < matchedRange.start || mYear >= matchedRange.end) {
-              isStrictMatch = false;
+            if (mYear >= matchedRange.start && mYear < matchedRange.end) {
+              matchesEpoch = true;
             }
           }
+        } else {
+          matchesEpoch = true;
         }
 
-        // 3. Duration Matching (Soft score)
-        const durationMin = parseInt(m.duration) || 100;
-        if (curatorTiempo === 'Corto (<90 min)') {
-          if (durationMin < 90) score += 200;
-          else if (durationMin <= 100) score += 60;
-          else score -= 100;
-        } else if (curatorTiempo === 'Maratón (+2 hrs)') {
-          if (durationMin >= 120) score += 200;
-          else if (durationMin >= 110) score += 60;
-          else score -= 100;
-        } else { // Estándar
-          if (durationMin >= 90 && durationMin < 120) score += 200;
-          else score -= 50;
-        }
-
-        // 4. Tone Matching (Soft score)
+        // 4. Tone Matching
+        let matchesTone = false;
         if (curatorTono === 'Ligero') {
-          if (movieGenreUpper.includes('COMEDIA') || movieGenreUpper.includes('ANIMACI') || movieGenreUpper.includes('AVENTURA') || movieGenreUpper.includes('FAMILIA') || movieGenreUpper.includes('FANTAS')) {
-            score += 150;
-          } else { score -= 50; }
+          if (movieGenreUpper.some(g => ['COMEDIA', 'ANIMACIÓN', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'MUSICAL'].includes(g))) {
+            matchesTone = true;
+          }
         } else if (curatorTono === 'Trama') {
-          if (movieGenreUpper.includes('DRAMA') || movieGenreUpper.includes('MISTERIO') || movieGenreUpper.includes('INTRIGA') || movieGenreUpper.includes('HISTOR') || movieGenreUpper.includes('ROMANCE') || movieGenreUpper.includes('DOCUMENTAL')) {
-            score += 150;
-          } else { score -= 50; }
+          if (movieGenreUpper.some(g => ['DRAMA', 'MISTERIO', 'HISTORIA', 'ROMANCE', 'DOCUMENTAL', 'BIOGRAFÍA'].includes(g)) || movieGenreStrRaw.includes('INTRIGA')) {
+            matchesTone = true;
+          }
         } else if (curatorTono === 'Intenso') {
-          if (movieGenreUpper.includes('TERROR') || movieGenreUpper.includes('THRILLER') || movieGenreUpper.includes('CRIMEN') || movieGenreUpper.includes('ACCI') || movieGenreUpper.includes('SUSPENSO')) {
-            score += 150;
-          } else { score -= 50; }
+          if (movieGenreUpper.some(g => ['TERROR', 'THRILLER', 'CRIMEN', 'ACCIÓN', 'SUSPENSO', 'BÉLICO'].includes(g))) {
+            matchesTone = true;
+          }
         }
 
-        // 5. Sala (Company) Matching (Soft score)
+        // 5. Sala (Company) Matching
+        let matchesSala = false;
         if (curatorSala === 'Solo') {
-          if (movieGenreUpper.includes('DRAMA') || movieGenreUpper.includes('DOCUMENTAL') || movieGenreUpper.includes('MISTERIO') || movieGenreUpper.includes('THRILLER') || movieGenreUpper.includes('CIENCIA FICCI') || movieGenreUpper.includes('INDIE')) {
-            score += 150;
+          if (movieGenreUpper.some(g => ['DRAMA', 'DOCUMENTAL', 'MISTERIO', 'THRILLER', 'SCI-FI', 'BIOGRAFÍA', 'SUSPENSO'].includes(g)) || movieGenreStrRaw.includes('INDIE')) {
+            matchesSala = true;
           }
         } else if (curatorSala === 'Dúo') {
-          if (movieGenreUpper.includes('ROMANCE') || movieGenreUpper.includes('COMEDIA') || movieGenreUpper.includes('TERROR') || movieGenreUpper.includes('SUSPENSO')) {
-            score += 150;
+          if (movieGenreUpper.some(g => ['ROMANCE', 'COMEDIA', 'TERROR', 'SUSPENSO', 'THRILLER', 'MUSICAL', 'DRAMA'].includes(g))) {
+            matchesSala = true;
           }
         } else if (curatorSala === 'Grupo') {
-          if (movieGenreUpper.includes('ACCI') || movieGenreUpper.includes('COMEDIA') || movieGenreUpper.includes('TERROR') || movieGenreUpper.includes('AVENTURA') || movieGenreUpper.includes('FAMILIA')) {
-            score += 150;
+          if (movieGenreUpper.some(g => ['ACCIÓN', 'COMEDIA', 'TERROR', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'ANIMACIÓN', 'SCI-FI'].includes(g))) {
+            matchesSala = true;
           }
         }
-        
-        // Exclude/penalize previously recommended movies to avoid immediate repetitions
+
+        // Calculate a hierarchical stratified score
+        let finalScore = 0;
+        if (matchesGenre) finalScore += 100000;
+        if (matchesEpoch) finalScore += 10000;
+        if (matchesTone) finalScore += 5000;
+        if (matchesSala) finalScore += 5000;
+
+        // Base quality rating scaling (breaks ties using global IMDb rating)
+        finalScore += (m.rating || 0) * 0.1;
+
+        const normalizedTitle = m.title?.toLowerCase().trim() || "";
+        const normalizedOriginal = m.originalTitle?.toLowerCase().trim() || "";
+
+        // Determine if title was previously seen
+        let wasSeenRecently = false;
+        let wasSeenInSession = false;
+
         if (prevIds.includes(m.id)) {
-          score -= 10000;
+          wasSeenRecently = true;
         }
-
-        // Apply heavy penalty for recently curated movies in this session to guarantee a new diverse set
         if (curatedSessionIds.includes(m.id)) {
-          score -= 100000;
+          wasSeenInSession = true;
         }
 
-        // Add highly random variance so we get exciting, unique combinations on each click
-        score += Math.random() * 300;
+        // Also check by title to avoid duplicate variants
+        if (!wasSeenRecently && prevIds.some(id => {
+          const pm = movies.find(x => x.id === id);
+          if (!pm) return false;
+          const pTitle = pm.title?.toLowerCase().trim() || "";
+          const pOrig = pm.originalTitle?.toLowerCase().trim() || "";
+          return (pTitle && pTitle === normalizedTitle) || (pOrig && pOrig === normalizedOriginal);
+        })) {
+          wasSeenRecently = true;
+        }
 
-        return { movie: m, score, isStrictMatch };
+        if (!wasSeenInSession && curatedSessionIds.some(id => {
+          const pm = movies.find(x => x.id === id);
+          if (!pm) return false;
+          const pTitle = pm.title?.toLowerCase().trim() || "";
+          const pOrig = pm.originalTitle?.toLowerCase().trim() || "";
+          return (pTitle && pTitle === normalizedTitle) || (pOrig && pOrig === normalizedOriginal);
+        })) {
+          wasSeenInSession = true;
+        }
+
+        // Avoid immediate repetitions
+        if (wasSeenRecently) {
+          finalScore -= 200000;
+        }
+
+        // Avoid active session repetitions
+        if (wasSeenInSession) {
+          finalScore -= 1000000;
+        }
+
+        // Small random noise (0 to 1) to vary selections on same query
+        finalScore += Math.random();
+
+        const isStrictMatch = matchesGenre && matchesEpoch && matchesTone && matchesSala;
+
+        return { 
+          movie: m, 
+          score: finalScore, 
+          isStrictMatch, 
+          matchesGenre, 
+          matchesEpoch, 
+          matchesTone, 
+          matchesSala 
+        };
       });
 
-      // Filter out those that didn't strictly match Genre or Epoch
-      const exactMatches = candidates.filter(c => c.isStrictMatch);
+      // Sort by final score descending (handles priority adaptively via score weights)
+      const sorted = candidates.sort((a, b) => b.score - a.score);
       
-      if (exactMatches.length === 0) {
-        throw new Error("No encontramos películas que cumplan todos estos requisitos.");
-      }
+      // Select up to 3 movies ensuring that there are absolutely no duplicate titles or IDs
+      const selectedMovies: any[] = [];
+      const seenTitles = new Set<string>();
+      const seenIds = new Set<string>();
 
-      // Sort by score descending and take up to top 3
-      const sorted = exactMatches.sort((a, b) => b.score - a.score);
-      const selectedMovies = sorted.slice(0, 3).map(item => item.movie);
+      for (const item of sorted) {
+        if (selectedMovies.length >= 3) break;
+        const m = item.movie;
+        const normalizedTitle = m.title?.toLowerCase().trim() || "";
+        const normalizedOriginal = m.originalTitle?.toLowerCase().trim() || "";
+        
+        if (seenIds.has(m.id)) continue;
+        if (normalizedTitle && seenTitles.has(normalizedTitle)) continue;
+        if (normalizedOriginal && seenTitles.has(normalizedOriginal)) continue;
+
+        selectedMovies.push(m);
+        seenIds.add(m.id);
+        if (normalizedTitle) seenTitles.add(normalizedTitle);
+        if (normalizedOriginal) seenTitles.add(normalizedOriginal);
+      }
 
       // Generate dynamic filmmaker-centric reasons
       const generatedRecs = selectedMovies.map(m => {
@@ -513,16 +563,10 @@ export default function App() {
           'Trama': 'interesante, cautivador y de fina intriga dramática',
           'Intenso': 'fuerte, electrizante y de una inmensa emoción cinematográfica'
         };
-        const tiempoLabels = {
-          'Corto (<90 min)': 'de metraje ágil e idóneo para devorar de inmediato',
-          'Estándar': 'con una duración clásica perfectamente pautada',
-          'Maratón (+2 hrs)': 'bajo un formato monumental digno de maratón'
-        };
-
         const templates = [
-          `Una obra ideal para consagrar ${salaLabels[curatorSala] || 'tu sesión'}. Su estructura posee un pulso ${tonoLabels[curatorTono] || 'exquisito'}, que florece con madurez gracias a su formato ${tiempoLabels[curatorTiempo] || 'de metraje'}. Un retrato de inestabilidad y fascinación ordinaria que desafía al conformismo cotidiano.`,
-          `El director compone aquí un viaje existencial de carretera que cruza parajes inhóspitos. Es un lienzo idóneo para ver ${salaLabels[curatorSala] || 'disfrutar'}, calibrando un compás ${tonoLabels[curatorTono] || 'magnífico'}, estructurado perfectamente con su ${tiempoLabels[curatorTiempo] || 'espectáculo'}. Puro cine de altísimo nivel.`,
-          `Una gema de incalculable valor estético que brota de la claustrofobia de la vida urbana. Altamente recomendada para ver ${salaLabels[curatorSala] || 'en tu sala'}; despliega un carácter singular que rompe con la rutina tradicional en combinación con su ${tiempoLabels[curatorTiempo] || 'característico metraje'}.`
+          `Una obra ideal para consagrar ${salaLabels[curatorSala] || 'tu sesión'}. Su estructura posee un pulso ${tonoLabels[curatorTono] || 'exquisito'}, que florece con gran madurez visual. Un retrato de inestabilidad y fascinación ordinaria que desafía al conformismo cotidiano.`,
+          `El director compone aquí un viaje existencial de carretera que cruza parajes inhóspitos. Es un lienzo idóneo para ver ${salaLabels[curatorSala] || 'disfrutar'}, calibrando un compás ${tonoLabels[curatorTono] || 'magnífico'}, estructurado a la perfección. Puro cine de altísimo nivel.`,
+          `Una gema de incalculable valor estético que brota de la claustrofobia de la vida urbana. Altamente recomendada para ver ${salaLabels[curatorSala] || 'en tu sala'}; despliega un carácter singular que rompe con la rutina tradicional con su característica destreza.`
         ];
         
         // Pick template based on movie characteristics
@@ -1063,17 +1107,23 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
     // 1. TRÍPTICO DE CARGA INCREMENTAL (FUSIÓN DE CACHÉ)
     // RECUPERACIÓN DE MEMORIA CACHÉ GUARDADA: Leemos inmediatamente por si Firestore tarda en conectar
-    try {
-      const offlineData = localStorage.getItem("videoteca_movies_cache");
-      if (offlineData) {
-        const parsed = JSON.parse(offlineData);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMovies(parsed);
+    (async () => {
+      try {
+        const { get } = await import('idb-keyval');
+        const offlineData = await get("videoteca_movies_cache");
+        if (offlineData) {
+          let parsed = offlineData;
+          if (typeof offlineData === 'string') {
+             parsed = JSON.parse(offlineData);
+          }
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMovies(parsed);
+          }
         }
+      } catch (e) {
+        console.warn("Error leyendo la caché inicial de películas desde IndexedDB:", e);
       }
-    } catch (e) {
-      console.warn("Error leyendo la caché inicial de películas:", e);
-    }
+    })();
 
     // REFUERZO ANTI-AGOTAMIENTO DE LECTURAS:
     // Sustituimos el sync pasivo por un onSnapshot respaldado por IndexedDB (persistentLocalCache).
@@ -1100,7 +1150,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   const dynamicGenres = useMemo(() => {
     // 21 categorías + Todos + Clásico + Mexicanas como se solicita
     const STANDARD_GENRES = [
-      "Acción", "Aventuras", "Animación", "Biografía", "Bélico", "Ciencia Ficción",
+      "Acción", "Aventuras", "Animación", "Biografía", "Bélico", "Sci-Fi",
       "Comedia", "Crimen", "Documental", "Drama", "Familia", "Fantasía", "Historia", 
       "Misterio", "Musical", "Romance", "Suspenso", "Terror", "Thriller", "Western", "Mexicanas"
     ];
@@ -2924,37 +2974,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       </div>
                     </div>
 
-                    {/* Line 5: EL TIEMPO */}
-                    <div className="space-y-3">
-                      <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
-                        5. ¿QUÉ DURACIÓN?
-                      </div>
-                      <div className="flex flex-col sm:flex-row border border-neutral-800/80 bg-[#09090b]/60 rounded-2xl p-1 gap-1 max-w-lg">
-                        {(['Corto (<90 min)', 'Estándar', 'Maratón (+2 hrs)'] as const).map((opt) => {
-                          const active = curatorTiempo === opt;
-                          const displayLabels = {
-                            'Corto (<90 min)': 'Menos de 90 min',
-                            'Estándar': 'De 1.5 a 2 horas',
-                            'Maratón (+2 hrs)': 'Más de 2 horas'
-                          };
-                          return (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => setCuratorTiempo(opt)}
-                              className={`flex-1 px-3 py-2.5 rounded-xl text-xs font-light tracking-wide transition-all duration-300 ${
-                                active 
-                                  ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.03]'
-                                  : 'bg-neutral-900/60 border border-neutral-800/80 text-neutral-400 hover:text-neutral-200 hover:scale-[1.02] shadow-[0_0_8px_rgba(180,29,29,0.2)]'
-                              }`}
-                            >
-                              {displayLabels[opt]}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
                   </div>
 
                   {/* Trigger Column */}
@@ -3057,7 +3076,21 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         const posterToUse = movieDetails?.poster || DEMO_POSTER;
                         const yearToUse = movieDetails?.year || "N/A";
                         const ratingToUse = movieDetails?.rating || 0;
-                        const genreToUse = movieDetails?.genre || "Cine de Autor";
+                        const genreToUse = movieDetails?.genre || rec.genre || "Drama";
+                        let normalizedGenreList = getNormalizedGenres(genreToUse);
+                        if (normalizedGenreList.length === 0) {
+                          normalizedGenreList = ["Drama"];
+                        }
+                        // Si el usuario eligió un género en el filtro del director, lo colocamos primero
+                        const chosen = curatorGenero;
+                        if (chosen && chosen !== "Todos") {
+                          const idx = normalizedGenreList.findIndex(g => g.toLowerCase() === chosen.toLowerCase());
+                          if (idx > -1) {
+                            const [matched] = normalizedGenreList.splice(idx, 1);
+                            normalizedGenreList.unshift(matched);
+                          }
+                        }
+                        const displayGenre = normalizedGenreList.join(", ");
                         const romanRanks = ["I", "II", "III"];
                         
                         const directorToUse = movieDetails?.director || "Director Desconocido";
@@ -3076,24 +3109,21 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                 setIsDeleting(false);
                               }
                             }}
-                            className="group relative flex flex-col bg-[#050507] border border-neutral-900 hover:border-red-600/35 rounded-xl overflow-hidden cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(180,29,29,0.12)] text-left snap-start min-w-[290px] sm:min-w-[340px] md:min-w-0"
+                            className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-hidden cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start min-w-[290px] sm:min-w-[340px] md:min-w-0"
                           >
-                            {/* Roman indicator and Rank Number beautifully displayed */}
-                            <div className="absolute top-5 right-6 text-[80px] font-black leading-none text-[#b41d1d]/4 group-hover:text-[#b41d1d]/10 transition-colors duration-500 font-mono select-none pointer-events-none z-20">
-                              0{index + 1}
-                            </div>
+
 
                             {/* Complete uncropped Poster Section inside standard portrait 2:3 container */}
                             <div className="relative aspect-[2/3] w-full overflow-hidden bg-neutral-950 border-b border-neutral-900/60 flex items-center justify-center p-3">
                               {/* Blurred ambient background image to fill gaps premium style */}
                               <img 
                                 src={posterToUse} 
-                                alt="" 
-                                className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-20 scale-110 pointer-events-none"
-                                referrerPolicy="no-referrer"
-                                onError={(e: any) => e.target.src = DEMO_POSTER}
+                                  alt="" 
+                                  className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-35 scale-110 pointer-events-none"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e: any) => e.target.src = DEMO_POSTER}
                               />
-                              
+                                
                               {/* Sharp foreground complete uncropped vertical poster */}
                               <img 
                                 src={posterToUse} 
@@ -3102,13 +3132,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                 referrerPolicy="no-referrer"
                                 onError={(e: any) => e.target.src = DEMO_POSTER}
                               />
-                              
+                                
                               {/* Subtle dark cinematic vignette overlay */}
                               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 z-15" />
 
-                              {/* Award Rank Badge */}
-                              <div className="absolute top-4 left-4 bg-black/80 backdrop-blur-md border border-neutral-800/80 text-white text-[8px] font-mono font-medium tracking-[0.18em] px-2.5 py-1 rounded select-none z-20 flex items-center gap-1.5 shadow-lg">
-                                <Trophy size={10} className="text-yellow-600 shrink-0" />
+                              {/* Award Rank Badge - Uniform premium monochrome design with golden award touch */}
+                              <div className="absolute top-4 left-4 bg-black/90 backdrop-blur-md border border-neutral-800/80 hover:border-amber-500/30 hover:shadow-[0_0_12px_rgba(245,158,11,0.1)] text-neutral-100 text-[8px] font-mono font-bold tracking-[0.22em] px-3 py-1.5 rounded-md select-none z-20 flex items-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.6)] transition-all duration-300">
+                                <Trophy size={10} className="text-amber-500 shrink-0" />
                                 <span>SELECCIÓN {romanRanks[index] || (index + 1)}</span>
                               </div>
 
@@ -3126,24 +3156,24 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                               <div className="space-y-4">
                                 {/* Metadata Strip */}
                                 <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono tracking-wider gap-2">
-                                  <span className="truncate pr-2 max-w-[150px] uppercase font-bold text-neutral-300 bg-neutral-900/30 border border-neutral-800/60 px-2.5 py-1 rounded">{genreToUse.split('/')[0]?.trim()}</span>
+                                  <span className="truncate pr-2 max-w-[150px] uppercase font-bold text-neutral-300 bg-neutral-900/30 border border-neutral-800/60 px-2.5 py-1 rounded">{displayGenre}</span>
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {ageRatingToUse && ageRatingToUse !== "N/A" && ageRatingToUse !== "No disponible" && (
-                                      <span className="border border-neutral-800/60 bg-neutral-950 px-2 py-1 text-neutral-500 font-mono text-[9px] font-bold tracking-wider rounded">
+                                      <span className="border border-neutral-700/60 bg-neutral-900/40 px-2 py-1 text-neutral-300 font-mono text-[9px] font-bold tracking-wider rounded">
                                         {ageRatingToUse}
                                       </span>
                                     )}
-                                    <span className="font-mono text-[9px] tracking-[0.12em] font-black text-red-500/90 bg-red-950/15 border border-red-900/40 px-2.5 py-1 rounded">{yearToUse}</span>
+                                    <span className="font-mono text-[9px] tracking-[0.12em] font-bold text-white bg-[#b41d1d]/80 border border-[#b41d1d] px-2.5 py-1 rounded">{yearToUse}</span>
                                   </div>
                                 </div>
 
                                 {/* Title & Original Title */}
                                 <div translate="no" className="space-y-1 notranslate">
-                                  <h3 className="text-base md:text-lg font-bold tracking-tight text-neutral-100 group-hover:text-white transition-colors duration-300">
+                                  <h3 className="text-base md:text-lg font-bold tracking-tight text-neutral-100 group-hover:text-white transition-colors duration-300 uppercase">
                                     {cleanTitle}
                                   </h3>
                                   {originalTitleToUse && originalTitleToUse !== cleanTitle && (
-                                    <p className="text-xs text-neutral-400 font-light truncate italic">
+                                    <p className="text-xs text-neutral-400 font-light truncate italic uppercase">
                                       {originalTitleToUse}
                                     </p>
                                   )}

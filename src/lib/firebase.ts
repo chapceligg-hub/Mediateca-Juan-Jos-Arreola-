@@ -7,6 +7,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   getDocsFromCache, getDocsFromServer, query, orderBy, limit, onSnapshot, where
 } from 'firebase/firestore';
+import { get, set } from 'idb-keyval';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -51,19 +52,22 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
 export const fetchMoviesOptimized = async (forceServer = false) => {
   const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
   
-  // 1. Estrategia de Caché Local Estricta (localStorage)
+  // 1. Estrategia de Caché Local Estricta (IndexedDB)
   if (!forceServer) {
     try {
-      const offlineData = localStorage.getItem("videoteca_movies_cache");
+      const offlineData = await get("videoteca_movies_cache");
       if (offlineData) {
-        const parsed = JSON.parse(offlineData);
+        let parsed = offlineData;
+        if (typeof offlineData === 'string') {
+           parsed = JSON.parse(offlineData);
+        }
         if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`[Caché Estricta Local] Películas cargadas instantáneamente desde localStorage (Lecturas Firebase = 0). Cantidad: ${parsed.length}`);
+          console.log(`[Caché Estricta Local] Películas cargadas instantáneamente desde IndexedDB (Lecturas Firebase = 0). Cantidad: ${parsed.length}`);
           return parsed;
         }
       }
     } catch (e) {
-      console.warn("Error leyendo la caché de localStorage:", e);
+      console.warn("Error leyendo la caché de IndexedDB:", e);
     }
 
     try {
@@ -71,7 +75,7 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
       const snapshot = await getDocsFromCache(q);
       if (!snapshot.empty) {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        localStorage.setItem("videoteca_movies_cache", JSON.stringify(data));
+        await set("videoteca_movies_cache", data);
         console.log("Firebase Cache-First: Películas cargadas desde la caché local de Firestore");
         return data;
       }
@@ -85,20 +89,16 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   const snapshot = await getDocsFromServer(q);
   const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   try {
-    localStorage.setItem("videoteca_movies_cache", JSON.stringify(data));
+    await set("videoteca_movies_cache", data);
   } catch (e) {}
   return data;
 };
 
 export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (err: any) => void) => {
   console.log("[Firebase] Iniciando suscripción optimizada a películas (onSnapshot)...");
-  // Utilizamos onSnapshot con IndexedDB (persistentLocalCache) en lugar de recargar manualmente.
-  // Esto previene de forma contundente el "agotamiento de lecturas" al recuperar únicamente 
-  // los documentos que han cambiado desde la última sincronización en caché local.
   const q = query(collection(db, 'movies'));
   
-  return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
-    // metadata.fromCache indica si proviene del local sin consumo, pero procesamos todo
+  return onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
     const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
     // Mantenemos el orden descendente por recencia
@@ -110,9 +110,9 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
 
     // Guardamos la nueva caché unificada para cuando carga rápido
     try {
-      localStorage.setItem("videoteca_movies_cache", JSON.stringify(movies));
+      await set("videoteca_movies_cache", movies);
     } catch (error) {
-      console.warn("No se pudo escribir en la memoria caché", error);
+      console.warn("No se pudo escribir en la memoria caché IndexedDB", error);
     }
     
     callback(movies);
@@ -127,11 +127,14 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
   
   if (!forceServer) {
     try {
-      const offlineAdmins = localStorage.getItem("videoteca_admins_cache");
+      const offlineAdmins = await get("videoteca_admins_cache");
       if (offlineAdmins) {
-        const parsed = JSON.parse(offlineAdmins);
+        let parsed = offlineAdmins;
+        if (typeof offlineAdmins === 'string') {
+          parsed = JSON.parse(offlineAdmins);
+        }
         if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`[Caché Estricta Local] Admins cargados instantáneamente desde localStorage (Lecturas Firebase = 0). Cantidad: ${parsed.length}`);
+          console.log(`[Caché Estricta Local] Admins cargados instantáneamente desde IndexedDB (Lecturas Firebase = 0). Cantidad: ${parsed.length}`);
           return parsed;
         }
       }
@@ -141,7 +144,7 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
       const snapshot = await getDocsFromCache(q);
       if (!snapshot.empty) {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        localStorage.setItem("videoteca_admins_cache", JSON.stringify(data));
+        await set("videoteca_admins_cache", data);
         return data;
       }
     } catch (e) {}
@@ -151,7 +154,7 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
   const snapshot = await getDocsFromServer(q);
   const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   try {
-    localStorage.setItem("videoteca_admins_cache", JSON.stringify(data));
+    await set("videoteca_admins_cache", data);
   } catch (e) {}
   return data;
 };
@@ -167,23 +170,25 @@ export const upsertMovie = async (movie: any) => {
   // Transacción activa de escritura en el servidor real:
   await setDoc(doc(db, 'movies', movieId), movieData, { merge: true });
   
-  // Sincronizar de inmediato la caché local para que la próxima lectura sea inmediata y use 0 lecturas:
+  // Sincronizar de inmediato la caché local
   try {
-    const offlineData = localStorage.getItem("videoteca_movies_cache");
-    let list: any[] = offlineData ? JSON.parse(offlineData) : [];
+    const offlineData = await get("videoteca_movies_cache");
+    let list: any[] = [];
+    if (offlineData) {
+      list = typeof offlineData === 'string' ? JSON.parse(offlineData) : offlineData;
+    }
     const index = list.findIndex((m: any) => m.id === movieId);
     if (index > -1) {
       list[index] = { ...list[index], ...movieData };
     } else {
       list.unshift(movieData);
     }
-    // Prohibido el orden alfabético. Mantener orden descendente por recencia
     list.sort((a, b) => {
       const timeA = a.createdAt || a.updatedAt || "";
       const timeB = b.createdAt || b.updatedAt || "";
       return timeB.localeCompare(timeA);
     });
-    localStorage.setItem("videoteca_movies_cache", JSON.stringify(list));
+    await set("videoteca_movies_cache", list);
   } catch (e) {
     console.error("Error actualizando la caché local tras upsertMovie:", e);
   }
@@ -192,14 +197,12 @@ export const upsertMovie = async (movie: any) => {
 };
 
 export const updateMovie = async (id: string, updates: any) => {
-  // Transacción activa de escritura en el servidor real:
   await updateDoc(doc(db, 'movies', id), updates);
   
-  // Sincronizar caché local
   try {
-    const offlineData = localStorage.getItem("videoteca_movies_cache");
+    const offlineData = await get("videoteca_movies_cache");
     if (offlineData) {
-      let list: any[] = JSON.parse(offlineData);
+      let list: any[] = typeof offlineData === 'string' ? JSON.parse(offlineData) : offlineData;
       const index = list.findIndex((m: any) => m.id === id);
       if (index > -1) {
         list[index] = { ...list[index], ...updates };
@@ -208,7 +211,7 @@ export const updateMovie = async (id: string, updates: any) => {
           const timeB = b.createdAt || b.updatedAt || "";
           return timeB.localeCompare(timeA);
         });
-        localStorage.setItem("videoteca_movies_cache", JSON.stringify(list));
+        await set("videoteca_movies_cache", list);
       }
     }
   } catch (e) {}
@@ -217,16 +220,14 @@ export const updateMovie = async (id: string, updates: any) => {
 };
 
 export const deleteMovie = async (id: string) => {
-  // Transacción activa de escritura en el servidor real:
   await deleteDoc(doc(db, 'movies', id));
   
-  // Sincronizar caché local
   try {
-    const offlineData = localStorage.getItem("videoteca_movies_cache");
+    const offlineData = await get("videoteca_movies_cache");
     if (offlineData) {
-      let list: any[] = JSON.parse(offlineData);
+      let list: any[] = typeof offlineData === 'string' ? JSON.parse(offlineData) : offlineData;
       list = list.filter((m: any) => m.id !== id);
-      localStorage.setItem("videoteca_movies_cache", JSON.stringify(list));
+      await set("videoteca_movies_cache", list);
     }
   } catch (e) {}
 };
@@ -236,17 +237,19 @@ export const upsertAdmin = async (admin: any) => {
   const adminData = { ...admin, id: adminId };
   await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
   
-  // Sincronizar caché local
   try {
-    const offlineAdmins = localStorage.getItem("videoteca_admins_cache");
-    let list: any[] = offlineAdmins ? JSON.parse(offlineAdmins) : [];
+    const offlineAdmins = await get("videoteca_admins_cache");
+    let list: any[] = [];
+    if (offlineAdmins) {
+      list = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
+    }
     const index = list.findIndex((a: any) => a.id === adminId);
     if (index > -1) {
       list[index] = { ...list[index], ...adminData };
     } else {
       list.push(adminData);
     }
-    localStorage.setItem("videoteca_admins_cache", JSON.stringify(list));
+    await set("videoteca_admins_cache", list);
   } catch (e) {}
 
   return adminData;
@@ -255,13 +258,12 @@ export const upsertAdmin = async (admin: any) => {
 export const deleteAdmin = async (id: string) => {
   await deleteDoc(doc(db, 'admins', id));
   
-  // Sincronizar caché local
   try {
-    const offlineAdmins = localStorage.getItem("videoteca_admins_cache");
+    const offlineAdmins = await get("videoteca_admins_cache");
     if (offlineAdmins) {
-      let list: any[] = JSON.parse(offlineAdmins);
+      let list: any[] = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
       list = list.filter((a: any) => a.id !== id);
-      localStorage.setItem("videoteca_admins_cache", JSON.stringify(list));
+      await set("videoteca_admins_cache", list);
     }
   } catch (e) {}
 };
