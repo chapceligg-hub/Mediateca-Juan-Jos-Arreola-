@@ -3056,7 +3056,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                   {/* CAROUSEL/GRID DUAL LAYOUT: Horizontal scroll in mobile, flex wrap on desktop */}
                   <div 
-                    className="flex flex-row md:flex-wrap md:justify-center gap-24 sm:gap-28 md:gap-24 lg:gap-32 overflow-x-auto md:overflow-visible pb-12 md:pb-8 pt-16 snap-x snap-mandatory scrollbar-none max-w-[90rem] mx-auto pl-28 sm:pl-32 pr-8 md:px-16 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
+                    className="flex flex-row md:flex-wrap md:justify-center gap-12 sm:gap-14 md:gap-12 lg:gap-16 gap-y-20 overflow-x-auto md:overflow-visible pb-12 md:pb-8 pt-16 snap-x snap-mandatory scrollbar-none max-w-[85rem] mx-auto px-10 sm:px-14 md:px-10 lg:px-16 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                   >
                     {(() => {
@@ -3109,11 +3109,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                 setIsDeleting(false);
                               }
                             }}
-                            className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-visible cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start shrink-0 w-[290px] sm:w-[340px] md:w-[320px] lg:w-[340px] isolate"
+                            className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-visible cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start shrink-0 w-[270px] sm:w-[310px] md:w-[290px] lg:w-[320px] xl:w-[340px] isolate"
                           >
 
-                            {/* Huge Background Silhouette Number behind the card sticking out on the left edge */}
-                            <div className="absolute top-1/2 -translate-y-1/2 left-0 -translate-x-[55%] -z-10 select-none pointer-events-none opacity-30 text-white font-black tracking-tighter text-[10rem] sm:text-[12rem] md:text-[13rem] lg:text-[14rem] leading-none transition-all duration-500 group-hover:opacity-50 group-hover:scale-105">
+                            {/* Huge Background Silhouette Number overlapping the container on the top left edge */}
+                            <div className="absolute -top-10 -left-6 md:-top-14 md:-left-8 z-30 select-none pointer-events-none opacity-80 text-white font-black tracking-tighter text-[6.5rem] md:text-[8rem] leading-none transition-all duration-500 group-hover:opacity-100 group-hover:-translate-y-2 group-hover:-translate-x-2 group-hover:drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)] mix-blend-overlay">
                               {index + 1}
                             </div>
 
