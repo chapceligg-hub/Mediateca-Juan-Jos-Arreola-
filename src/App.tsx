@@ -749,7 +749,7 @@ export default function App() {
       "Más de 120 min": "Over 120 min",
       "PROYECTAR SELECCIÓN": "Project Selection",
       "Diseña la experiencia cinematográfica perfecta": "Design the perfect cinematic experience",
-      "Elige con quién estás, el ritmo de historia que deseas y la duración. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.": "Choose your company, narrative pace, and duration. Our recommendation engine will hand-pick the ideal film from our repository.",
+      "Elige con quién estás, el ritmo de historia que deseas, los géneros y las épocas. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.": "Choose your company, narrative pace, genres, and eras. Our recommendation engine will hand-pick the ideal film.",
       "OBRAS EN REVISIÓN": "Films Under Review",
       "HISTORIAL DE CONSULTA": "Query History",
       "Ubicación": "Location",
@@ -2719,7 +2719,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       Diseña la experiencia cinematográfica perfecta
                     </h3>
                     <p className="text-xs md:text-sm text-neutral-400 font-light tracking-wide mt-1.5 max-w-2xl leading-relaxed">
-                      Elige con quién estás, el ritmo de historia que deseas y la duración. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.
+                      Elige con quién estás, el ritmo de historia que deseas, los géneros y las épocas. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.
                     </p>
                   </div>
                 </div>
@@ -2728,9 +2728,20 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               {/* CURATING IMMERSIVE STATE */}
               {isCurating && (
                 <div className="flex flex-col items-center justify-center text-center gap-5 py-12 animate-in fade-in duration-500 w-full">
-                  <div className="relative w-14 h-14 flex items-center justify-center">
-                    <Loader2 className="animate-spin text-[#b41d1d]" size={42} />
-                    <Sparkles className="absolute text-neutral-400 animate-pulse" size={16} />
+                  <div className="relative w-20 h-20 flex items-center justify-center">
+                    {/* Projector Light Beam Glow Effect (ambient backdrop) */}
+                    <div className="absolute inset-x-[-30px] top-1/2 -translate-y-1/2 h-16 bg-gradient-to-r from-[#b41d1d]/30 via-transparent to-[#b41d1d]/10 opacity-40 blur-xl rounded-full" />
+                    
+                    {/* Pulsing Cinema Lens Core */}
+                    <div className="absolute inset-3.5 bg-neutral-950 rounded-full border border-neutral-800/80 flex items-center justify-center shadow-inner z-10">
+                      <Video className="text-[#b41d1d] animate-pulse" size={18} />
+                    </div>
+
+                    {/* Outer film-reel sprockets resembling frame boundaries rotating smoothly */}
+                    <div className="absolute inset-0.5 border-2 border-dashed border-neutral-700/60 rounded-full animate-[spin_15s_linear_infinite]" />
+                    
+                    {/* Fast track cinematic accent indicator indicating active scanning */}
+                    <div className="absolute inset-0 border-t-2 border-b-2 border-transparent border-l-2 border-[#b41d1d] rounded-full animate-spin" />
                   </div>
                   <div className="space-y-1">
                     <p className="text-neutral-300 text-xs font-mono font-light uppercase tracking-widest animate-pulse">
