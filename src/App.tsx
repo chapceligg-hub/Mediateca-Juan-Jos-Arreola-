@@ -2028,7 +2028,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <div className="absolute inset-0 flex flex-col justify-end p-3.5 reveal-on-hover pointer-events-none z-20">
                       {/* Bottom row: rating only with high-legibility shading */}
                       <div className="flex items-center justify-end w-full">
-                        <div className="flex items-center gap-1 text-[12px] text-[#f59e0b] font-bold bg-black/40 px-2 py-1 rounded-md border border-white/5 shadow-[0_2px_8px_rgba(0,0,0,0.2)] backdrop-blur-sm">
+                        <div className="flex items-center gap-1 text-[12px] text-white font-bold bg-black/40 px-2 py-1 rounded-md border border-white/5 shadow-[0_2px_8px_rgba(0,0,0,0.2)] backdrop-blur-sm">
                           <Star size={11} fill="currentColor" className="text-[#f59e0b]" />
                           <span>{Number(movie.rating || 0).toFixed(1)}</span>
                         </div>
@@ -3169,7 +3169,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                               {/* Film score badge (matched to archive version) */}
                               {ratingToUse > 0 && (
-                                <div className="absolute bottom-4 right-4 flex items-center gap-1.5 text-[11px] text-white font-mono font-bold bg-black/80 border border-neutral-800/80 px-2.5 py-1 rounded shadow-md backdrop-blur-sm z-20">
+                                <div className="absolute bottom-4 right-4 flex items-center gap-1.5 text-[11px] text-white font-bold bg-black/80 border border-neutral-800/80 px-2.5 py-1 rounded shadow-md backdrop-blur-sm z-20">
                                   <Star size={10} fill="currentColor" className="text-yellow-500" />
                                   <span>{Number(ratingToUse).toFixed(1)}</span>
                                 </div>
@@ -3188,7 +3188,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                         {ageRatingToUse}
                                       </span>
                                     )}
-                                    <span className="font-mono text-[9px] tracking-[0.12em] font-bold text-white bg-[#b41d1d]/80 border border-[#b41d1d] px-2.5 py-1 rounded">{yearToUse}</span>
+                                    <span className="text-[9px] tracking-[0.12em] font-bold text-white bg-[#b41d1d]/80 border border-[#b41d1d] px-2.5 py-1 rounded">{yearToUse}</span>
                                   </div>
                                 </div>
 
