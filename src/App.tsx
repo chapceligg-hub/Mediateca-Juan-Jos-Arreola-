@@ -3056,7 +3056,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                   {/* CAROUSEL/GRID DUAL LAYOUT: Horizontal scroll in mobile, 3 columns grid on desktop */}
                   <div 
-                    className="flex flex-row md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-visible pb-6 md:pb-0 pt-12 snap-x snap-mandatory scrollbar-none max-w-5xl mx-auto px-4 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
+                    className="flex flex-row md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-visible pb-6 md:pb-0 pt-28 snap-x snap-mandatory scrollbar-none max-w-5xl mx-auto px-4 [&::-webkit-scrollbar]:hidden mt-6 md:mt-10"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                   >
                     {(() => {
@@ -3113,17 +3113,29 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                           >
 
                             {/* Huge Background Silhouette Number behind the card sticking out */}
-                            <div className="absolute -top-24 -left-8 z-0 select-none pointer-events-none opacity-25 text-white font-black tracking-tighter text-[9rem] sm:text-[11rem] leading-none transition-all duration-500 group-hover:opacity-40 group-hover:-translate-y-1">
+                            <div 
+                              className="absolute -top-28 left-1/2 -translate-x-1/2 z-0 select-none pointer-events-none opacity-80 font-black tracking-tighter text-[7.5rem] sm:text-[9.5rem] leading-none transition-all duration-500 group-hover:opacity-100 group-hover:-translate-y-1 text-center"
+                              style={{
+                                WebkitTextStroke: "2px #ffffff",
+                                WebkitTextFillColor: "#000000",
+                                color: "#000000",
+                                marginLeft: index === 0 ? "-9px" : "0px"
+                              }}
+                            >
                               {index + 1}
                             </div>
 
-                            {/* Complete uncropped Poster Section inside standard portrait 2:3 container */}
-                            <div className="relative z-10 aspect-[2/3] w-full overflow-hidden bg-neutral-950 border-b border-neutral-900/60 flex items-center justify-center p-3 rounded-t-xl">
+                            {/* Complete uncropped Poster Section inside standard portrait 2:3 container with transparent top-left gradient */}
+                            <div className="relative z-10 aspect-[2/3] w-full overflow-hidden bg-gradient-to-b from-transparent via-neutral-950/20 to-neutral-950/70 border-b border-neutral-900/60 flex items-center justify-center p-3 rounded-t-xl">
                               {/* Blurred ambient background image to fill gaps premium style */}
                               <img 
                                 src={posterToUse} 
                                   alt="" 
                                   className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-35 scale-110 pointer-events-none"
+                                  style={{
+                                    maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.3) 10%, rgba(0,0,0,1) 30%)',
+                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.3) 10%, rgba(0,0,0,1) 30%)'
+                                  }}
                                   referrerPolicy="no-referrer"
                                   onError={(e: any) => e.target.src = DEMO_POSTER}
                               />
@@ -3131,14 +3143,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                               {/* Sharp foreground complete uncropped vertical poster */}
                               <img 
                                 src={posterToUse} 
-                                alt={cleanTitle} 
-                                className="relative z-10 w-full h-full object-contain rounded-md shadow-[0_20px_40px_rgba(0,0,0,0.9)] transition-transform duration-700 group-hover:scale-[1.02]"
-                                referrerPolicy="no-referrer"
-                                onError={(e: any) => e.target.src = DEMO_POSTER}
+                                  alt={cleanTitle} 
+                                  className="relative z-10 w-full h-full object-contain rounded-md shadow-[0_12px_24px_rgba(0,0,0,0.5)] transition-transform duration-700 group-hover:scale-[1.02]"
+                                  style={{
+                                    maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.3) 10%, rgba(0,0,0,1) 30%)',
+                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.3) 10%, rgba(0,0,0,1) 30%)'
+                                  }}
+                                  referrerPolicy="no-referrer"
+                                  onError={(e: any) => e.target.src = DEMO_POSTER}
                               />
                                 
                               {/* Subtle dark cinematic vignette overlay */}
-                              <div className="absolute inset-0 bg-gradient-to-t from-[#050508] via-transparent to-transparent opacity-80 z-15" />
+                              <div className="absolute inset-0 bg-gradient-to-t from-[#050508] via-transparent to-transparent opacity-40 z-15" />
 
                               {/* Film score badge (matched to archive version) */}
                               {ratingToUse > 0 && (
