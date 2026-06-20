@@ -2715,7 +2715,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       <span className="w-1.5 h-1.5 rounded-full bg-[#b41d1d] animate-pulse inline-block shadow-[0_0_8px_rgba(180,29,29,0.8)]" />
                       <span className="text-[#b41d1d] font-mono text-[9px] tracking-[0.35em] uppercase font-bold">FILTRO DEL DIRECTOR</span>
                     </div>
-                    <h3 className="text-[#eeeeee] font-barlow-condensed uppercase tracking-[0.14em] font-normal text-2xl md:text-3xl lg:text-4xl mt-1.5 leading-tight">
+                    <h3 
+                      className="text-[#eeeeee] uppercase tracking-[0.06em] text-3xl md:text-4xl lg:text-5xl mt-1.5 leading-tight"
+                      style={{ fontFamily: "'Cinematografica', 'Cinematografica Bold', sans-serif", fontWeight: "bold" }}
+                    >
                       Diseña la experiencia cinematográfica perfecta
                     </h3>
                     <p className="text-xs md:text-sm text-neutral-400 font-light tracking-wide mt-1.5 max-w-2xl leading-relaxed">
@@ -2811,7 +2814,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
                         2. ¿QUÉ RITMO O ÁNIMO BUSCAS?
                       </div>
-                      <div className="flex flex-col sm:flex-row border border-neutral-800/80 bg-[#09090b]/60 rounded-2xl p-1 gap-1 max-w-lg">
+                      <div className="flex flex-col sm:flex-row border border-neutral-800/80 bg-[#09090b]/60 rounded-2xl p-1 gap-1 max-w-xl w-full">
                         {(['Ligero', 'Trama', 'Intenso'] as const).map((opt) => {
                           const active = curatorTono === opt;
                           const displayLabels = {
@@ -2824,7 +2827,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                               key={opt}
                               type="button"
                               onClick={() => setCuratorTono(opt)}
-                              className={`flex-1 px-5 py-2.5 rounded-xl text-xs font-light tracking-wide transition-all duration-300 ${
+                              className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-light tracking-wide transition-all duration-300 whitespace-nowrap ${
                                 active 
                                   ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.03]'
                                   : 'bg-neutral-900/60 border border-neutral-800/80 text-neutral-400 hover:text-neutral-200 hover:scale-[1.02] shadow-[0_0_8px_rgba(180,29,29,0.2)]'
@@ -3047,8 +3050,44 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         
                       </div>
                       
-                      <span className="text-xs md:text-sm font-mono tracking-[0.25em] text-[#eeeeee]/80 group-hover:text-white transition-colors duration-300 text-center uppercase">
-                        {isCurating ? 'BUSCANDO...' : '¡BUSCAR RECOMENDACIONES!'}
+                      <span 
+                        className="text-xl md:text-[24px] tracking-[0.15em] md:tracking-[0.2em] text-[#eeeeee]/80 text-center uppercase italic"
+                        style={{ 
+                          fontFamily: "'Cinematografica', 'Cinematografica Bold', sans-serif", 
+                          fontWeight: "bold",
+                          fontFeatureSettings: '"liga" 1, "dlig" 1, "ss02" 1, "calt" 1',
+                          fontVariantLigatures: 'common-ligatures discretionary-ligatures'
+                        }}
+                      >
+                        {(() => {
+                          const text = isCurating ? 'BUSCANDO...' : '¡BUSCAR RECOMENDACIONES!';
+                          let globalIdx = 0;
+                          return text.split(' ').map((word, wordIdx, wordArr) => {
+                            return (
+                              <span key={wordIdx} className="inline-block whitespace-nowrap">
+                                {word.split('').map((char, charIdx) => {
+                                  const idx = globalIdx++;
+                                  return (
+                                    <span 
+                                      key={charIdx} 
+                                      className="inline-block transition-all duration-300 group-hover:scale-110 group-hover:text-white"
+                                      style={{ 
+                                        color: char === 'E' || char === 'e' ? '#b41d1d' : 'inherit',
+                                        transitionDelay: `${idx * 25}ms`,
+                                        textShadow: char === 'E' || char === 'e' ? undefined : '0 0 10px rgba(255,255,255,0)'
+                                      }}
+                                    >
+                                      {char}
+                                    </span>
+                                  );
+                                })}
+                                {wordIdx < wordArr.length - 1 && (
+                                  <span className="inline-block">&nbsp;</span>
+                                )}
+                              </span>
+                            );
+                          });
+                        })()}
                       </span>
                     </button>
                   </div>
@@ -3060,8 +3099,16 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               {curatorRecommendations.length > 0 && !isCurating && (
                 <div className="w-full space-y-10 animate-in fade-in duration-500 text-center">
                   <div className="flex flex-col items-center justify-center space-y-2">
-                    <span className="text-[9px] tracking-[0.3em] font-mono font-light text-[#b41d1d] uppercase">RECOMENDACIÓN LISTA EN BASE A TUS GUSTOS</span>
-                    <h2 className="text-xl md:text-2xl font-light tracking-widest text-[#eeeeee] uppercase">NUESTRO TOP 3 PARA TI</h2>
+                    <h2 
+                      className="text-4xl md:text-6xl tracking-[0.12em] text-[#eeeeee] uppercase"
+                      style={{ 
+                        fontFamily: "'Cinematografica', 'Cinematografica Regular', sans-serif", 
+                        fontWeight: "normal",
+                        fontVariantLigatures: "none"
+                      }}
+                    >
+                      NUESTRO <span style={{ color: '#901313' }}>TOP</span> PARA TI
+                    </h2>
                     <p className="text-[10px] text-neutral-500 tracking-wide font-normal">Aquí tienes las 3 mejores opciones que seleccionó el Director de acuerdo a lo que buscas.</p>
                   </div>
 
@@ -3123,13 +3170,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                             className="group relative flex flex-col bg-[#050507] border border-neutral-900/60 hover:border-white/80 rounded-xl overflow-visible cursor-pointer transition-all duration-500 hover:-translate-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.85)] hover:shadow-[0_20px_50px_rgba(255,255,255,0.08)] text-left snap-start min-w-[290px] sm:min-w-[340px] md:min-w-0 isolate"
                           >
 
-                            {/* Huge Background Silhouette Number behind the card sticking out */}
+                            {/* Huge Background Silhouette Number in front of the card sticking out */}
                             <div 
-                              className="absolute -top-28 left-1/2 -translate-x-1/2 z-0 select-none pointer-events-none opacity-80 font-black tracking-tighter text-[7.5rem] sm:text-[9.5rem] leading-none transition-all duration-500 group-hover:opacity-100 group-hover:-translate-y-1 text-center"
+                              className="recommendation-number absolute -top-28 left-1/2 -translate-x-1/2 z-30 select-none pointer-events-none opacity-80 font-black tracking-tighter text-[7.5rem] sm:text-[9.5rem] leading-none transition-all duration-500 group-hover:opacity-100 group-hover:-translate-y-1 text-center"
                               style={{
-                                WebkitTextStroke: "2px #ffffff",
-                                WebkitTextFillColor: "#000000",
-                                color: "#000000",
                                 marginLeft: index === 0 ? "-9px" : "0px"
                               }}
                             >
