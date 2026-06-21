@@ -20,6 +20,7 @@ import { catalogMovieAI, fetchIconicQuote } from './lib/aiService';
 import { useAutoScroll } from './hooks/useAutoScroll';
 import { useAutoScrollVertical } from './hooks/useAutoScrollVertical';
 import { CinematicBackground } from './components/CinematicBackground';
+import emptyChairImage from './assets/images/cinematic_director_chair_red_1782020262837.jpg';
 
 const toTitleCase = (str: string): string => {
   if (!str) return '';
@@ -317,8 +318,8 @@ export default function App() {
   
   // Director Filter premium curate state
   const [isDirectorFilterActive, setIsDirectorFilterActive] = useState(false);
-  const [curatorSala, setCuratorSala] = useState<'Solo' | 'Dúo' | 'Grupo'>('Solo');
-  const [curatorTono, setCuratorTono] = useState<'Ligero' | 'Trama' | 'Intenso'>('Trama');
+  const [curatorSala, setCuratorSala] = useState<'Solo' | 'Dúo' | 'Grupo' | null>(null);
+  const [curatorTono, setCuratorTono] = useState<'Ligero' | 'Trama' | 'Intenso' | null>(null);
   const [curatorGenero, setCuratorGenero] = useState<string>('Todos');
   const [curatorEpoca, setCuratorEpoca] = useState<string>('Todas');
   const [isEpochDropdownOpen, setIsEpochDropdownOpen] = useState(false);
@@ -393,144 +394,105 @@ export default function App() {
     setIsClapping(false);
 
     try {
-      const prevIds = curatorRecommendations.map(r => r.id);
-      
-      const candidates = movies.map(m => {
+      const isStrictMatch = (m: Movie) => {
         const movieGenreUpper = getNormalizedGenres(m.genre).map(g => g.toUpperCase());
         const movieGenreStrRaw = (Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || '')).toUpperCase();
         
-        // 1. Genre Matching
-        let matchesGenre = false;
+        let matchesGenre = true;
         if (curatorGenero !== 'Todos' && curatorGenero !== 'Cualquier género') {
           const genUpper = curatorGenero.toUpperCase();
-          if (movieGenreUpper.includes(genUpper)) {
-            matchesGenre = true;
+          if (genUpper === "SUSPENSE" || genUpper === "SUSPENSO") {
+            matchesGenre = movieGenreUpper.includes("SUSPENSO") || movieGenreUpper.includes("SUSPENSE") || movieGenreStrRaw.includes("INTRIGA");
+          } else {
+            matchesGenre = movieGenreUpper.includes(genUpper);
           }
-        } else {
-          matchesGenre = true;
         }
 
-        // 2. Epoch Matching
-        let matchesEpoch = false;
+        let matchesEpoch = true;
         if (curatorEpoca !== 'Todas' && curatorEpoca !== 'Cualquier época') {
           const matchedRange = YEAR_RANGES.find(r => r.label === curatorEpoca);
           if (matchedRange) {
             const mYear = m.year ? parseInt(String(m.year)) : 0;
-            if (mYear >= matchedRange.start && mYear < matchedRange.end) {
-              matchesEpoch = true;
-            }
+            matchesEpoch = mYear >= matchedRange.start && mYear < matchedRange.end;
+          } else {
+            matchesEpoch = false;
           }
-        } else {
-          matchesEpoch = true;
         }
 
-        // 4. Tone Matching
         let matchesTone = false;
-        if (curatorTono === 'Ligero') {
-          if (movieGenreUpper.some(g => ['COMEDIA', 'ANIMACIÓN', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'MUSICAL'].includes(g))) {
-            matchesTone = true;
-          }
-        } else if (curatorTono === 'Trama') {
-          if (movieGenreUpper.some(g => ['DRAMA', 'MISTERIO', 'HISTORIA', 'ROMANCE', 'DOCUMENTAL', 'BIOGRAFÍA'].includes(g)) || movieGenreStrRaw.includes('INTRIGA')) {
-            matchesTone = true;
-          }
-        } else if (curatorTono === 'Intenso') {
-          if (movieGenreUpper.some(g => ['TERROR', 'THRILLER', 'CRIMEN', 'ACCIÓN', 'SUSPENSO', 'BÉLICO'].includes(g))) {
-            matchesTone = true;
-          }
+        const toneToMatch = curatorTono || 'Trama';
+        if (toneToMatch === 'Ligero') {
+          matchesTone = movieGenreUpper.some(g => ['COMEDIA', 'ANIMACIÓN', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'MUSICAL'].includes(g));
+        } else if (toneToMatch === 'Trama') {
+          matchesTone = movieGenreUpper.some(g => ['DRAMA', 'MISTERIO', 'HISTORIA', 'ROMANCE', 'DOCUMENTAL', 'BIOGRAFÍA'].includes(g)) || movieGenreStrRaw.includes('INTRIGA');
+        } else if (toneToMatch === 'Intenso') {
+          matchesTone = movieGenreUpper.some(g => ['TERROR', 'THRILLER', 'CRIMEN', 'ACCIÓN', 'SUSPENSO', 'BÉLICO'].includes(g));
         }
 
-        // 5. Sala (Company) Matching
         let matchesSala = false;
-        if (curatorSala === 'Solo') {
-          if (movieGenreUpper.some(g => ['DRAMA', 'DOCUMENTAL', 'MISTERIO', 'THRILLER', 'SCI-FI', 'BIOGRAFÍA', 'SUSPENSO'].includes(g)) || movieGenreStrRaw.includes('INDIE')) {
-            matchesSala = true;
-          }
-        } else if (curatorSala === 'Dúo') {
-          if (movieGenreUpper.some(g => ['ROMANCE', 'COMEDIA', 'TERROR', 'SUSPENSO', 'THRILLER', 'MUSICAL', 'DRAMA'].includes(g))) {
-            matchesSala = true;
-          }
-        } else if (curatorSala === 'Grupo') {
-          if (movieGenreUpper.some(g => ['ACCIÓN', 'COMEDIA', 'TERROR', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'ANIMACIÓN', 'SCI-FI'].includes(g))) {
-            matchesSala = true;
-          }
+        const salaToMatch = curatorSala || 'Solo';
+        if (salaToMatch === 'Solo') {
+          matchesSala = movieGenreUpper.some(g => ['DRAMA', 'DOCUMENTAL', 'MISTERIO', 'THRILLER', 'SCI-FI', 'BIOGRAFÍA', 'SUSPENSO'].includes(g)) || movieGenreStrRaw.includes('INDIE');
+        } else if (salaToMatch === 'Dúo') {
+          matchesSala = movieGenreUpper.some(g => ['ROMANCE', 'COMEDIA', 'TERROR', 'SUSPENSO', 'THRILLER', 'MUSICAL', 'DRAMA'].includes(g));
+        } else if (salaToMatch === 'Grupo') {
+          matchesSala = movieGenreUpper.some(g => ['ACCIÓN', 'COMEDIA', 'TERROR', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'ANIMACIÓN', 'SCI-FI'].includes(g));
         }
 
-        // Calculate a hierarchical stratified score
-        let finalScore = 0;
-        if (matchesGenre) finalScore += 100000;
-        if (matchesEpoch) finalScore += 10000;
-        if (matchesTone) finalScore += 5000;
-        if (matchesSala) finalScore += 5000;
+        return matchesGenre && matchesEpoch && matchesTone && matchesSala;
+      };
 
-        // Base quality rating scaling (breaks ties using global IMDb rating)
-        finalScore += (m.rating || 0) * 0.1;
+      const strictlyMatchingMovies = movies.filter(isStrictMatch);
+
+      if (strictlyMatchingMovies.length === 0) {
+        setCurationError("El Director no encontró películas que cumplan exactamente con esos parámetros en el catálogo.");
+        setIsCurating(false);
+        return;
+      }
+
+      let availablePool = strictlyMatchingMovies.filter(m => !curatedSessionIds.includes(m.id));
+
+      if (availablePool.length === 0) {
+        const strictMatchIds = strictlyMatchingMovies.map(m => m.id);
+        setCuratedSessionIds(prev => prev.filter(id => !strictMatchIds.includes(id)));
+        availablePool = strictlyMatchingMovies; 
+      }
+
+      const prevIds = curatorRecommendations.map(r => r.id);
+      
+      const candidates = availablePool.map(m => {
+        let finalScore = 0;
+        finalScore += (m.rating || 0) * 10;
 
         const normalizedTitle = m.title?.toLowerCase().trim() || "";
         const normalizedOriginal = m.originalTitle?.toLowerCase().trim() || "";
 
-        // Determine if title was previously seen
-        let wasSeenRecently = false;
-        let wasSeenInSession = false;
-
-        if (prevIds.includes(m.id)) {
-          wasSeenRecently = true;
-        }
-        if (curatedSessionIds.includes(m.id)) {
-          wasSeenInSession = true;
-        }
-
-        // Also check by title to avoid duplicate variants
-        if (!wasSeenRecently && prevIds.some(id => {
+        let titleSeenRecently = false;
+        if (prevIds.some(id => {
           const pm = movies.find(x => x.id === id);
           if (!pm) return false;
           const pTitle = pm.title?.toLowerCase().trim() || "";
           const pOrig = pm.originalTitle?.toLowerCase().trim() || "";
           return (pTitle && pTitle === normalizedTitle) || (pOrig && pOrig === normalizedOriginal);
         })) {
-          wasSeenRecently = true;
+          titleSeenRecently = true;
         }
 
-        if (!wasSeenInSession && curatedSessionIds.some(id => {
-          const pm = movies.find(x => x.id === id);
-          if (!pm) return false;
-          const pTitle = pm.title?.toLowerCase().trim() || "";
-          const pOrig = pm.originalTitle?.toLowerCase().trim() || "";
-          return (pTitle && pTitle === normalizedTitle) || (pOrig && pOrig === normalizedOriginal);
-        })) {
-          wasSeenInSession = true;
+        if (titleSeenRecently) {
+          finalScore -= 10000;
         }
 
-        // Avoid immediate repetitions
-        if (wasSeenRecently) {
-          finalScore -= 200000;
-        }
-
-        // Avoid active session repetitions
-        if (wasSeenInSession) {
-          finalScore -= 1000000;
-        }
-
-        // Small random noise (0 to 1) to vary selections on same query
-        finalScore += Math.random();
-
-        const isStrictMatch = matchesGenre && matchesEpoch && matchesTone && matchesSala;
+        // Add significant random noise to ensure perfect randomness
+        finalScore += Math.random() * 10000;
 
         return { 
           movie: m, 
-          score: finalScore, 
-          isStrictMatch, 
-          matchesGenre, 
-          matchesEpoch, 
-          matchesTone, 
-          matchesSala 
+          score: finalScore
         };
       });
 
-      // Sort by final score descending (handles priority adaptively via score weights)
       const sorted = candidates.sort((a, b) => b.score - a.score);
       
-      // Select up to 3 movies ensuring that there are absolutely no duplicate titles or IDs
       const selectedMovies: any[] = [];
       const seenTitles = new Set<string>();
       const seenIds = new Set<string>();
@@ -551,7 +513,6 @@ export default function App() {
         if (normalizedOriginal) seenTitles.add(normalizedOriginal);
       }
 
-      // Generate dynamic filmmaker-centric reasons
       const generatedRecs = selectedMovies.map(m => {
         const salaLabels = {
           'Solo': 'en la soledad del cinéfilo',
@@ -564,12 +525,11 @@ export default function App() {
           'Intenso': 'fuerte, electrizante y de una inmensa emoción cinematográfica'
         };
         const templates = [
-          `Una obra ideal para consagrar ${salaLabels[curatorSala] || 'tu sesión'}. Su estructura posee un pulso ${tonoLabels[curatorTono] || 'exquisito'}, que florece con gran madurez visual. Un retrato de inestabilidad y fascinación ordinaria que desafía al conformismo cotidiano.`,
-          `El director compone aquí un viaje existencial de carretera que cruza parajes inhóspitos. Es un lienzo idóneo para ver ${salaLabels[curatorSala] || 'disfrutar'}, calibrando un compás ${tonoLabels[curatorTono] || 'magnífico'}, estructurado a la perfección. Puro cine de altísimo nivel.`,
-          `Una gema de incalculable valor estético que brota de la claustrofobia de la vida urbana. Altamente recomendada para ver ${salaLabels[curatorSala] || 'en tu sala'}; despliega un carácter singular que rompe con la rutina tradicional con su característica destreza.`
+          `Una obra ideal para consagrar ${curatorSala ? salaLabels[curatorSala] : 'tu sesión'}. Su estructura posee un pulso ${curatorTono ? tonoLabels[curatorTono] : 'exquisito'}, que florece con gran madurez visual. Un retrato de inestabilidad y fascinación ordinaria que desafía al conformismo cotidiano.`,
+          `El director compone aquí un viaje existencial de carretera que cruza parajes inhóspitos. Es un lienzo idóneo para ver ${curatorSala ? salaLabels[curatorSala] : 'disfrutar'}, calibrando un compás ${curatorTono ? tonoLabels[curatorTono] : 'magnífico'}, estructurado a la perfección. Puro cine de altísimo nivel.`,
+          `Una gema de incalculable valor estético que brota de la claustrofobia de la vida urbana. Altamente recomendada para ver ${curatorSala ? salaLabels[curatorSala] : 'en tu sala'}; despliega un carácter singular que rompe con la rutina tradicional con su característica destreza.`
         ];
         
-        // Pick template based on movie characteristics
         const idx = Math.abs((m.title.length + m.year) % templates.length);
         const reason = templates[idx];
 
@@ -582,38 +542,8 @@ export default function App() {
 
       setCuratorRecommendations(generatedRecs);
 
-      // Update session history to ensure NO repetitions of combinations.
-      // We calculate how many movies matching the active curator parameters are in the library.
-      const matchingPoolCount = movies.filter(m => {
-        let matchesGenre = true;
-        if (curatorGenero !== 'Todos' && curatorGenero !== 'Cualquier género') {
-          const genUpper = curatorGenero.toUpperCase();
-          const movieGenreStr = Array.isArray(m.genre) ? m.genre.join(' / ') : String(m.genre || '');
-          const movieGenreUpper = movieGenreStr.toUpperCase();
-          if (genUpper === "SUSPENSE" || genUpper === "SUSPENSO") {
-            matchesGenre = movieGenreUpper.includes("SUSPENSO") || movieGenreUpper.includes("SUSPENSE") || movieGenreUpper.includes("INTRIGA");
-          } else {
-            matchesGenre = movieGenreUpper.includes(genUpper);
-          }
-        }
-        let matchesEpoch = true;
-        if (curatorEpoca !== 'Todas' && curatorEpoca !== 'Cualquier época') {
-          const matchedRange = YEAR_RANGES.find(r => r.label === curatorEpoca);
-          if (matchedRange) {
-            const mYear = m.year ? parseInt(String(m.year)) : 0;
-            matchesEpoch = mYear >= matchedRange.start && mYear < matchedRange.end;
-          }
-        }
-        return matchesGenre && matchesEpoch;
-      }).length;
+      setCuratedSessionIds(prev => [...prev, ...selectedMovies.map(sm => sm.id)]);
 
-      const newSessionIds = [...curatedSessionIds, ...selectedMovies.map(sm => sm.id)];
-      // If we've shown more than 70% of the available fitting films (or pool is small), reset history so they can cycle
-      if (newSessionIds.filter(id => movies.some(m => m.id === id)).length >= Math.max(1, matchingPoolCount * 0.7)) {
-        setCuratedSessionIds(selectedMovies.map(sm => sm.id));
-      } else {
-        setCuratedSessionIds(newSessionIds);
-      }
     } catch (err: any) {
       console.error("Error al curar de forma local:", err);
       setCurationError(err.message || "Error al realizar la recomendación cinematográfica.");
@@ -1668,6 +1598,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        setShowReviewOnly(false);
                        setShowHistoryOnly(false);
                        setIsDirectorFilterActive(true);
+                        setCuratorSala(null);
+                        setCuratorTono(null);
+                        setCuratorGenero("Todos");
+                        setCuratorEpoca("Todas");
                        setCuratorRecommendations([]);
                        setCurrentPage(1);
                        setIsMobileMenuOpen(false);
@@ -2638,7 +2572,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                           <div className="relative z-10 flex flex-col items-center justify-center leading-none">
                             <span className="text-[6.5px] font-mono text-zinc-400 font-extrabold uppercase tracking-widest opacity-60">TKT</span>
-                            <span className="text-white font-black text-sm tracking-wide font-mono mt-0.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+                            <span className="text-white font-black text-sm tracking-wide font-mono mt-0.5 drop-shadow-[0_0_2px_rgba(239,68,68,0.5)] drop-shadow-[0_0_6px_rgba(255,255,255,0.75)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
                               {pageNumber < 10 ? `0${pageNumber}` : pageNumber}
                             </span>
                             <span className="text-[6.5px] font-mono text-[#ef4444] font-bold uppercase tracking-widest mt-0.5 opacity-80">ADMIT</span>
@@ -2703,77 +2637,95 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
           {/* SECCIÓN CURACIÓN: FILTRO DEL DIRECTOR / DIAL DEL DIRECTOR */}
           {isDirectorFilterActive && (
-            <div 
-              className="relative z-10 w-full max-w-5xl mx-auto mt-8 font-sans bg-black/40 border border-neutral-800/80 rounded-3xl p-8 backdrop-blur-md overflow-visible transition-all duration-500 shadow-2xl"
-              style={{ backgroundImage: 'radial-gradient(circle at center, rgba(180, 29, 29, 0.05) 0%, transparent 85%)' }}
-            >
-              {/* Header Content */}
-              {curatorRecommendations.length === 0 && !isCurating && (
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-white/[0.04] pb-6 text-left animate-in fade-in duration-300">
-                  <div className="flex flex-col gap-1.5 items-start">
-                    <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#b41d1d] animate-pulse inline-block shadow-[0_0_8px_rgba(180,29,29,0.8)]" />
-                      <span className="text-[#b41d1d] font-mono text-[9px] tracking-[0.35em] uppercase font-bold">FILTRO DEL DIRECTOR</span>
-                    </div>
-                    <h3 
-                      className="text-[#eeeeee] uppercase tracking-[0.06em] text-3xl md:text-4xl lg:text-5xl mt-1.5 leading-tight"
-                      style={{ fontFamily: "'Cinematografica', 'Cinematografica Bold', sans-serif", fontWeight: "bold" }}
-                    >
-                      Diseña la experiencia cinematográfica perfecta
-                    </h3>
-                    <p className="text-xs md:text-sm text-neutral-400 font-light tracking-wide mt-1.5 max-w-2xl leading-relaxed">
-                      Elige con quién estás, el ritmo de historia que deseas, los géneros y las épocas. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* CURATING IMMERSIVE STATE */}
-              {isCurating && (
-                <div className="flex flex-col items-center justify-center text-center gap-5 py-12 animate-in fade-in duration-500 w-full">
-                  <div className="relative w-20 h-20 flex items-center justify-center">
-                    {/* Projector Light Beam Glow Effect (ambient backdrop) */}
-                    <div className="absolute inset-x-[-30px] top-1/2 -translate-y-1/2 h-16 bg-gradient-to-r from-[#b41d1d]/30 via-transparent to-[#b41d1d]/10 opacity-40 blur-xl rounded-full" />
-                    
-                    {/* Pulsing Cinema Lens Core */}
-                    <div className="absolute inset-3.5 bg-neutral-950 rounded-full border border-neutral-800/80 flex items-center justify-center shadow-inner z-10">
-                      <Video className="text-[#b41d1d] animate-pulse" size={18} />
-                    </div>
-
-                    {/* Outer film-reel sprockets resembling frame boundaries rotating smoothly */}
-                    <div className="absolute inset-0.5 border-2 border-dashed border-neutral-700/60 rounded-full animate-[spin_15s_linear_infinite]" />
-                    
-                    {/* Fast track cinematic accent indicator indicating active scanning */}
-                    <div className="absolute inset-0 border-t-2 border-b-2 border-transparent border-l-2 border-[#b41d1d] rounded-full animate-spin" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-neutral-300 text-xs font-mono font-light uppercase tracking-widest animate-pulse">
-                      EL DIRECTOR ESTÁ BUSCANDO LAS MEJORES PELÍCULAS...
-                    </p>
-                    <p className="text-[10px] text-neutral-500 font-light font-sans">
-                      Filtrando el catálogo para recomendarte las películas perfectas...
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* CURATION ERROR */}
+            <div className="w-full flex flex-col items-center relative z-10 mt-8 mb-4">
+              {/* STANDALONE CURATION ERROR */}
               {curationError && !isCurating && (
-                <div className="mb-6 p-4 bg-red-950/20 border border-[#b41d1d]/30 text-rose-300 text-xs rounded-xl flex items-center gap-3 w-full">
-                  <AlertTriangle size={15} className="text-[#b41d1d] shrink-0" />
-                  <span className="font-light tracking-wide">{curationError}</span>
-                  <button 
-                    onClick={() => { setCurationError(null); }}
-                    className="ml-auto text-[10px] underline hover:text-white"
-                  >
-                    Cerrar
-                  </button>
+                <div className="p-6 sm:p-8 bg-[#080808] border border-zinc-800/60 rounded-2xl flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8 w-full max-w-2xl mx-auto relative overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {/* Subtle red cinematic glow at the top */}
+                  <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#b30500]/70 to-transparent" />
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-64 h-24 bg-[#b30500] blur-[60px] opacity-10 pointer-events-none" />
+                  
+                  <div className="w-full sm:w-52 h-52 shrink-0 rounded-lg overflow-hidden relative border border-zinc-800/80 shadow-2xl bg-[#050505]">
+                    <img src={emptyChairImage} alt="Silla de Director y Claqueta" className="absolute inset-0 w-full h-full object-cover opacity-90" referrerPolicy="no-referrer" />
+                    <div className="absolute inset-0 ring-1 ring-inset ring-white/10 rounded-lg pointer-events-none" />
+                  </div>
+                  
+                  <div className="flex flex-col items-center sm:items-start flex-1 text-center sm:text-left py-1 sm:py-2">
+                    <h3 className="font-sans text-xs text-[#b30500] font-bold tracking-[0.25em] uppercase mb-4 sm:mb-3">Corte del Director</h3>
+                    <p className="font-sans font-light text-zinc-300 text-sm tracking-wide leading-relaxed mb-6 sm:mb-5">
+                      {curationError}
+                    </p>
+                    
+                    <button 
+                      onClick={() => { setCurationError(null); }}
+                      className="px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-zinc-300 text-[10px] sm:text-xs font-semibold tracking-[0.2em] uppercase transition-all flex items-center gap-2 group mt-auto"
+                    >
+                      <span>Repetir Toma</span>
+                      <Clapperboard size={14} className="text-zinc-400 group-hover:text-white transition-colors" />
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* DIALS ENGINE (Show ONLY if no recommendations and not curating) */}
-              {curatorRecommendations.length === 0 && !isCurating && (
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center text-left animate-in fade-in duration-300">
+              {/* CURATION DIALS AND RESULTS (Only show if no error) */}
+              {!curationError && (
+                <div 
+                  className="w-full max-w-5xl font-sans bg-black/40 border border-neutral-800/80 rounded-3xl p-8 backdrop-blur-md overflow-visible transition-all duration-500 shadow-2xl"
+                  style={{ backgroundImage: 'radial-gradient(circle at center, rgba(180, 29, 29, 0.05) 0%, transparent 85%)' }}
+                >
+                  {/* Header Content */}
+                  {curatorRecommendations.length === 0 && !isCurating && (
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-white/[0.04] pb-6 text-left animate-in fade-in duration-300">
+                      <div className="flex flex-col gap-1.5 items-start">
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#b41d1d] animate-pulse inline-block shadow-[0_0_8px_rgba(180,29,29,0.8)]" />
+                          <span className="text-[#b41d1d] font-mono text-[9px] tracking-[0.35em] uppercase font-bold">FILTRO DEL DIRECTOR</span>
+                        </div>
+                        <h3 
+                          className="text-[#eeeeee] uppercase tracking-[0.06em] text-3xl md:text-4xl lg:text-5xl mt-1.5 leading-tight"
+                          style={{ fontFamily: "'Cinematografica', 'Cinematografica Bold', sans-serif", fontWeight: "bold" }}
+                        >
+                          Diseña la experiencia cinematográfica perfecta
+                        </h3>
+                        <p className="text-xs md:text-sm text-neutral-400 font-light tracking-wide mt-1.5 max-w-2xl leading-relaxed">
+                          Elige con quién estás, el ritmo de historia que deseas, los géneros y las épocas. Nuestro recomendador inteligente elegirá de la mediateca la obra idónea para tu momento.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CURATING IMMERSIVE STATE */}
+                  {isCurating && (
+                    <div className="flex flex-col items-center justify-center text-center gap-5 py-12 animate-in fade-in duration-500 w-full">
+                      <div className="relative w-20 h-20 flex items-center justify-center">
+                        {/* Projector Light Beam Glow Effect (ambient backdrop) */}
+                        <div className="absolute inset-x-[-30px] top-1/2 -translate-y-1/2 h-16 bg-gradient-to-r from-[#b41d1d]/30 via-transparent to-[#b41d1d]/10 opacity-40 blur-xl rounded-full" />
+                        
+                        {/* Pulsing Cinema Lens Core */}
+                        <div className="absolute inset-3.5 bg-neutral-950 rounded-full border border-neutral-800/80 flex items-center justify-center shadow-inner z-10">
+                          <Video className="text-[#b41d1d] animate-pulse" size={18} />
+                        </div>
+
+                        {/* Outer film-reel sprockets resembling frame boundaries rotating smoothly */}
+                        <div className="absolute inset-0.5 border-2 border-dashed border-neutral-700/60 rounded-full animate-[spin_15s_linear_infinite]" />
+                        
+                        {/* Fast track cinematic accent indicator indicating active scanning */}
+                        <div className="absolute inset-0 border-t-2 border-b-2 border-transparent border-l-2 border-[#b41d1d] rounded-full animate-spin" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-neutral-300 text-xs font-mono font-light uppercase tracking-widest animate-pulse">
+                          EL DIRECTOR ESTÁ BUSCANDO LAS MEJORES PELÍCULAS...
+                        </p>
+                        <p className="text-[10px] text-neutral-500 font-light font-sans">
+                          Filtrando el catálogo para recomendarte las películas perfectas...
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DIALS ENGINE (Show ONLY if no recommendations and not curating) */}
+                  {curatorRecommendations.length === 0 && !isCurating && (
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center text-left animate-in fade-in duration-300">
                   
                   {/* Selectors Column */}
                   <div className="col-span-1 md:col-span-8 space-y-8">
@@ -3172,7 +3124,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                             {/* Huge Background Silhouette Number in front of the card sticking out */}
                             <div 
-                              className="recommendation-number absolute -top-28 left-1/2 -translate-x-1/2 z-30 select-none pointer-events-none opacity-80 font-black tracking-tighter text-[7.5rem] sm:text-[9.5rem] leading-none transition-all duration-500 group-hover:opacity-100 group-hover:-translate-y-1 text-center"
+                              className="recommendation-number absolute -top-28 left-1/2 -translate-x-1/2 z-30 select-none pointer-events-none opacity-80 font-sans font-black tracking-normal px-2 text-[7.5rem] sm:text-[9.5rem] leading-none transition-all duration-500 group-hover:opacity-100 group-hover:-translate-y-1 text-center"
                               style={{
                                 marginLeft: index === 0 ? "-9px" : "0px"
                               }}
@@ -3288,11 +3240,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   </div>
                 </div>
               )}
-
             </div>
           )}
+        </div>
+      )}
 
-          {/* DIVISOR CINTA DE CINE */}
+      {/* DIVISOR CINTA DE CINE */}
           {selectedGenre === "Todos" && !isDirectorFilterActive && (
             <div className="w-full h-12 opacity-80 my-12">
               <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
