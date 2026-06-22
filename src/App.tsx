@@ -2572,7 +2572,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                           <div className="relative z-10 flex flex-col items-center justify-center leading-none">
                             <span className="text-[6.5px] font-mono text-zinc-400 font-extrabold uppercase tracking-widest opacity-60">TKT</span>
-                            <span className="text-white font-black text-sm tracking-wide font-mono mt-0.5 drop-shadow-[0_0_2px_rgba(239,68,68,0.5)] drop-shadow-[0_0_6px_rgba(255,255,255,0.75)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+                            <span className="text-white font-black text-sm tracking-wide font-mono mt-0.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
                               {pageNumber < 10 ? `0${pageNumber}` : pageNumber}
                             </span>
                             <span className="text-[6.5px] font-mono text-[#ef4444] font-bold uppercase tracking-widest mt-0.5 opacity-80">ADMIT</span>
