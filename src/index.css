@@ -331,4 +331,24 @@
     -webkit-text-fill-color: transparent !important;
     filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.45)) drop-shadow(0 0 10px rgba(180, 29, 29, 0.25)) !important;
   }
+
+  .recommendation-char-std, .recommendation-char-red {
+    transition: text-shadow 0.3s ease-in-out, transform 0.3s ease-in-out, color 0.3s ease-in-out;
+  }
+
+  .group:hover .recommendation-char-std {
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.25), 0 0 10px rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .group:hover .recommendation-char-red {
+    text-shadow: 0 0 5px rgba(239, 68, 68, 0.4), 0 0 10px rgba(180, 29, 29, 0.15) !important;
+  }
+
+  @keyframes infinite-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-100%); }
+  }
+  .animate-infinite-scroll {
+    animation: infinite-scroll 45s linear infinite;
+  }
 }

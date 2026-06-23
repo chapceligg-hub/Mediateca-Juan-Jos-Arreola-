@@ -22,6 +22,7 @@ export interface Movie {
   updatedAt: string;
   createdAt?: string;
   needsReview?: boolean;
+  favoriteOfMonth?: boolean;
   filmaffinityId?: string;
   tmdbId?: string;
   posterCandidates?: string[];

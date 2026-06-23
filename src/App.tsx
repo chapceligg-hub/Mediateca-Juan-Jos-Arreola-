@@ -318,6 +318,63 @@ export default function App() {
   
   // Director Filter premium curate state
   const [isDirectorFilterActive, setIsDirectorFilterActive] = useState(false);
+  const [isFavoriteOfMonthActive, setIsFavoriteOfMonthActive] = useState(false);
+  const [activeFavIndex, setActiveFavIndex] = useState(0);
+  const favContainerRef = useRef<HTMLDivElement>(null);
+  const [isDraggingFav, setIsDraggingFav] = useState(false);
+  const [dragStartXFav, setDragStartXFav] = useState(0);
+  const [dragScrollLeftFav, setDragScrollLeftFav] = useState(0);
+
+  // Auto hover scroll states and refs for smooth hands-free scrolling
+  const hoverScrollVelRef = useRef<number>(0);
+  const hoverLoopActiveRef = useRef<boolean>(false);
+  const [isHoverScrolling, setIsHoverScrolling] = useState(false);
+
+  const startHoverScrollLoop = () => {
+    if (hoverLoopActiveRef.current) return;
+    hoverLoopActiveRef.current = true;
+
+    const tick = () => {
+      if (!hoverLoopActiveRef.current || !favContainerRef.current) {
+        setIsHoverScrolling(false);
+        return;
+      }
+
+      const vel = hoverScrollVelRef.current;
+      const absVel = Math.abs(vel);
+      const deadZone = 0.35; // Center 70% is dead zone to view the movies beautifully without drifting
+
+      if (absVel > deadZone) {
+        // Smooth exponent speed curve
+        const intensity = (absVel - deadZone) / (1 - deadZone); // 0 to 1
+        const speed = Math.sign(vel) * Math.pow(intensity, 1.5) * 16; // multiplier controls max speed (16px per frame)
+
+        favContainerRef.current.scrollLeft += speed;
+        setIsHoverScrolling(true);
+      } else {
+        setIsHoverScrolling(false);
+      }
+
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+  };
+
+  const stopHoverScrollLoop = () => {
+    hoverLoopActiveRef.current = false;
+    setIsHoverScrolling(false);
+    hoverScrollVelRef.current = 0;
+  };
+
+  useEffect(() => {
+    if (!isFavoriteOfMonthActive) {
+      stopHoverScrollLoop();
+    }
+    return () => {
+      stopHoverScrollLoop();
+    };
+  }, [isFavoriteOfMonthActive]);
   const [curatorSala, setCuratorSala] = useState<'Solo' | 'Dúo' | 'Grupo' | null>(null);
   const [curatorTono, setCuratorTono] = useState<'Ligero' | 'Trama' | 'Intenso' | null>(null);
   const [curatorGenero, setCuratorGenero] = useState<string>('Todos');
@@ -572,6 +629,7 @@ export default function App() {
     setShowReviewOnly(false);
     setShowHistoryOnly(false);
     setIsDirectorFilterActive(false);
+    setIsFavoriteOfMonthActive(false);
     setCuratorRecommendations([]);
     setCurrentPage(1);
     setIsMobileMenuOpen(false);
@@ -586,6 +644,7 @@ export default function App() {
     setShowReviewOnly(false);
     setShowHistoryOnly(true);
     setIsDirectorFilterActive(false);
+    setIsFavoriteOfMonthActive(false);
     setCuratorRecommendations([]);
     setCurrentPage(1);
     setIsMobileMenuOpen(false);
@@ -709,7 +768,7 @@ export default function App() {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const moviesPerPage = 24;
 
-  const isArchiveActive = !selectedLetter && !selectedYearRange && selectedGenre === "Todos" && !showReviewOnly && !showHistoryOnly;
+  const isArchiveActive = !selectedLetter && !selectedYearRange && selectedGenre === "Todos" && !showReviewOnly && !showHistoryOnly && !isDirectorFilterActive && !isFavoriteOfMonthActive;
 
   const getSidebarItemClass = (isActive: boolean) => {
     return isActive 
@@ -1462,7 +1521,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       {isMobileMenuOpen && (
         <div className="fixed inset-0 bg-black/80 z-[60] md:hidden" onClick={() => setIsMobileMenuOpen(false)} />
       )}
-      <aside className={`w-72 bg-[#050505] border-r border-white/5 flex-col h-full shrink-0 z-[70] transition-transform duration-300 ${isMobileMenuOpen ? 'fixed left-0 translate-x-0 flex' : 'fixed -translate-x-full md:relative md:translate-x-0 md:flex'}`}>
+      <aside className={`w-72 bg-[#050505] border-r border-white/5 flex-col h-full shrink-0 z-[70] transition-transform duration-300 ${isFavoriteOfMonthActive ? 'hidden' : isMobileMenuOpen ? 'fixed left-0 translate-x-0 flex' : 'fixed -translate-x-full md:relative md:translate-x-0 md:flex'}`}>
         <div className="p-6 flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
           
           {/* Logo */}
@@ -1538,9 +1597,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isAlphabetOpen ? 'rotate-180' : ''}`} />
                      </button>
                      <div className={`flex flex-wrap gap-1.5 px-5 overflow-hidden transition-all duration-300 ${isAlphabetOpen ? 'max-h-48 opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
-                       <button onClick={() => { setSelectedLetter(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${!selectedLetter ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{t("Todos")}</button>
+                       <button onClick={() => { setSelectedLetter(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${!selectedLetter ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{t("Todos")}</button>
                        {ALPHABET.map(l => (
-                         <button key={l} onClick={() => { setSelectedLetter(l); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all ${selectedLetter === l ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{l}</button>
+                         <button key={l} onClick={() => { setSelectedLetter(l); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all ${selectedLetter === l ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{l}</button>
                        ))}
                      </div>
                    </div>
@@ -1558,9 +1617,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isErasOpen ? 'rotate-180' : ''}`} />
                      </button>
                      <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isErasOpen ? 'max-h-[800px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
-                       <button onClick={() => { setSelectedYearRange(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${!selectedYearRange ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>Cualquier Año</button>
+                       <button onClick={() => { setSelectedYearRange(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${!selectedYearRange ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>Cualquier Año</button>
                        {YEAR_RANGES.map(range => (
-                         <button key={range.label} onClick={() => { setSelectedYearRange(range); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${selectedYearRange?.label === range.label ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{range.label}</button>
+                         <button key={range.label} onClick={() => { setSelectedYearRange(range); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${selectedYearRange?.label === range.label ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{range.label}</button>
                        ))}
                      </div>
                    </div>
@@ -1579,7 +1638,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                      </button>
                      <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isCategoriesOpen ? 'max-h-[3000px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
                        {dynamicGenres.map(g => (
-                         <button key={g} onClick={() => { setSelectedGenre(g); setShowHistoryOnly(false); setShowReviewOnly(false); setCurrentPage(1); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all flex justify-between items-center ${selectedGenre === g ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                         <button key={g} onClick={() => { setSelectedGenre(g); setShowHistoryOnly(false); setShowReviewOnly(false); setCurrentPage(1); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all flex justify-between items-center ${selectedGenre === g ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
                            <span>{g}</span>
                          </button>
                        ))}
@@ -1597,6 +1656,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        setSearchTerm("");
                        setShowReviewOnly(false);
                        setShowHistoryOnly(false);
+                       setIsFavoriteOfMonthActive(false);
                        setIsDirectorFilterActive(true);
                         setCuratorSala(null);
                         setCuratorTono(null);
@@ -1609,6 +1669,27 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                    >
                      <Video className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" strokeWidth={1.5} /> 
                      <span className="font-extrabold tracking-widest text-[11px]">{t("FILTRO DEL DIRECTOR")}</span>
+                   </button>
+
+                   {/* PELÍCULAS DEL MES */}
+                   <button 
+                     className={getArchiveSidebarClass(isFavoriteOfMonthActive)} 
+                     onClick={() => {
+                       setSelectedLetter(null);
+                       setSelectedYearRange(null);
+                       setSelectedGenre("Todos");
+                       setSearchQuery("");
+                       setSearchTerm("");
+                       setShowReviewOnly(false);
+                       setShowHistoryOnly(false);
+                       setIsDirectorFilterActive(false);
+                       setIsFavoriteOfMonthActive(true);
+                       setCurrentPage(1);
+                       setIsMobileMenuOpen(false);
+                     }}
+                   >
+                     <Star className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-yellow-500" strokeWidth={1.5} /> 
+                     <span className="font-extrabold tracking-widest text-[11px] uppercase">Películas del mes</span>
                    </button>
                 </div>
              </div>
@@ -1719,7 +1800,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       </aside>
 
        {/* MOBILE NAV BURGER */}
-      <nav className="md:hidden sticky top-0 z-50 bg-black/95 backdrop-blur-xl border-b border-white/5 p-4 flex flex-row items-center justify-between">
+      <nav className={`md:hidden sticky top-0 z-50 bg-black/95 backdrop-blur-xl border-b border-white/5 p-4 flex flex-row items-center justify-between ${isFavoriteOfMonthActive ? 'hidden' : ''}`}>
          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { window.scrollTo({top: 0, behavior: 'smooth'}); clearFiltersAndSearch(); }}>
            <img 
              src="/android-chrome-512x512.png" 
@@ -1742,7 +1823,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         ref={mainContentRef as any}
         onMouseMove={handleMainMouseMove as any}
         onMouseLeave={handleMainMouseLeave}
-        className="flex-1 overflow-x-hidden overflow-y-auto scroll-smooth relative"
+        className={`flex-1 overflow-x-hidden overflow-y-auto scroll-smooth relative transition-colors duration-500 ${
+          isFavoriteOfMonthActive ? 'bg-[#060608]' : ''
+        }`}
       >
         {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
           <CinematicBackground selectedGenre={selectedGenre} />
@@ -1901,7 +1984,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       )}
 
       {/* GALERÍA PAGINADA (CUADRÍCULA 7x3) */}
-      {!isDirectorFilterActive && (
+      {!isDirectorFilterActive && !isFavoriteOfMonthActive && (
         <div className="relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-20">
         
         {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
@@ -2421,6 +2504,31 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                   {isAdmin && (
                     <div className="pt-8 border-t border-white/5 flex flex-wrap gap-4 items-center">
+                      {/* Button: FAVORITA DEL MES SWITCH */}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const newVal = !selectedMovie.favoriteOfMonth;
+                          setSelectedMovie({ ...selectedMovie, favoriteOfMonth: newVal });
+                          setMovies(prev => prev.map(m => m.id === selectedMovie.id ? { ...m, favoriteOfMonth: newVal } : m));
+                          try {
+                            await updateMovie(selectedMovie.id, { favoriteOfMonth: newVal });
+                          } catch (err) {
+                            console.error("Error setting favorite:", err);
+                          }
+                        }}
+                        className="relative inline-block w-14 h-8 shrink-0 rounded-full bg-[#212121] transition-all duration-300 outline-none cursor-pointer"
+                        title="Destacar película en panel Favoritas del Mes"
+                      >
+                         <div className={`absolute left-1 top-1 flex items-center justify-center w-6 h-6 rounded-full transition-all duration-500 ease-out ${
+                           selectedMovie.favoriteOfMonth 
+                             ? 'translate-x-6 bg-[#b41d1d] shadow-[0_0_8px_rgba(180,29,29,0.6)] text-white' 
+                             : 'translate-x-0 bg-[#4a4a4a] text-zinc-400'
+                         }`}>
+                           <Star size={12} fill="currentColor" strokeWidth={0.5} />
+                         </div>
+                      </button>
+
                       {/* Button: MARCAR / QUITAR REVISIÓN */}
                       <button 
                         type="button"
@@ -2509,11 +2617,17 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       )}
 
       {/* FOOTER (PAGINACIÓN ESTILO PELISPLUS) */}
-      <footer className="mt-6 pb-12 px-6 relative z-10 w-full">
-        <div className="max-w-7xl mx-auto flex flex-col items-center pt-2 space-y-12">
+      <footer className={`pb-12 px-6 relative z-10 w-full transition-all duration-500 ${
+        isFavoriteOfMonthActive 
+          ? 'bg-[#060608] mt-0 pt-16 border-t border-red-950/20 shadow-[0_-15px_30px_rgba(0,0,0,0.4)]' 
+          : 'mt-6 border-t border-transparent'
+      }`}>
+        <div className={`max-w-7xl mx-auto flex flex-col items-center space-y-12 transition-all duration-500 ${
+          isFavoriteOfMonthActive ? 'pt-0' : 'pt-2'
+        }`}>
           
           {/* BOTONES DE PAGINACIÓN */}
-          {totalPages > 1 && !isDirectorFilterActive && (
+          {totalPages > 1 && !isDirectorFilterActive && !isFavoriteOfMonthActive && (
             <div className="flex flex-col items-center gap-6 my-6 font-sans">
               <div className="flex flex-wrap justify-center items-center gap-2">
                 <button 
@@ -3007,7 +3121,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         style={{ 
                           fontFamily: "'Cinematografica', 'Cinematografica Bold', sans-serif", 
                           fontWeight: "bold",
-                          fontFeatureSettings: '"liga" 1, "dlig" 1, "ss02" 1, "calt" 1',
+                          fontFeatureSettings: '"liga" 1, "dlig" 1, "calt" 1',
                           fontVariantLigatures: 'common-ligatures discretionary-ligatures'
                         }}
                       >
@@ -3022,11 +3136,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                   return (
                                     <span 
                                       key={charIdx} 
-                                      className="inline-block transition-all duration-300 group-hover:scale-110 group-hover:text-white"
+                                      className={`inline-block transition-all duration-300 group-hover:scale-110 group-hover:text-white ${
+                                        char === 'E' || char === 'e' ? 'recommendation-char-red' : 'recommendation-char-std'
+                                      }`}
                                       style={{ 
                                         color: char === 'E' || char === 'e' ? '#b41d1d' : 'inherit',
-                                        transitionDelay: `${idx * 25}ms`,
-                                        textShadow: char === 'E' || char === 'e' ? undefined : '0 0 10px rgba(255,255,255,0)'
+                                        transitionDelay: `${idx * 25}ms`
                                       }}
                                     >
                                       {char}
@@ -3245,8 +3360,199 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         </div>
       )}
 
+      {/* FAVORITAS DEL MES */}
+      {isFavoriteOfMonthActive && (
+        <div className="relative z-10 w-full min-h-screen px-0 py-10 md:py-16 select-none animate-in fade-in zoom-in-95 duration-1000 bg-[#060608]">
+          {/* Ambient light glow spots in background to make it look premium & theatrical */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] bg-red-950/15 rounded-full blur-[140px] pointer-events-none z-0" />
+          <div className="absolute top-10 left-10 w-[250px] h-[250px] bg-zinc-800/10 rounded-full blur-[100px] pointer-events-none z-0" />
+          
+          <div className="relative z-10 max-w-[100vw] overflow-hidden flex flex-col items-center">
+            
+            {/* Premium Header/Navigation Control Bar */}
+            <div className="w-full max-w-7xl mx-auto px-6 md:px-12 flex items-center justify-between mb-8 md:mb-14">
+              <button 
+                onClick={() => setIsFavoriteOfMonthActive(false)}
+                className="group flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.03] border border-white/10 text-white/80 hover:text-white hover:bg-white/[0.08] hover:border-white/20 hover:scale-105 active:scale-95 transition-all duration-300 text-[10px] md:text-xs font-black tracking-widest uppercase shadow-lg shadow-black/20"
+              >
+                <ChevronLeft className="w-4 h-4 transition-transform duration-300 group-hover:-translate-x-1 text-red-500" />
+                Volver a la Mediateca
+              </button>
+              
+              <div className="flex items-center gap-2 text-[9px] md:text-[10px] font-black tracking-[0.4em] text-white/40 uppercase">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+                Curaduría Especial
+              </div>
+            </div>
+
+            <h2 className="text-[28px] md:text-[42px] font-black uppercase tracking-[0.25em] font-sans text-center text-white/90 drop-shadow-2xl mb-4">
+              Películas del mes
+            </h2>
+
+            {movies.filter(m => m.favoriteOfMonth).length > 0 && (
+              <div className="mb-10 md:mb-12">
+                <span className="px-4 py-1.5 bg-white/[0.03] border border-white/5 rounded-full text-[10px] md:text-xs font-bold tracking-[0.15em] text-white/50 uppercase">
+                  {activeFavIndex + 1} de {movies.filter(m => m.favoriteOfMonth).length} seleccionadas
+                </span>
+              </div>
+            )}
+
+            {movies.filter(m => m.favoriteOfMonth).length === 0 ? (
+              <div className="w-full flex-col flex items-center justify-center py-20 text-zinc-500 font-sans font-bold text-center gap-4 animate-pulse">
+                <Star size={48} className="opacity-40" />
+                <p className="tracking-widest uppercase text-xs">No hay favoritas seleccionadas aún.</p>
+              </div>
+            ) : (
+              <div className="relative w-full overflow-visible px-0 flex justify-center">
+                {/* Horizontal scrollable 3D container with snap alignment, touch swipe, pointer dragging, and hands-free side hover-scrolling */}
+                <div 
+                  ref={favContainerRef}
+                  onPointerDown={(e) => {
+                    if (!favContainerRef.current) return;
+                    setIsDraggingFav(true);
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    setDragStartXFav(e.clientX);
+                    setDragScrollLeftFav(favContainerRef.current.scrollLeft);
+                    stopHoverScrollLoop(); // Disable hover scrolling while dragging
+                  }}
+                  onPointerMove={(e) => {
+                    if (!isDraggingFav || !favContainerRef.current) return;
+                    const walk = (e.clientX - dragStartXFav) * 2; // high velocity dragging
+                    favContainerRef.current.scrollLeft = dragScrollLeftFav - walk;
+                  }}
+                  onPointerUp={(e) => {
+                    if (!isDraggingFav) return;
+                    setIsDraggingFav(false);
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    startHoverScrollLoop(); // Resume hover scroll support
+                  }}
+                  onPointerCancel={(e) => {
+                    if (!isDraggingFav) return;
+                    setIsDraggingFav(false);
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    startHoverScrollLoop(); // Resume hover scroll support
+                  }}
+                  onMouseEnter={() => {
+                    startHoverScrollLoop();
+                  }}
+                  onMouseLeave={() => {
+                    stopHoverScrollLoop();
+                  }}
+                  onMouseMove={(e) => {
+                    const container = favContainerRef.current;
+                    if (!container) return;
+                    if (isDraggingFav) return; // Prioritize drag if actively dragging
+                    
+                    const rect = container.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const width = rect.width;
+                    
+                    // Relative X from -1 (left edge) to 1 (right edge)
+                    const relativeX = (mouseX / width) * 2 - 1;
+                    hoverScrollVelRef.current = relativeX;
+                  }}
+                  onScroll={(e) => {
+                    const container = e.currentTarget;
+                    const containerCenter = container.scrollLeft + container.clientWidth / 2;
+                    const children = Array.from(container.children) as HTMLElement[];
+                    
+                    let closestIndex = 1; // Start from index 1 as index 0 is our helper centering spacer
+                    let minDistance = Infinity;
+                    
+                    children.forEach((child, index) => {
+                      if (index === 0 || index === children.length - 1) return;
+                      const childCenter = child.offsetLeft + child.clientWidth / 2;
+                      const distance = Math.abs(containerCenter - childCenter);
+                      if (distance < minDistance) {
+                        minDistance = distance;
+                        closestIndex = index;
+                      }
+                    });
+                    
+                    const movieIndex = closestIndex - 1;
+                    if (movieIndex >= 0 && movieIndex < movies.filter(m => m.favoriteOfMonth).length && movieIndex !== activeFavIndex) {
+                      setActiveFavIndex(movieIndex);
+                    }
+                  }}
+                  className={`w-full flex overflow-x-auto gap-8 sm:gap-12 py-16 pb-24 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] relative ${
+                    isDraggingFav || isHoverScrolling
+                      ? 'cursor-grabbing select-none scroll-auto snap-none' 
+                      : 'cursor-grab scroll-smooth snap-x snap-mandatory'
+                  }`}
+                  style={{
+                    perspective: '1200px',
+                    transformStyle: 'preserve-3d'
+                  }}
+                >
+                  {/* Leading Spacer component for absolutely precise dynamic horizontal centering snaps */}
+                  <div className="shrink-0 w-[20vw] sm:w-[calc(50vw-130px-16px)] lg:w-[calc(50vw-150px-24px)]" />
+
+                  {movies.filter(m => m.favoriteOfMonth).map((movie, idx) => {
+                    const diff = idx - activeFavIndex;
+                    const isActive = diff === 0;
+                    
+                    // Computed dynamic parameters for real-time 3D parallax depth
+                    const scale = isActive ? 1.1 : 0.82;
+                    const rotateY = isActive ? 0 : diff < 0 ? 28 : -28;
+                    const zIndex = 30 - Math.abs(diff);
+                    const opacity = isActive ? 1 : 0.4;
+                    const blur = isActive ? 'blur(0px)' : 'blur(2px)';
+                    
+                    return (
+                      <div 
+                        key={`${movie.id}-${idx}`} 
+                        className="snap-center shrink-0 w-[60vw] sm:w-[260px] lg:w-[300px] aspect-[2/3] relative rounded-[20px] md:rounded-[24px] overflow-hidden group/card cursor-pointer border border-white/5 hover:border-white/20 shadow-2xl transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)]"
+                        style={{
+                          transform: `rotateY(${rotateY}deg) scale(${scale})`,
+                          zIndex: zIndex,
+                          opacity: opacity,
+                          filter: blur,
+                          transformStyle: 'preserve-3d',
+                          boxShadow: isActive ? '0 25px 50px rgba(180,29,29,0.3), 0 0 30px rgba(180,29,29,0.1)' : 'none'
+                        }}
+                        onClick={() => { if (!isDraggingFav) { setSelectedMovie(movie); setIsEditing(false); setIsDeleting(false); } }}
+                      >
+                        <img 
+                          src={movie.poster || DEMO_POSTER} 
+                          alt={movie.title} 
+                          className="w-full h-full object-cover transition-transform duration-[1.2s] ease-[cubic-bezier(0.25,1,0.5,1)] group-hover/card:scale-105 pointer-events-none"
+                          onError={(e) => { e.currentTarget.src = DEMO_POSTER; e.currentTarget.classList.add('opacity-40', 'grayscale'); }} 
+                          draggable="false"
+                        />
+                        
+                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent opacity-80 transition-opacity duration-700 group-hover/card:opacity-100 pointer-events-none" />
+                        
+                        <div className="absolute inset-x-0 bottom-0 p-6 md:p-8 flex flex-col justify-end translate-y-4 group-hover/card:translate-y-0 transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] pointer-events-none">
+                           <span className="text-white/60 font-black tracking-widest text-[10px] md:text-xs uppercase mb-2 drop-shadow-md">
+                             {movie.year}
+                           </span>
+                           <h3 className="text-white font-extrabold text-xl md:text-2xl leading-none tracking-tighter drop-shadow-lg line-clamp-2">
+                             {toTitleCase(movie.title)}
+                           </h3>
+                           <div className="flex flex-wrap gap-2 overflow-hidden max-h-0 group-hover/card:max-h-10 transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] opacity-0 group-hover/card:opacity-100 mt-2">
+                             {movie.genre?.split('/').slice(0, 3).map((g, i) => (
+                               <span key={i} className="px-2 py-1 bg-white/10 backdrop-blur-md rounded-full text-[9px] md:text-[10px] text-white font-bold tracking-wider uppercase border border-white/10 shrink-0">
+                                 {g.trim()}
+                               </span>
+                             ))}
+                           </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Trailing Spacer component for absolutely precise dynamic horizontal centering snaps */}
+                  <div className="shrink-0 w-[20vw] sm:w-[calc(50vw-130px-16px)] lg:w-[calc(50vw-150px-24px)]" />
+                </div>
+              </div>
+            )}
+            
+          </div>
+        </div>
+      )}
+
       {/* DIVISOR CINTA DE CINE */}
-          {selectedGenre === "Todos" && !isDirectorFilterActive && (
+          {selectedGenre === "Todos" && !isDirectorFilterActive && !isFavoriteOfMonthActive && (
             <div className="w-full h-12 opacity-80 my-12">
               <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
                 <defs>
@@ -3265,7 +3571,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </div>
           )}
 
-          {selectedGenre === "Todos" && !isDirectorFilterActive && (
+          {selectedGenre === "Todos" && !isDirectorFilterActive && !isFavoriteOfMonthActive && (
             <div className="w-full flex flex-col items-center text-center space-y-10 animate-in fade-in duration-1000">
               {randomQuote ? (
                 <>
@@ -3283,18 +3589,26 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </div>
           )}
 
-          <div className="flex flex-col items-center space-y-8 w-full pt-16 border-t border-white/5 opacity-40">
+          <div className={`flex flex-col items-center space-y-8 w-full pt-16 opacity-40 transition-all duration-500 ${
+            isFavoriteOfMonthActive 
+              ? 'border-t border-red-950/40 text-red-500' 
+              : 'border-t border-white/5'
+          }`}>
             <div className="flex flex-col items-center space-y-3">
               <img 
                 src="/android-chrome-512x512.png" 
                 alt="Mediateca Logo" 
-                className="w-12 h-12 rounded-xl object-cover border border-white/10 opacity-80"
+                className={`w-12 h-12 rounded-xl object-cover border opacity-80 transition-all duration-500 ${
+                  isFavoriteOfMonthActive ? 'border-red-600/35 shadow-[0_0_15px_rgba(180,29,29,0.25)]' : 'border-white/10'
+                }`}
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=128&auto=format&fit=crop&q=60';
                 }}
               />
             </div>
-            <p className="text-[8px] font-bold text-zinc-600 tracking-[0.6em] uppercase text-center leading-relaxed">© MMXXVI — MEDIATECA PROFESIONAL — ALL RIGHTS RESERVED</p>
+            <p className={`text-[8px] font-bold tracking-[0.6em] uppercase text-center leading-relaxed transition-colors duration-500 ${
+              isFavoriteOfMonthActive ? 'text-red-500/80' : 'text-zinc-600'
+            }`}>© MMXXVI — MEDIATECA PROFESIONAL — ALL RIGHTS RESERVED</p>
           </div>
         </div>
       </footer>
