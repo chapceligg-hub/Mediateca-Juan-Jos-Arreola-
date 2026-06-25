@@ -1828,22 +1828,24 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         }`}
       >
         {isFavoriteOfMonthActive && (
-          <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+          <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-black">
             <img 
               id="theatre-bg"
-              src="/ImFondo.png" 
+              src="https://drive.google.com/uc?export=download&id=1Bjnw0n4r_iRwpphEtKS4veUPJiCq2h2C" 
               onError={(e) => {
                 const target = e.currentTarget;
-                if (!target.src.endsWith('.png')) {
+                if (!target.src.includes('/ImFondo.png')) {
                   target.src = "/ImFondo.png";
+                } else if (!target.src.includes('unsplash.com')) {
+                  target.src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=2070&auto=format&fit=crop";
                 }
               }}
               className="w-full h-full object-cover opacity-100 transition-opacity duration-1000"
-              alt="Teatro"
+              alt="Sala de Cine"
               referrerPolicy="no-referrer"
             />
-            {/* Soft dark overlays to guarantee rich contrast of text and cards */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/5 to-black/80" />
+            {/* Subtle overlay gradient to maintain text readability without obscuring the background details */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/50" />
           </div>
         )}
 
@@ -2637,10 +2639,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       )}
 
       {/* FOOTER (PAGINACIÓN ESTILO PELISPLUS) */}
-      <footer className={`pb-12 px-6 relative z-10 w-full transition-all duration-500 ${
+      <footer className={`relative z-10 w-full transition-all duration-500 ${
         isFavoriteOfMonthActive 
-          ? 'bg-transparent mt-0 pt-16 border-t border-transparent shadow-none' 
-          : 'mt-1 border-t border-transparent'
+          ? 'bg-transparent mt-0 pt-1 pb-4 border-t border-transparent shadow-none px-0' 
+          : 'pb-12 px-6 mt-1 border-t border-transparent'
       }`}>
         <div className={`max-w-7xl mx-auto flex flex-col items-center space-y-6 transition-all duration-500 ${
           isFavoriteOfMonthActive ? 'pt-0' : 'pt-0'
@@ -2648,7 +2650,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           
           {/* BOTONES DE PAGINACIÓN */}
           {totalPages > 1 && !isDirectorFilterActive && !isFavoriteOfMonthActive && (
-            <div className="flex flex-col items-center gap-4 my-2 font-sans">
+            <div className="flex flex-col items-center gap-4 mt-8 mb-2 font-sans">
               <div className="flex flex-wrap justify-center items-center gap-2">
                 <button 
                   onClick={() => { if(currentPage > 1) { setCurrentPage(currentPage - 1); window.scrollTo({ top: 300, behavior: 'smooth' }); }}}
@@ -3382,47 +3384,55 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
       {/* FAVORITAS DEL MES */}
       {isFavoriteOfMonthActive && (
-        <div className="relative z-10 w-full min-h-screen px-0 pt-1 pb-10 md:pt-2 md:pb-16 select-none animate-in fade-in duration-1000 bg-transparent overflow-hidden">
+        <div className="relative z-10 w-full min-h-screen px-0 pt-0 pb-10 md:pb-16 select-none animate-in fade-in duration-1000 bg-transparent overflow-hidden">
           
-          <div className="relative z-10 max-w-[100vw] overflow-hidden flex flex-col items-center">
+          <div className="relative z-10 max-w-[100vw] overflow-hidden flex flex-col items-center pt-2 sm:pt-3 md:pt-4">
             
             {/* Premium Header/Navigation Control Bar */}
-            <div className="w-full max-w-7xl mx-auto px-6 md:px-12 flex items-center justify-between mb-1 z-20">
+            <div className="w-full px-4 sm:px-6 md:px-8 flex items-center justify-between mb-1 z-20">
               <button 
                 onClick={() => setIsFavoriteOfMonthActive(false)}
-                className="group flex items-center gap-2 px-5 py-2.5 rounded-full bg-black/60 border border-red-950/40 text-white/80 hover:text-white hover:bg-black/80 hover:border-red-650/50 hover:scale-105 active:scale-95 transition-all duration-300 text-[10px] md:text-xs font-black tracking-widest uppercase shadow-lg shadow-black/40"
+                className="group flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-950/80 border border-white/15 text-zinc-300 hover:text-white hover:bg-zinc-900/90 hover:border-white/30 hover:scale-105 active:scale-95 transition-all duration-300 text-[10px] md:text-xs font-black tracking-widest uppercase shadow-xl shadow-black/60 backdrop-blur-md hover:shadow-[0_0_10px_rgba(255,255,255,0.06)]"
               >
                 <ChevronLeft className="w-4 h-4 transition-transform duration-300 group-hover:-translate-x-1 text-red-500" />
                 Volver a la Mediateca
               </button>
               
-              <div className="flex items-center gap-2 text-[9px] md:text-[10px] font-black tracking-[0.4em] text-white/40 uppercase">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-                Curaduría Especial
+              <div className="flex items-center gap-2 text-[9px] md:text-[10px] font-black tracking-[0.4em] text-white/75 uppercase">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.7)]" />
+                Exhibición Especial
               </div>
             </div>
 
             {/* Header Content Exactly Copied from Boceto */}
-            <div className="flex flex-col items-center w-full max-w-5xl px-4 text-center -mt-4 md:-mt-8 mb-4 z-10">
-              <span className="text-red-500 font-extrabold text-[10px] sm:text-xs tracking-[0.45em] uppercase mt-2 sm:mt-4 mb-1">
+            <div className="flex flex-col items-center w-full px-4 text-center mt-1 mb-2 z-10">
+              <span className="text-red-500 font-extrabold text-[10px] sm:text-xs tracking-[0.45em] uppercase mt-1 sm:mt-2 mb-1">
                 LO MEJOR DE ESTE MES
               </span>
               
               <div className="flex items-center justify-center w-full gap-4 sm:gap-6 md:gap-8 my-2">
                 {/* Gold-amber decorative flank line left */}
-                <div className="hidden sm:block flex-1 h-[1.5px] bg-gradient-to-r from-transparent via-amber-500/15 to-amber-500/50" />
+                <div className="hidden sm:block flex-1 h-[2.5px] bg-gradient-to-r from-transparent via-[#DFB15B]/25 to-[#DFB15B]/60" />
                 
                 <h2 className="text-[44px] sm:text-[62px] md:text-[84px] font-bold uppercase tracking-[0.18em] text-white select-none leading-none pt-2" style={{ fontFamily: '"Cinematografica", "Bebas Neue", "Barlow Condensed", sans-serif' }}>
                   PELÍCULAS DEL MES
                 </h2>
                 
                 {/* Gold-amber decorative flank line right */}
-                <div className="hidden sm:block flex-1 h-[1.5px] bg-gradient-to-l from-transparent via-amber-500/15 to-amber-500/50" />
+                <div className="hidden sm:block flex-1 h-[2.5px] bg-gradient-to-l from-transparent via-[#DFB15B]/25 to-[#DFB15B]/60" />
               </div>
 
-              {/* Star Icon below title exactly like Boceto */}
-              <div className="flex items-center justify-center text-amber-500/95 mt-1 mb-4 scale-110">
-                <Star className="w-4 h-4 fill-amber-500 stroke-amber-500" />
+              {/* Star Icon below title with beautiful gold decorative flank lines on both sides, exactly like the image */}
+              <div className="flex items-center justify-center w-full max-w-[280px] sm:max-w-md gap-4 text-[#DFB15B]/90 mt-1 mb-4">
+                {/* Gold-amber decorative flank line left */}
+                <div className="flex-1 h-[1.5px] bg-gradient-to-r from-transparent via-[#DFB15B]/20 to-[#DFB15B]/80" />
+                
+                <div className="scale-110 shrink-0">
+                  <Star className="w-4.5 h-4.5 fill-[#DFB15B] stroke-[#DFB15B]" />
+                </div>
+                
+                {/* Gold-amber decorative flank line right */}
+                <div className="flex-1 h-[1.5px] bg-gradient-to-l from-transparent via-[#DFB15B]/20 to-[#DFB15B]/80" />
               </div>
 
               {/* Dramatic Subtitle */}
@@ -3432,8 +3442,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
               {/* Selection status tag */}
               {movies.filter(m => m.favoriteOfMonth).length > 0 && (
-                <div className="mb-1">
-                  <span className="px-5 py-2.5 bg-black/65 border border-white/10 rounded-md text-[9px] md:text-[10px] font-extrabold tracking-[0.25em] text-white/50 uppercase">
+                <div className="mt-5 mb-2">
+                  <span className="px-5 py-2 bg-zinc-950/80 border border-white/15 rounded-full text-[9px] md:text-[10px] font-extrabold tracking-[0.25em] text-zinc-300 uppercase shadow-md shadow-black/40">
                     {activeFavIndex + 1} DE {movies.filter(m => m.favoriteOfMonth).length} SELECCIONADAS
                   </span>
                 </div>
@@ -3446,26 +3456,15 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <p className="tracking-widest uppercase text-xs">No hay favoritas seleccionadas aún.</p>
               </div>
             ) : (
-              <div className="relative w-full overflow-visible px-0 flex justify-center items-center pt-0 pb-4 -mt-4 md:-mt-8">
+              <div className="relative w-full overflow-visible px-4 flex justify-center items-center pt-0 pb-4 mt-2 md:mt-3">
                 
                 {/* Left navigation arrow button (Boceto Style) */}
                 <button 
                   onClick={() => {
-                    const container = favContainerRef.current;
-                    if (!container) return;
-                    
                     const newIndex = Math.max(0, activeFavIndex - 1);
-                    const children = Array.from(container.children) as HTMLElement[];
-                    const targetChild = children[newIndex + 1]; // index 0 is first spacer
-                    if (targetChild) {
-                      container.scrollTo({
-                        left: targetChild.offsetLeft - container.clientWidth / 2 + targetChild.clientWidth / 2,
-                        behavior: 'smooth'
-                      });
-                      setActiveFavIndex(newIndex);
-                    }
+                    setActiveFavIndex(newIndex);
                   }}
-                  className={`absolute left-6 md:left-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-neutral-900/90 hover:border-red-600/70 hover:scale-110 active:scale-95 group ${
+                  className={`absolute left-4 sm:left-6 md:left-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-neutral-900/90 hover:border-red-600/70 hover:scale-110 active:scale-95 group ${
                     activeFavIndex === 0 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
                   }`}
                   aria-label="Anterior película"
@@ -3476,22 +3475,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 {/* Right navigation arrow button (Boceto Style) */}
                 <button 
                   onClick={() => {
-                    const container = favContainerRef.current;
-                    if (!container) return;
-                    
                     const favList = movies.filter(m => m.favoriteOfMonth);
                     const newIndex = Math.min(favList.length - 1, activeFavIndex + 1);
-                    const children = Array.from(container.children) as HTMLElement[];
-                    const targetChild = children[newIndex + 1]; // index 0 is first spacer
-                    if (targetChild) {
-                      container.scrollTo({
-                        left: targetChild.offsetLeft - container.clientWidth / 2 + targetChild.clientWidth / 2,
-                        behavior: 'smooth'
-                      });
-                      setActiveFavIndex(newIndex);
-                    }
+                    setActiveFavIndex(newIndex);
                   }}
-                  className={`absolute right-6 md:right-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-neutral-900/90 hover:border-red-600/70 hover:scale-110 active:scale-95 group ${
+                  className={`absolute right-4 sm:right-6 md:right-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-neutral-900/90 hover:border-red-600/70 hover:scale-110 active:scale-95 group ${
                     activeFavIndex === movies.filter(m => m.favoriteOfMonth).length - 1 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
                   }`}
                   aria-label="Siguiente película"
@@ -3499,116 +3487,71 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform text-white/90" />
                 </button>
 
-                {/* Horizontal scrollable 3D container with snap alignment, touch swipe, pointer dragging, and hands-free side hover-scrolling */}
+                {/* Horizontal fixed-width 3D absolute slider without native scrolling to match Boceto reference */}
                 <div 
                   ref={favContainerRef}
-                   onPointerDown={(e) => {
-                    if (!favContainerRef.current) return;
-                    setIsDraggingFav(true);
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    setDragStartXFav(e.clientX);
-                    setDragScrollLeftFav(favContainerRef.current.scrollLeft);
-                    stopHoverScrollLoop(); // Disable hover scrolling while dragging
-                  }}
-                  onPointerMove={(e) => {
-                    if (!isDraggingFav || !favContainerRef.current) return;
-                    const walk = (e.clientX - dragStartXFav) * 2; // high velocity dragging
-                    favContainerRef.current.scrollLeft = dragScrollLeftFav - walk;
-                  }}
-                  onPointerUp={(e) => {
-                    if (!isDraggingFav) return;
-                    setIsDraggingFav(false);
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                    startHoverScrollLoop(); // Resume hover scroll support
-                  }}
-                  onPointerCancel={(e) => {
-                    if (!isDraggingFav) return;
-                    setIsDraggingFav(false);
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                    startHoverScrollLoop(); // Resume hover scroll support
-                  }}
-                  onMouseEnter={() => {
-                    startHoverScrollLoop();
-                  }}
-                  onMouseLeave={() => {
-                    stopHoverScrollLoop();
-                  }}
-                  onMouseMove={(e) => {
-                    const container = favContainerRef.current;
-                    if (!container) return;
-                    if (isDraggingFav) return; // Prioritize drag if actively dragging
-                    
-                    const rect = container.getBoundingClientRect();
-                    const mouseX = e.clientX - rect.left;
-                    const width = rect.width;
-                    
-                    // Relative X from -1 (left edge) to 1 (right edge)
-                    const relativeX = (mouseX / width) * 2 - 1;
-                    hoverScrollVelRef.current = relativeX;
-                  }}
-                  onScroll={(e) => {
-                    const container = e.currentTarget;
-                    const containerCenter = container.scrollLeft + container.clientWidth / 2;
-                    const children = Array.from(container.children) as HTMLElement[];
-                    
-                    let closestIndex = 1; // Start from index 1 as index 0 is our helper centering spacer
-                    let minDistance = Infinity;
-                    
-                    children.forEach((child, index) => {
-                      if (index === 0 || index === children.length - 1) return;
-                      const childCenter = child.offsetLeft + child.clientWidth / 2;
-                      const distance = Math.abs(containerCenter - childCenter);
-                      if (distance < minDistance) {
-                        minDistance = distance;
-                        closestIndex = index;
-                      }
-                    });
-                    
-                    const movieIndex = closestIndex - 1;
-                    if (movieIndex >= 0 && movieIndex < movies.filter(m => m.favoriteOfMonth).length && movieIndex !== activeFavIndex) {
-                      setActiveFavIndex(movieIndex);
-                    }
-                  }}
-                  className={`w-full flex overflow-x-auto gap-8 sm:gap-11 pt-14 pb-16 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] relative z-10 ${
-                    isDraggingFav || isHoverScrolling
-                      ? 'cursor-grabbing select-none scroll-auto snap-none' 
-                      : 'cursor-grab scroll-smooth snap-x snap-mandatory'
-                  }`}
+                  className="w-full max-w-[1200px] h-[340px] sm:h-[400px] md:h-[460px] lg:h-[500px] relative overflow-visible flex justify-center items-center select-none z-10"
                   style={{
-                    perspective: '1500px',
+                    perspective: '1000px',
                     transformStyle: 'preserve-3d'
                   }}
                 >
-                  {/* Leading Spacer component for absolutely precise dynamic horizontal centering snaps */}
-                  <div className="shrink-0 w-[20vw] sm:w-[calc(50vw-130px-16px)] lg:w-[calc(50vw-150px-24px)]" />
-
                   {movies.filter(m => m.favoriteOfMonth).map((movie, idx) => {
                     const diff = idx - activeFavIndex;
                     const isActive = diff === 0;
                     
-                    // Computed dynamic parameters for real-time 3D parallax depth
-                    const scale = isActive ? 1.1 : 0.82;
-                    const rotateY = isActive ? 0 : diff < 0 ? 24 : -24;
+                    // Show up to 5 cards (2 left, 1 active, 2 right)
+                    const isVisible = Math.abs(diff) <= 2;
+                    
+                    // Computed dynamic parameters for real-time 3D perspective depth matching the reference image perfectly
+                    const scale = isActive ? 1.05 : Math.abs(diff) === 1 ? 0.85 : 0.68;
+                    const rotateY = isActive ? 0 : diff < 0 ? 22 : -22;
                     const zIndex = 30 - Math.abs(diff);
-                    const opacity = isActive ? 1.0 : 0.35;
-                    const blur = isActive ? 'blur(0px)' : 'blur(1.5px)';
+                    const opacity = 1.0;
+                    
+                    // Horizontal offset based on diff to create the precise overlapping from the reference image
+                    let translateX = 0;
+                    if (diff !== 0) {
+                      // Adjust spacing dynamically per screen width to match reference photo perfectly with clean, wider spacing
+                      const isSmall = window.innerWidth < 640;
+                      const isMD = window.innerWidth < 768;
+                      const isLG = window.innerWidth < 1024;
+                      
+                      const baseOffset = isSmall ? 100 : isMD ? 150 : isLG ? 210 : 260;
+                      if (Math.abs(diff) === 1) {
+                        translateX = (diff < 0 ? -1 : 1) * baseOffset;
+                      } else {
+                        translateX = (diff < 0 ? -1 : 1) * (baseOffset * 1.8);
+                      }
+                    }
+                    
+                    // translateZ creates deep 3D perspective layer separation with perfect screen alignment
+                    const translateZ = isActive ? 60 : Math.abs(diff) === 1 ? -45 : -140;
                     
                     return (
                       <div 
                         key={`${movie.id}-${idx}`} 
-                        className={`snap-center shrink-0 w-[58vw] sm:w-[260px] lg:w-[300px] aspect-[2/3] relative rounded-[20px] md:rounded-[24px] overflow-hidden group/card cursor-pointer transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] ${
+                        className={`absolute left-1/2 top-1/2 -translate-y-1/2 w-[46vw] sm:w-[210px] md:w-[240px] lg:w-[270px] aspect-[2/3] rounded-[12px] md:rounded-[14px] bg-[#0c0c0e] overflow-hidden group/card cursor-pointer transition-all duration-[800ms] ease-[cubic-bezier(0.25,1,0.5,1)] ${
                           isActive 
-                            ? 'border-[3.5px] border-[#ff1e1e] shadow-[0_0_35px_rgba(255,30,30,0.55),_inset_0_0_15px_rgba(255,30,30,0.25)]' 
-                            : 'border border-white/5 opacity-50'
+                            ? 'border-2 border-red-500/90 shadow-[0_0_35px_rgba(239,68,68,0.7),_inset_0_0_15px_rgba(239,68,68,0.35)]' 
+                            : 'border border-white/10 shadow-[0_15px_35px_rgba(0,0,0,0.6)]'
                         }`}
                         style={{
-                          transform: `rotateY(${rotateY}deg) scale(${scale})`,
+                          transform: `translateX(calc(-50% + ${translateX}px)) rotateY(${rotateY}deg) scale(${scale}) translateZ(${translateZ}px)`,
                           zIndex: zIndex,
                           opacity: opacity,
-                          filter: blur,
                           transformStyle: 'preserve-3d',
+                          pointerEvents: isVisible ? 'auto' : 'none',
                         }}
-                        onClick={() => { if (!isDraggingFav) { setSelectedMovie(movie); setIsEditing(false); setIsDeleting(false); } }}
+                        onClick={() => {
+                          if (isActive) {
+                            setSelectedMovie(movie);
+                            setIsEditing(false);
+                            setIsDeleting(false);
+                          } else {
+                            setActiveFavIndex(idx);
+                          }
+                        }}
                       >
                         {/* Film Poster Image */}
                         <img 
@@ -3619,43 +3562,46 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                           draggable="false"
                         />
                         
-                        {/* Shading/Fade Overlay for film titles (PelisPlus style) */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/35 to-black/55" />
+                        {/* Shading/Fade Overlay for film titles (high contrast on active, dimmer on inactive) */}
+                        <div className={`absolute inset-0 transition-all duration-750 ${
+                          isActive 
+                            ? 'bg-gradient-to-t from-black/85 via-black/10 to-black/35' 
+                            : 'bg-gradient-to-t from-black/95 via-black/40 to-black/60 bg-black/25'
+                        }`} />
                         
-                        {/* Beautifully aligned overlay elements copied exactly from Boceto */}
-                        <div className="absolute inset-0 p-5 md:p-6 flex flex-col justify-between text-center select-none z-10 pointer-events-none">
+                        {/* Beautifully aligned overlay elements matching the image */}
+                        <div className="absolute inset-0 p-5 md:p-6 flex flex-col justify-end select-none z-10 pointer-events-none">
                           
-                          {/* Top: Star cast or director name in widely spaced light fonts */}
-                          <div className="pt-1.5">
-                            <span className="text-[8px] md:text-[9.5px] font-bold text-white/50 tracking-[0.35em] uppercase block">
-                              {movie.director ? movie.director.split(',')[0].toUpperCase() : "MEDIATECA SELECCIÓN"}
-                            </span>
-                          </div>
-
-                          {/* Bottom: Movie Title, Year and Beautiful capsules */}
-                          <div className="flex flex-col items-center space-y-2 md:space-y-3 pb-1">
-                            <h3 className="text-white font-black text-base sm:text-lg md:text-xl leading-tight tracking-wider uppercase drop-shadow-md max-w-full truncate px-1">
-                              {movie.title.toUpperCase()}
-                            </h3>
-                            
-                            <span className="text-white/80 font-mono text-xs md:text-sm tracking-widest block font-bold">
-                              {movie.year}
-                            </span>
-                            
-                            {/* Aligned capsule details for genres */}
-                            <div className="px-3 md:px-4 py-1.5 border border-white/20 rounded-full bg-black/40 backdrop-blur-xs max-w-[95%]">
-                              <span className="text-white/70 text-[8px] md:text-[9px] font-extrabold tracking-[0.18em] uppercase block truncate">
+                          {/* Bottom Content: Styled exactly like the reference screenshot */}
+                          {isActive ? (
+                            /* Active Card: Centered typography with capsule pill */
+                            <div className="flex flex-col items-center space-y-2 md:space-y-3 pb-1 animate-in fade-in duration-500">
+                              <span className="text-white font-mono text-xs md:text-sm tracking-widest block font-black text-center">
+                                {movie.year}
+                              </span>
+                              
+                              {/* Aligned capsule details for genres */}
+                              <div className="px-4 py-1.5 border border-white/20 rounded-full bg-black/60 shadow-[0_0_15px_rgba(255,255,255,0.05)] max-w-[95%]">
+                                <span className="text-white/90 text-[8px] md:text-[9px] font-extrabold tracking-[0.18em] uppercase block truncate">
+                                  {movie.genre ? movie.genre.replace(/\//g, ', ').toUpperCase() : "PELÍCULA"}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Inactive Card: Muted, clean, left-aligned year and genre with NO title or pill clutter */
+                            <div className="flex flex-col items-start space-y-0.5 pb-1 text-left animate-in fade-in duration-500">
+                              <span className="text-white/60 font-mono text-[10px] md:text-xs tracking-wider block font-bold text-left">
+                                {movie.year}
+                              </span>
+                              <span className="text-white/40 text-[8px] md:text-[9.5px] font-extrabold tracking-[0.12em] uppercase block text-left truncate max-w-[90%]">
                                 {movie.genre ? movie.genre.replace(/\//g, ', ').toUpperCase() : "PELÍCULA"}
                               </span>
                             </div>
-                          </div>
+                          )}
                         </div>
                       </div>
                     );
                   })}
-
-                  {/* Trailing Spacer component for absolutely precise dynamic horizontal centering snaps */}
-                  <div className="shrink-0 w-[20vw] sm:w-[calc(50vw-130px-16px)] lg:w-[calc(50vw-150px-24px)]" />
                 </div>
               </div>
             )}
@@ -3663,8 +3609,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             {/* Slider bottom description & dot pagination exactly styled as Boceto */}
             {movies.filter(m => m.favoriteOfMonth).length > 0 && (
               <div className="mt-8 flex flex-col items-center space-y-5 z-20">
-                <span className="text-[10px] font-extrabold tracking-[0.38em] text-red-500/85 uppercase select-none">
-                  DESLIZA PARA DESCUBRIR MÁS PELÍCULAS
+                <span className="text-[10px] font-extrabold tracking-[0.38em] text-[#DFB15B]/90 uppercase select-none">
+                  NAVEGA PARA DESCUBRIR MÁS PELÍCULAS
                 </span>
                 
                 <div className="flex items-center gap-3">
@@ -3672,17 +3618,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <button
                       key={idx}
                       onClick={() => {
-                        const container = favContainerRef.current;
-                        if (!container) return;
-                        const children = Array.from(container.children) as HTMLElement[];
-                        const targetChild = children[idx + 1]; // index 0 is first spacer
-                        if (targetChild) {
-                          container.scrollTo({
-                            left: targetChild.offsetLeft - container.clientWidth / 2 + targetChild.clientWidth / 2,
-                            behavior: 'smooth'
-                          });
-                          setActiveFavIndex(idx);
-                        }
+                        setActiveFavIndex(idx);
                       }}
                       className={`h-2 md:h-2.5 rounded-full transition-all duration-300 cursor-pointer ${
                         idx === activeFavIndex 
