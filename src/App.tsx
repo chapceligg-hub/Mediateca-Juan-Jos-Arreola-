@@ -3533,7 +3533,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         key={`${movie.id}-${idx}`} 
                         className={`absolute left-1/2 top-1/2 -translate-y-1/2 w-[46vw] sm:w-[210px] md:w-[240px] lg:w-[270px] aspect-[2/3] rounded-[12px] md:rounded-[14px] bg-[#0c0c0e] overflow-hidden group/card cursor-pointer transition-all duration-[800ms] ease-[cubic-bezier(0.25,1,0.5,1)] ${
                           isActive 
-                            ? 'border-2 border-red-500/90 shadow-[0_0_35px_rgba(239,68,68,0.7),_inset_0_0_15px_rgba(239,68,68,0.35)]' 
+                            ? 'border-2 border-[#a11818]/95 shadow-[0_0_35px_rgba(239,68,68,0.85),_inset_0_0_15px_rgba(239,68,68,0.4)]' 
                             : 'border border-white/10 shadow-[0_15px_35px_rgba(0,0,0,0.6)]'
                         }`}
                         style={{
