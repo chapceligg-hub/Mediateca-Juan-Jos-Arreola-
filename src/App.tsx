@@ -3622,7 +3622,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       }}
                       className={`h-2 md:h-2.5 rounded-full transition-all duration-300 cursor-pointer ${
                         idx === activeFavIndex 
-                          ? 'w-6 md:w-8 bg-red-600 shadow-[0_0_8px_#dc2626]' 
+                          ? 'w-6 md:w-8 bg-[#a11818] shadow-[0_0_8px_rgba(161,24,24,0.85)]' 
                           : 'w-2 md:w-2.5 bg-neutral-700 hover:bg-neutral-500'
                       }`}
                       aria-label={`Ir a película ${idx + 1}`}
