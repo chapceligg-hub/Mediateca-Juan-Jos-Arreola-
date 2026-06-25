@@ -3406,7 +3406,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
             {/* Header Content Exactly Copied from Boceto */}
             <div className="flex flex-col items-center w-full px-4 text-center mt-1 mb-2 z-10">
-              <span className="text-red-500 font-extrabold text-[10px] sm:text-xs tracking-[0.45em] uppercase mt-1 sm:mt-2 mb-1">
+              <span className="text-[#b41d1d] font-extrabold text-[10px] sm:text-xs tracking-[0.45em] uppercase mt-1 sm:mt-2 mb-1">
                 LO MEJOR DE ESTE MES
               </span>
               
@@ -3464,12 +3464,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     const newIndex = Math.max(0, activeFavIndex - 1);
                     setActiveFavIndex(newIndex);
                   }}
-                  className={`absolute left-4 sm:left-6 md:left-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-neutral-900/90 hover:border-red-600/70 hover:scale-110 active:scale-95 group ${
+                  className={`absolute left-4 sm:left-6 md:left-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-transparent hover:border-red-800/80 hover:shadow-[0_0_15px_rgba(153,27,27,0.65)] hover:scale-110 active:scale-95 group ${
                     activeFavIndex === 0 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
                   }`}
                   aria-label="Anterior película"
                 >
-                  <ChevronLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform text-white/90" />
+                  <ChevronLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform text-white/90 group-hover:text-red-500/90" />
                 </button>
 
                 {/* Right navigation arrow button (Boceto Style) */}
@@ -3479,12 +3479,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     const newIndex = Math.min(favList.length - 1, activeFavIndex + 1);
                     setActiveFavIndex(newIndex);
                   }}
-                  className={`absolute right-4 sm:right-6 md:right-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-neutral-900/90 hover:border-red-600/70 hover:scale-110 active:scale-95 group ${
+                  className={`absolute right-4 sm:right-6 md:right-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-transparent hover:border-red-800/80 hover:shadow-[0_0_15px_rgba(153,27,27,0.65)] hover:scale-110 active:scale-95 group ${
                     activeFavIndex === movies.filter(m => m.favoriteOfMonth).length - 1 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
                   }`}
                   aria-label="Siguiente película"
                 >
-                  <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform text-white/90" />
+                  <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform text-white/90 group-hover:text-red-500/90" />
                 </button>
 
                 {/* Horizontal fixed-width 3D absolute slider without native scrolling to match Boceto reference */}
