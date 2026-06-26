@@ -321,6 +321,8 @@ export default function App() {
   const [isFavoriteOfMonthActive, setIsFavoriteOfMonthActive] = useState(false);
   const [activeFavIndex, setActiveFavIndex] = useState(0);
   const favContainerRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
   const [isDraggingFav, setIsDraggingFav] = useState(false);
   const [dragStartXFav, setDragStartXFav] = useState(0);
   const [dragScrollLeftFav, setDragScrollLeftFav] = useState(0);
@@ -3464,7 +3466,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     const newIndex = Math.max(0, activeFavIndex - 1);
                     setActiveFavIndex(newIndex);
                   }}
-                  className={`absolute left-4 sm:left-6 md:left-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-transparent hover:border-red-800/80 hover:shadow-[0_0_15px_rgba(153,27,27,0.65)] hover:scale-110 active:scale-95 group ${
+                  className={`hidden md:flex absolute left-4 sm:left-6 md:left-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white items-center justify-center transition-all duration-300 hover:bg-transparent hover:border-red-800/80 hover:shadow-[0_0_15px_rgba(153,27,27,0.65)] hover:scale-110 active:scale-95 group ${
                     activeFavIndex === 0 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
                   }`}
                   aria-label="Anterior película"
@@ -3479,7 +3481,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     const newIndex = Math.min(favList.length - 1, activeFavIndex + 1);
                     setActiveFavIndex(newIndex);
                   }}
-                  className={`absolute right-4 sm:right-6 md:right-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white flex items-center justify-center transition-all duration-300 hover:bg-transparent hover:border-red-800/80 hover:shadow-[0_0_15px_rgba(153,27,27,0.65)] hover:scale-110 active:scale-95 group ${
+                  className={`hidden md:flex absolute right-4 sm:right-6 md:right-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white items-center justify-center transition-all duration-300 hover:bg-transparent hover:border-red-800/80 hover:shadow-[0_0_15px_rgba(153,27,27,0.65)] hover:scale-110 active:scale-95 group ${
                     activeFavIndex === movies.filter(m => m.favoriteOfMonth).length - 1 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
                   }`}
                   aria-label="Siguiente película"
@@ -3490,10 +3492,34 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 {/* Horizontal fixed-width 3D absolute slider without native scrolling to match Boceto reference */}
                 <div 
                   ref={favContainerRef}
-                  className="w-full max-w-[1200px] h-[340px] sm:h-[400px] md:h-[460px] lg:h-[500px] relative overflow-visible flex justify-center items-center select-none z-10"
+                  className="w-full max-w-[1200px] h-[340px] sm:h-[400px] md:h-[460px] lg:h-[500px] relative overflow-visible flex justify-center items-center select-none z-10 touch-pan-y"
                   style={{
                     perspective: '1000px',
                     transformStyle: 'preserve-3d'
+                  }}
+                  onTouchStart={(e) => {
+                    touchStartX.current = e.touches[0].clientX;
+                    touchEndX.current = e.touches[0].clientX;
+                  }}
+                  onTouchMove={(e) => {
+                    touchEndX.current = e.touches[0].clientX;
+                  }}
+                  onTouchEnd={() => {
+                    if (touchStartX.current === null || touchEndX.current === null) return;
+                    const diffX = touchStartX.current - touchEndX.current;
+                    const threshold = 45; // Safe threshold for single card advance
+                    const favList = movies.filter(m => m.favoriteOfMonth);
+                    
+                    if (diffX > threshold) {
+                      // Swipe left -> Next
+                      setActiveFavIndex(prev => Math.min(favList.length - 1, prev + 1));
+                    } else if (diffX < -threshold) {
+                      // Swipe right -> Previous
+                      setActiveFavIndex(prev => Math.max(0, prev - 1));
+                    }
+                    
+                    touchStartX.current = null;
+                    touchEndX.current = null;
                   }}
                 >
                   {movies.filter(m => m.favoriteOfMonth).map((movie, idx) => {
