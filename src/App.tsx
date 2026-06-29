@@ -774,32 +774,32 @@ export default function App() {
 
   const getSidebarItemClass = (isActive: boolean) => {
     return isActive 
-      ? "flex items-center gap-4 w-full text-black bg-white rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all group"
-      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 px-5 py-3 font-bold text-sm transition-all group";
+      ? "flex items-center gap-4 w-full text-black bg-white border border-transparent rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out scale-[1.02] shadow-md group"
+      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-[#a11818]/45 hover:shadow-[0_0_12px_rgba(161,24,24,0.35)] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out hover:scale-[1.03] hover:translate-x-0.5 active:scale-95 group";
   };
 
   const getArchiveSidebarClass = (isActive: boolean) => {
     return isActive 
-      ? "flex items-center gap-4 w-full text-white bg-white/[0.04] border-l-2 border-[#e53e3e] rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all group"
-      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 px-5 py-3 font-bold text-sm transition-all group";
+      ? "flex items-center gap-4 w-full text-white bg-white/[0.04] border-l-[3px] border-l-[#e53e3e] border-y border-r border-transparent rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out scale-[1.02] group"
+      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-[#a11818]/45 hover:shadow-[0_0_12px_rgba(161,24,24,0.35)] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out hover:scale-[1.03] hover:translate-x-0.5 active:scale-95 group";
   };
 
   const getHistorySidebarClass = (isActive: boolean) => {
     return isActive 
-      ? "flex items-center gap-4 w-full text-white bg-white/[0.04] border-l-2 border-[#e53e3e] rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all group"
-      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 px-5 py-3 font-bold text-sm transition-all group";
+      ? "flex items-center gap-4 w-full text-white bg-white/[0.04] border-l-[3px] border-l-[#e53e3e] border-y border-r border-transparent rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out scale-[1.02] group"
+      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-[#a11818]/45 hover:shadow-[0_0_12px_rgba(161,24,24,0.35)] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out hover:scale-[1.03] hover:translate-x-0.5 active:scale-95 group";
   };
 
   const getReviewSidebarClass = (isActive: boolean) => {
     return isActive 
-      ? "flex items-center gap-4 w-full text-white bg-[rgba(229,62,62,0.15)] border-l-2 border-[#e53e3e] rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all group"
-      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 px-5 py-3 font-bold text-sm transition-all group";
+      ? "flex items-center gap-4 w-full text-white bg-[rgba(229,62,62,0.15)] border-l-[3px] border-l-[#e53e3e] border-y border-r border-transparent rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out scale-[1.02] group"
+      : "flex items-center gap-4 w-full text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-[#a11818]/45 hover:shadow-[0_0_12px_rgba(161,24,24,0.35)] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out hover:scale-[1.03] hover:translate-x-0.5 active:scale-95 group";
   };
 
   const getAccordionHeaderClass = (isActive: boolean) => {
     return isActive 
-      ? "flex items-center justify-between w-full text-[#ffffff] bg-[rgba(229,62,62,0.12)] border-l-2 border-[#e53e3e] rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all group"
-      : "flex items-center justify-between w-full text-zinc-400 hover:text-white hover:bg-white/5 px-5 py-3 font-bold text-sm transition-all group";
+      ? "flex items-center justify-between w-full text-[#ffffff] bg-[rgba(229,62,62,0.12)] border-l-[3px] border-l-[#e53e3e] border-y border-r border-transparent rounded-r-[8px] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out scale-[1.02] group"
+      : "flex items-center justify-between w-full text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-[#a11818]/45 hover:shadow-[0_0_12px_rgba(161,24,24,0.35)] px-5 py-3 font-bold text-sm transition-all duration-300 ease-out hover:scale-[1.03] hover:translate-x-0.5 active:scale-95 group";
   };
 
   const handleManualPosterUpdate = async (newPoster: string) => {
@@ -1503,6 +1503,19 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
     handleMouseLeave: handleMainMouseLeave
   } = useAutoScrollVertical();
 
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    if (isDirectorFilterActive || isFavoriteOfMonthActive) {
+      handleMainMouseLeave();
+    }
+  }, [isDirectorFilterActive, isFavoriteOfMonthActive]);
+
   useEffect(() => {
     if (selectedGenre !== prevGenreRef.current) {
       setAnimateCategory(true);
@@ -1580,9 +1593,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                    {/* Archive */}
                    <button 
                      className={getArchiveSidebarClass(isArchiveActive)} 
-                     onClick={clearFiltersAndSearch}
+                     onClick={() => {
+                       clearFiltersAndSearch();
+                       scrollToTop();
+                     }}
                    >
-                     <Clapperboard className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
+                     <Clapperboard className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
                      <span>{t("ARCHIVO")}</span>
                    </button>
                    
@@ -1593,7 +1609,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        onClick={() => setIsAlphabetOpen(!isAlphabetOpen)}
                      >
                        <span className="flex items-center gap-4">
-                         <ArrowDownAZ className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
+                         <ArrowDownAZ className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
                          <span>{t("ALFABÉTICO")}</span>
                        </span>
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isAlphabetOpen ? 'rotate-180' : ''}`} />
@@ -1613,7 +1629,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        onClick={() => setIsErasOpen(!isErasOpen)}
                      >
                        <span className="flex items-center gap-4">
-                         <CalendarDays className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
+                         <CalendarDays className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
                          <span>{t("ÉPOCAS")}</span>
                        </span>
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isErasOpen ? 'rotate-180' : ''}`} />
@@ -1633,7 +1649,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        onClick={() => setIsCategoriesOpen(!isCategoriesOpen)}
                      >
                        <span className="flex items-center gap-4">
-                         <LayoutGrid className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
+                         <LayoutGrid className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
                          <span>{t("CATEGORÍAS")}</span>
                        </span>
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isCategoriesOpen ? 'rotate-180' : ''}`} />
@@ -1667,9 +1683,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        setCuratorRecommendations([]);
                        setCurrentPage(1);
                        setIsMobileMenuOpen(false);
+                       scrollToTop();
                      }}
                    >
-                     <Video className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" strokeWidth={1.5} /> 
+                     <Video className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" strokeWidth={1.5} /> 
                      <span className="font-extrabold tracking-widest text-[11px]">{t("FILTRO DEL DIRECTOR")}</span>
                    </button>
 
@@ -1688,9 +1705,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        setIsFavoriteOfMonthActive(true);
                        setCurrentPage(1);
                        setIsMobileMenuOpen(false);
+                       scrollToTop();
                      }}
                    >
-                     <Star className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-yellow-500" strokeWidth={1.5} /> 
+                     <Star className={`w-5 h-5 transition-all duration-300 ease-out ${isFavoriteOfMonthActive ? 'text-[#DFB15B]' : 'text-zinc-400'} group-hover:scale-125 group-hover:text-[#DFB15B]`} strokeWidth={1.5} /> 
                      <span className="font-extrabold tracking-widest text-[11px] uppercase">Películas del mes</span>
                    </button>
                 </div>
@@ -1707,7 +1725,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                      onClick={activeHistory} 
                      className={getHistorySidebarClass(showHistoryOnly)}
                    >
-                     <HistoryIcon className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-110 group-hover:rotate-[8deg] group-hover:text-red-500" /> 
+                     <HistoryIcon className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
                      <span>{t("HISTORIAL")}</span>
                    </button>
                 </div>
@@ -1823,7 +1841,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       {/* MAIN LAYOUT */}
       <main 
         ref={mainContentRef as any}
-        onMouseMove={handleMainMouseMove as any}
+        onMouseMove={(e) => {
+          if (!isDirectorFilterActive && !isFavoriteOfMonthActive) {
+            handleMainMouseMove(e as any);
+          } else {
+            handleMainMouseLeave();
+          }
+        }}
         onMouseLeave={handleMainMouseLeave}
         className={`flex-1 overflow-x-hidden overflow-y-auto scroll-smooth relative transition-colors duration-500 ${
           isFavoriteOfMonthActive ? 'bg-black' : ''
@@ -3160,11 +3184,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                   return (
                                     <span 
                                       key={charIdx} 
-                                      className={`inline-block transition-all duration-300 group-hover:scale-110 group-hover:text-white ${
-                                        char === 'E' || char === 'e' ? 'recommendation-char-red' : 'recommendation-char-std'
-                                      }`}
+                                      className="inline-block transition-all duration-300 group-hover:scale-110 group-hover:text-white recommendation-char-std"
                                       style={{ 
-                                        color: char === 'E' || char === 'e' ? '#b41d1d' : 'inherit',
                                         transitionDelay: `${idx * 25}ms`
                                       }}
                                     >
