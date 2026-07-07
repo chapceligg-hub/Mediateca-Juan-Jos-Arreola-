@@ -12,7 +12,7 @@ import {
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
-  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies
+  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, getCachedMovies
 } from './lib/firebase';
 import { Movie, Quote as QuoteType } from './types';
 import { ALPHABET, YEAR_RANGES, DEMO_POSTER } from './constants';
@@ -1100,19 +1100,12 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     // RECUPERACIÓN DE MEMORIA CACHÉ GUARDADA: Leemos inmediatamente por si Firestore tarda en conectar
     (async () => {
       try {
-        const { get } = await import('idb-keyval');
-        const offlineData = await get("videoteca_movies_cache");
-        if (offlineData) {
-          let parsed = offlineData;
-          if (typeof offlineData === 'string') {
-             parsed = JSON.parse(offlineData);
-          }
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMovies(parsed);
-          }
+        const offlineData = await getCachedMovies();
+        if (offlineData && offlineData.length > 0) {
+          setMovies(offlineData);
         }
       } catch (e) {
-        console.warn("Error leyendo la caché inicial de películas desde IndexedDB:", e);
+        console.warn("Error leyendo la caché inicial de películas:", e);
       }
     })();
 
@@ -2195,9 +2188,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             >
               <X size={20} />
             </button>
-            <div className={`w-full md:w-[420px] shrink-0 ${(isEditing || isAddingNew) ? 'bg-[#09090b]/80 backdrop-blur-xl border border-[#b41d1d]/25 md:m-6 m-3 rounded-2xl shadow-[0_0_50px_rgba(180,29,29,0.22)]' : 'bg-[#050505] border-r border-white/5'} relative flex flex-col overflow-hidden transition-all duration-500`}>
+            <div className={`w-full md:w-[350px] shrink-0 ${(isEditing || isAddingNew) ? 'bg-[#09090b]/80 backdrop-blur-xl border border-[#b41d1d]/25 md:m-6 m-3 rounded-2xl shadow-[0_0_50px_rgba(180,29,29,0.22)]' : 'bg-[#050505] border-r border-white/5'} relative flex flex-col overflow-hidden transition-all duration-500`}>
               {/* VISOR AUTOMÁTICO DE PÓSTER CON IA - Agregado key reactiva para forzar refresco de imagen */}
-              <div className="flex-1 overflow-hidden group relative flex items-center justify-center p-6 bg-black/[0.1]">
+              <div className="flex-1 overflow-hidden group relative flex items-center justify-center px-2 py-6 bg-black/[0.1]">
                 <img 
                   key={(isAddingNew || isEditing) ? editForm.poster : selectedMovie?.poster}
                   src={(isAddingNew || isEditing) ? (editForm.poster || DEMO_POSTER) : (selectedMovie?.poster || DEMO_POSTER)} 

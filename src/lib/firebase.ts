@@ -49,22 +49,106 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
   }
 };
 
+export const getMoviesCacheKey = (userId?: string) => {
+  const uid = userId || auth.currentUser?.uid;
+  if (uid) {
+    return `videoteca_movies_cache_${uid}`;
+  }
+  return "videoteca_movies_cache_anonymous";
+};
+
+export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boolean => {
+  if (!currentMovies || currentMovies.length === 0) {
+    return true; // No hay caché previa, se permite actualizar siempre
+  }
+  
+  const currentCount = currentMovies.length;
+  const newCount = newMovies.length;
+  
+  // Si el nuevo catálogo recibido está vacío pero ya teníamos películas guardadas,
+  // es muy probable que sea un error de red, de cuota o una limitación temporal. Bloqueamos sobreescribir.
+  if (newCount === 0 && currentCount > 0) {
+    console.warn(`[Integrity Check] Se bloqueó intento de vaciar la caché. Actual: ${currentCount}, Nuevo: ${newCount}`);
+    return false;
+  }
+  
+  // Si la reducción es masiva e inesperada (ej. pasamos de más de 10 películas a menos del 15% de las que teníamos)
+  if (currentCount > 10 && newCount < (currentCount * 0.15)) {
+    console.warn(`[Integrity Check] Alerta de reducción drástica de películas. Se bloqueó sobreescribir la caché. Actual: ${currentCount}, Nuevo: ${newCount}`);
+    return false;
+  }
+  
+  return true;
+};
+
+export const getCachedMovies = async (userId?: string): Promise<any[] | null> => {
+  const uid = userId || auth.currentUser?.uid;
+  const userKey = uid ? `videoteca_movies_cache_${uid}` : "videoteca_movies_cache_anonymous";
+  
+  try {
+    // 1. Intentar leer de la caché del usuario actual
+    const userCache = await get(userKey);
+    if (userCache) {
+      const parsed = typeof userCache === 'string' ? JSON.parse(userCache) : userCache;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+    
+    // 2. Fallback: si el usuario no tiene caché (ej. primer login en este dispositivo),
+    // intentar leer de la caché anónima o del backup general para no dejar la pantalla en blanco.
+    const anonCache = await get("videoteca_movies_cache_anonymous") || await get("videoteca_movies_cache");
+    if (anonCache) {
+      const parsed = typeof anonCache === 'string' ? JSON.parse(anonCache) : anonCache;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Migramos estos datos a la caché del usuario de manera preventiva
+        await set(userKey, parsed);
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("Error leyendo la caché local:", e);
+  }
+  return null;
+};
+
+export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false, userId?: string) => {
+  const uid = userId || auth.currentUser?.uid;
+  const userKey = uid ? `videoteca_movies_cache_${uid}` : "videoteca_movies_cache_anonymous";
+  
+  try {
+    // Obtener lo que ya hay en caché
+    const currentCache = await get(userKey);
+    let currentMovies: any[] = [];
+    if (currentCache) {
+      currentMovies = typeof currentCache === 'string' ? JSON.parse(currentCache) : currentCache;
+    }
+    
+    // Validar integridad antes de persistir
+    if (bypassIntegrity || shouldUpdateCache(currentMovies, newMovies)) {
+      await set(userKey, newMovies);
+      // Guardar respaldos generales para el fallback rápido
+      await set("videoteca_movies_cache_anonymous", newMovies);
+      await set("videoteca_movies_cache", newMovies); // Para mantener compatibilidad si algo lo lee directamente
+      console.log(`[Cache Manager] Caché actualizada exitosamente (${newMovies.length} películas) para la clave: ${userKey}`);
+    } else {
+      console.log(`[Cache Manager] Integridad rechazada. Conservando caché previa de ${currentMovies.length} películas.`);
+    }
+  } catch (e) {
+    console.error("Error al escribir en la caché local:", e);
+  }
+};
+
 export const fetchMoviesOptimized = async (forceServer = false) => {
   const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
   
   // 1. Estrategia de Caché Local Estricta (IndexedDB)
   if (!forceServer) {
     try {
-      const offlineData = await get("videoteca_movies_cache");
-      if (offlineData) {
-        let parsed = offlineData;
-        if (typeof offlineData === 'string') {
-           parsed = JSON.parse(offlineData);
-        }
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`[Caché Estricta Local] Películas cargadas instantáneamente desde IndexedDB (Lecturas Firebase = 0). Cantidad: ${parsed.length}`);
-          return parsed;
-        }
+      const offlineData = await getCachedMovies();
+      if (offlineData && offlineData.length > 0) {
+        console.log(`[Caché Estricta Local] Películas cargadas instantáneamente desde IndexedDB (Lecturas Firebase = 0). Cantidad: ${offlineData.length}`);
+        return offlineData;
       }
     } catch (e) {
       console.warn("Error leyendo la caché de IndexedDB:", e);
@@ -75,7 +159,7 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
       const snapshot = await getDocsFromCache(q);
       if (!snapshot.empty) {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        await set("videoteca_movies_cache", data);
+        await setCachedMovies(data);
         console.log("Firebase Cache-First: Películas cargadas desde la caché local de Firestore");
         return data;
       }
@@ -88,9 +172,7 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   console.log("Firebase Cache-First: Consultando películas desde el Servidor Real de Firestore");
   const snapshot = await getDocsFromServer(q);
   const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  try {
-    await set("videoteca_movies_cache", data);
-  } catch (e) {}
+  await setCachedMovies(data);
   return data;
 };
 
@@ -108,9 +190,9 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
       return timeB.localeCompare(timeA);
     });
 
-    // Guardamos la nueva caché unificada para cuando carga rápido
+    // Guardamos la nueva caché unificada para cuando carga rápido usando la función segura
     try {
-      await set("videoteca_movies_cache", movies);
+      await setCachedMovies(movies);
     } catch (error) {
       console.warn("No se pudo escribir en la memoria caché IndexedDB", error);
     }
@@ -172,10 +254,10 @@ export const upsertMovie = async (movie: any) => {
   
   // Sincronizar de inmediato la caché local
   try {
-    const offlineData = await get("videoteca_movies_cache");
+    const offlineData = await getCachedMovies();
     let list: any[] = [];
     if (offlineData) {
-      list = typeof offlineData === 'string' ? JSON.parse(offlineData) : offlineData;
+      list = offlineData;
     }
     const index = list.findIndex((m: any) => m.id === movieId);
     if (index > -1) {
@@ -188,7 +270,7 @@ export const upsertMovie = async (movie: any) => {
       const timeB = b.createdAt || b.updatedAt || "";
       return timeB.localeCompare(timeA);
     });
-    await set("videoteca_movies_cache", list);
+    await setCachedMovies(list, true);
   } catch (e) {
     console.error("Error actualizando la caché local tras upsertMovie:", e);
   }
@@ -200,9 +282,9 @@ export const updateMovie = async (id: string, updates: any) => {
   await updateDoc(doc(db, 'movies', id), updates);
   
   try {
-    const offlineData = await get("videoteca_movies_cache");
+    const offlineData = await getCachedMovies();
     if (offlineData) {
-      let list: any[] = typeof offlineData === 'string' ? JSON.parse(offlineData) : offlineData;
+      let list: any[] = offlineData;
       const index = list.findIndex((m: any) => m.id === id);
       if (index > -1) {
         list[index] = { ...list[index], ...updates };
@@ -211,7 +293,7 @@ export const updateMovie = async (id: string, updates: any) => {
           const timeB = b.createdAt || b.updatedAt || "";
           return timeB.localeCompare(timeA);
         });
-        await set("videoteca_movies_cache", list);
+        await setCachedMovies(list, true);
       }
     }
   } catch (e) {}
@@ -223,11 +305,11 @@ export const deleteMovie = async (id: string) => {
   await deleteDoc(doc(db, 'movies', id));
   
   try {
-    const offlineData = await get("videoteca_movies_cache");
+    const offlineData = await getCachedMovies();
     if (offlineData) {
-      let list: any[] = typeof offlineData === 'string' ? JSON.parse(offlineData) : offlineData;
+      let list: any[] = offlineData;
       list = list.filter((m: any) => m.id !== id);
-      await set("videoteca_movies_cache", list);
+      await setCachedMovies(list, true);
     }
   } catch (e) {}
 };
