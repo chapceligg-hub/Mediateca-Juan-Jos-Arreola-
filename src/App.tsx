@@ -4,7 +4,7 @@ import {
   Search, Film, Star, Clock, User, Calendar, X, Plus, Edit2, Check, Trash2, Video,
   Sparkles, Loader2, AlertTriangle, Clapperboard, MonitorPlay, Trophy, Quote as QuoteIcon, 
   Zap, ImageIcon, Landmark, History as HistoryIcon, Type, ChevronRight, ChevronLeft, ChevronDown, Globe, 
-  DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload,
+  DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload, Download,
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, BookOpen, Shield, Orbit, Flag, Activity,
   Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain
@@ -1275,6 +1275,67 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
   const totalPages = Math.ceil(filteredMovies.length / moviesPerPage);
 
+  const exportToCSV = () => {
+    if (filteredMovies.length === 0) {
+      alert("No hay películas en el listado actual para exportar.");
+      return;
+    }
+
+    const headers = [
+      "ID", "Título Español", "Título Original", "Año", "Rating Global", "Duración", 
+      "País", "Dirección", "Género", "Clasificación", "Formato", "Póster", 
+      "Argumento/Sinopsis", "Elenco", "Guion", "Banda Sonora", "Fotografía", 
+      "Estudio/Compañías", "Reseñas", "Premios", "Estante", "Última Actualización"
+    ];
+
+    const csvRows = [headers.join(",")];
+
+    for (const m of filteredMovies) {
+      const castStr = Array.isArray(m.cast) ? m.cast.join(" / ") : (m.cast || "");
+      const row = [
+        m.id || "",
+        m.title || "",
+        m.originalTitle || "",
+        m.year || "",
+        m.rating || "",
+        m.duration || "",
+        m.country || "",
+        m.director || "",
+        m.genre || "",
+        m.ageRating || "",
+        m.format || "",
+        m.poster || "",
+        m.synopsis || "",
+        castStr,
+        m.script || "",
+        m.music || "",
+        m.photography || "",
+        m.companies || "",
+        m.reviews || "",
+        m.awards || "",
+        m.estante || "",
+        m.updatedAt || m.createdAt || ""
+      ];
+
+      const escapedRow = row.map(val => {
+        const stringVal = String(val).replace(/"/g, '""');
+        return `"${stringVal}"`;
+      });
+
+      csvRows.push(escapedRow.join(","));
+    }
+
+    const csvContent = "\uFEFF" + csvRows.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `catalogo_videoteca_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleSave = async () => {
     if (!isAdmin || !user) return;
 
@@ -1754,6 +1815,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                          >
                            <AlertTriangle className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
                            <span>{t("PARA REVISIÓN")}</span>
+                         </button>
+                         <button 
+                           onClick={exportToCSV} 
+                           className={getSidebarItemClass(false)}
+                         >
+                           <Download className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
+                           <span>{t("EXPORTAR CSV")}</span>
                          </button>
                       </div>
                    </div>

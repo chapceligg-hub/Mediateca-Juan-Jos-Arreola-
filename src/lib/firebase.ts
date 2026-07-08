@@ -49,12 +49,8 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
   }
 };
 
-export const getMoviesCacheKey = (userId?: string) => {
-  const uid = userId || auth.currentUser?.uid;
-  if (uid) {
-    return `videoteca_movies_cache_${uid}`;
-  }
-  return "videoteca_movies_cache_anonymous";
+export const getMoviesCacheKey = () => {
+  return "videoteca_movies_cache";
 };
 
 export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boolean => {
@@ -81,125 +77,176 @@ export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boole
   return true;
 };
 
-export const getCachedMovies = async (userId?: string): Promise<any[] | null> => {
-  const uid = userId || auth.currentUser?.uid;
-  const userKey = uid ? `videoteca_movies_cache_${uid}` : "videoteca_movies_cache_anonymous";
-  
+export const getCachedMovies = async (): Promise<any[] | null> => {
   try {
-    // 1. Intentar leer de la caché del usuario actual
-    const userCache = await get(userKey);
-    if (userCache) {
-      const parsed = typeof userCache === 'string' ? JSON.parse(userCache) : userCache;
+    // 1. Intentar leer de la caché única global de super-integridad
+    const cache = await get("videoteca_movies_cache");
+    if (cache) {
+      const parsed = typeof cache === 'string' ? JSON.parse(cache) : cache;
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
     }
     
-    // 2. Fallback: si el usuario no tiene caché (ej. primer login en este dispositivo),
-    // intentar leer de la caché anónima o del backup general para no dejar la pantalla en blanco.
-    const anonCache = await get("videoteca_movies_cache_anonymous") || await get("videoteca_movies_cache");
-    if (anonCache) {
-      const parsed = typeof anonCache === 'string' ? JSON.parse(anonCache) : anonCache;
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Migramos estos datos a la caché del usuario de manera preventiva
-        await set(userKey, parsed);
-        return parsed;
+    // 2. Fallback de compatibilidad: si no existe, buscar en las claves antiguas segmentadas
+    const uid = auth.currentUser?.uid;
+    const legacyKeys = uid ? [`videoteca_movies_cache_${uid}`, "videoteca_movies_cache_anonymous"] : ["videoteca_movies_cache_anonymous"];
+    for (const key of legacyKeys) {
+      const legacyCache = await get(key);
+      if (legacyCache) {
+        const parsed = typeof legacyCache === 'string' ? JSON.parse(legacyCache) : legacyCache;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Migrar inmediatamente a la caché global unificada
+          await set("videoteca_movies_cache", parsed);
+          return parsed;
+        }
       }
     }
   } catch (e) {
-    console.warn("Error leyendo la caché local:", e);
+    console.warn("Error leyendo la caché local única global:", e);
   }
   return null;
 };
 
-export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false, userId?: string) => {
-  const uid = userId || auth.currentUser?.uid;
-  const userKey = uid ? `videoteca_movies_cache_${uid}` : "videoteca_movies_cache_anonymous";
-  
+export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false) => {
   try {
-    // Obtener lo que ya hay en caché
-    const currentCache = await get(userKey);
+    const currentCache = await get("videoteca_movies_cache");
     let currentMovies: any[] = [];
     if (currentCache) {
       currentMovies = typeof currentCache === 'string' ? JSON.parse(currentCache) : currentCache;
     }
     
-    // Validar integridad antes de persistir
+    // Validar integridad antes de persistir en la caché global única
     if (bypassIntegrity || shouldUpdateCache(currentMovies, newMovies)) {
-      await set(userKey, newMovies);
-      // Guardar respaldos generales para el fallback rápido
-      await set("videoteca_movies_cache_anonymous", newMovies);
-      await set("videoteca_movies_cache", newMovies); // Para mantener compatibilidad si algo lo lee directamente
-      console.log(`[Cache Manager] Caché actualizada exitosamente (${newMovies.length} películas) para la clave: ${userKey}`);
+      await set("videoteca_movies_cache", newMovies);
+      console.log(`[Cache Manager] Caché única global actualizada exitosamente (${newMovies.length} películas)`);
     } else {
-      console.log(`[Cache Manager] Integridad rechazada. Conservando caché previa de ${currentMovies.length} películas.`);
+      console.log(`[Cache Manager] Integridad rechazada. Conservando caché unificada previa de ${currentMovies.length} películas.`);
     }
   } catch (e) {
-    console.error("Error al escribir en la caché local:", e);
+    console.error("Error al escribir en la caché local única global:", e);
+  }
+};
+
+export const syncMoviesDelta = async (localMovies: any[]): Promise<any[]> => {
+  try {
+    let maxUpdatedAt = "1970-01-01T00:00:00.000Z";
+    for (const m of localMovies) {
+      const t = m.updatedAt || m.createdAt || "";
+      if (t && t > maxUpdatedAt) {
+        maxUpdatedAt = t;
+      }
+    }
+
+    console.log(`[Delta Sync] Consultando cambios desde la última fecha local: ${maxUpdatedAt}`);
+    
+    // Consultar a Firestore ÚNICAMENTE por las películas creadas/editadas después de maxUpdatedAt
+    const q = query(
+      collection(db, 'movies'), 
+      where('updatedAt', '>', maxUpdatedAt)
+    );
+    
+    const snapshot = await getDocsFromServer(q);
+    
+    if (snapshot.empty) {
+      console.log("[Delta Sync] No hay películas nuevas ni modificadas. Lecturas de Firestore consumidas: 0.");
+      return localMovies;
+    }
+
+    const deltaMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log(`[Delta Sync] Se encontraron ${deltaMovies.length} películas nuevas/modificadas. Consumo: ${deltaMovies.length} lecturas.`);
+
+    // Unir los deltas con las películas locales que ya tenemos (sobrescribiendo los cambios)
+    const mergedMap = new Map();
+    for (const m of localMovies) {
+      mergedMap.set(m.id, m);
+    }
+    for (const m of deltaMovies) {
+      mergedMap.set(m.id, m);
+    }
+
+    const mergedList = Array.from(mergedMap.values());
+    
+    mergedList.sort((a, b) => {
+      const timeA = a.createdAt || a.updatedAt || "";
+      const timeB = b.createdAt || b.updatedAt || "";
+      return timeB.localeCompare(timeA);
+    });
+
+    // Guardar los datos combinados en la caché de super-integridad
+    await setCachedMovies(mergedList, true);
+    return mergedList;
+  } catch (error) {
+    console.warn("Error en sincronización Delta manual:", error);
+    return localMovies;
   }
 };
 
 export const fetchMoviesOptimized = async (forceServer = false) => {
-  const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
-  
-  // 1. Estrategia de Caché Local Estricta (IndexedDB)
-  if (!forceServer) {
-    try {
-      const offlineData = await getCachedMovies();
-      if (offlineData && offlineData.length > 0) {
-        console.log(`[Caché Estricta Local] Películas cargadas instantáneamente desde IndexedDB (Lecturas Firebase = 0). Cantidad: ${offlineData.length}`);
-        return offlineData;
-      }
-    } catch (e) {
-      console.warn("Error leyendo la caché de IndexedDB:", e);
-    }
+  // 1. Carga instantánea desde IndexedDB unificada (Lecturas = 0)
+  const offlineData = await getCachedMovies();
+  let localMovies = offlineData || [];
 
-    try {
-      // 2. Fallback secundario de Firestore Cache nativa
-      const snapshot = await getDocsFromCache(q);
-      if (!snapshot.empty) {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        await setCachedMovies(data);
-        console.log("Firebase Cache-First: Películas cargadas desde la caché local de Firestore");
-        return data;
+  if (!forceServer && localMovies.length > 0) {
+    console.log(`[Caché Estricta Local] ${localMovies.length} películas cargadas instantáneamente.`);
+    
+    // Disparar sincronización Delta de forma silenciosa e inteligente en segundo plano
+    setTimeout(async () => {
+      try {
+        await syncMoviesDelta(localMovies);
+      } catch (e) {
+        console.error("Error en sincronización Delta en segundo plano:", e);
       }
-    } catch (e) {
-      console.log("Firebase Cache-First: Caché vacía o error, buscando en servidor...");
-    }
+    }, 50);
+
+    return localMovies;
   }
 
-  // 3. Solo si todo está vacío o se fuerza explícitamente se hace la petición al servidor
-  console.log("Firebase Cache-First: Consultando películas desde el Servidor Real de Firestore");
+  // 2. Si no hay caché o se fuerza el servidor, hacemos una descarga completa
+  console.log("Firebase Cache-First: Descargando catálogo completo desde el servidor...");
+  const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
   const snapshot = await getDocsFromServer(q);
   const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  await setCachedMovies(data);
+  await setCachedMovies(data, true);
   return data;
 };
 
 export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (err: any) => void) => {
-  console.log("[Firebase] Iniciando suscripción optimizada a películas (onSnapshot)...");
+  console.log("[Firebase] Iniciando suscripción con Sincronización Delta inteligente...");
+
+  // 1. Cargar caché local global de inmediato para pintar la pantalla al instante
+  (async () => {
+    try {
+      const cached = await getCachedMovies();
+      if (cached && cached.length > 0) {
+        callback(cached);
+        // Sincronización Delta inicial silenciosa para traer cambios rápidos del servidor
+        const updatedList = await syncMoviesDelta(cached);
+        callback(updatedList);
+      }
+    } catch (e) {
+      console.warn("Error cargando caché inicial en suscripción:", e);
+    }
+  })();
+
+  // 2. Listener de tiempo real para mantener todo actualizado.
+  // Gracias a persistentLocalCache de Firestore, Firebase no consumirá lecturas por lo que ya conoce.
   const q = query(collection(db, 'movies'));
-  
   return onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
     const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
-    // Mantenemos el orden descendente por recencia
     movies.sort((a, b) => {
-      const timeA = a.createdAt || "";
-      const timeB = b.createdAt || "";
+      const timeA = a.createdAt || a.updatedAt || "";
+      const timeB = b.createdAt || b.updatedAt || "";
       return timeB.localeCompare(timeA);
     });
 
-    // Guardamos la nueva caché unificada para cuando carga rápido usando la función segura
-    try {
+    if (movies.length > 0) {
       await setCachedMovies(movies);
-    } catch (error) {
-      console.warn("No se pudo escribir en la memoria caché IndexedDB", error);
+      callback(movies);
     }
-    
-    callback(movies);
   }, (error) => {
-    console.error("Error en la suscripción de caché en tiempo real:", error);
+    console.error("Error en la suscripción en tiempo real:", error);
     onError(error);
   });
 };
