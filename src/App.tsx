@@ -2161,7 +2161,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       </div>
                     </div>
 
-                    {movie.needsReview && (
+                    {isAdmin && movie.needsReview && (
                       <div className="absolute top-3 left-3 bg-[var(--color-brand-main)]/90 backdrop-blur-md px-2 py-1.5 rounded-md text-[9px] font-black text-white uppercase tracking-widest flex items-center gap-1 shadow-[0_0_20px_rgba(179,5,0,0.5)] z-30">
                         <AlertTriangle size={10}/> REVISAR
                       </div>
