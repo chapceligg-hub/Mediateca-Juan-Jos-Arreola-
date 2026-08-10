@@ -763,6 +763,12 @@ export default function App() {
   const [batchProgress, setBatchProgress] = useState({ active: false, total: 0, current: 0, currentMovie: "" });
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showAdminsModal, setShowAdminsModal] = useState(false);
+  const [duplicateWarningModal, setDuplicateWarningModal] = useState<{
+    open: boolean;
+    title: string;
+    year: number;
+    onConfirm: (() => void) | null;
+  }>({ open: false, title: "", year: 0, onConfirm: null });
   const [authDenied, setAuthDenied] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
@@ -1336,23 +1342,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     document.body.removeChild(link);
   };
 
-  const handleSave = async () => {
-    if (!isAdmin || !user) return;
-
-    if (isAddingNew) {
-      const titleToSave = editForm.title || "Obra sin título";
-      const yearToSave = parseInt(editForm.year as any) || new Date().getFullYear();
-      const isDuplicate = movies.some(m => 
-        m.title?.toLowerCase().trim() === titleToSave.toLowerCase().trim() && 
-        m.year == yearToSave
-      );
-      if (isDuplicate) {
-        alert(`La película "${titleToSave}" (${yearToSave}) ya existe en la mediateca.`);
-        return;
-      }
-    }
-
-    const id = isAddingNew ? generateMovieId() : (editForm.id || "");
+  const persistMovieData = async (dataToUse?: any) => {
+    const data = dataToUse || editForm;
+    const id = isAddingNew ? generateMovieId() : (data.id || "");
     if (!id) {
       setSyncError("No se pudo referenciar la obra. Intenta de nuevo.");
       return;
@@ -1360,36 +1352,69 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     try {
       const payload: Movie = {
         id,
-        title: editForm.title || "Obra sin título",
-        originalTitle: editForm.originalTitle || editForm.title || "Original Title",
-        year: parseInt(editForm.year as any) || new Date().getFullYear(),
-        rating: Math.min(10, Math.max(0, parseFloat(editForm.rating as any) || 0)),
-        duration: editForm.duration || "N/A",
-        country: editForm.country || "N/A",
-        director: editForm.director || "Desconocido",
-        script: editForm.script || "N/A",
-        cast: Array.isArray(editForm.cast) ? editForm.cast : String(editForm.cast || "").split(',').map(s => s.trim()).filter(Boolean),
-        music: editForm.music || "N/A",
-        photography: editForm.photography || "N/A",
-        companies: editForm.companies || "N/A",
-        genre: editForm.genre || "Cine",
-        synopsis: editForm.synopsis || "Sin argumento registrado.",
-        poster: editForm.poster || DEMO_POSTER,
-        reviews: editForm.reviews || "Sin reseñas verificadas.",
-        awards: editForm.awards || "Sin premios registrados.",
-        ageRating: editForm.ageRating || "N/A",
-        format: editForm.format || "No disponible",
-        estante: editForm.estante || "N/A",
-        createdAt: isAddingNew ? new Date().toISOString() : (editForm.createdAt || editForm.updatedAt || new Date().toISOString()),
+        title: data.title || "Obra sin título",
+        originalTitle: data.originalTitle || data.title || "Original Title",
+        year: parseInt(data.year as any) || new Date().getFullYear(),
+        rating: Math.min(10, Math.max(0, parseFloat(data.rating as any) || 0)),
+        duration: data.duration || "N/A",
+        country: data.country || "N/A",
+        director: data.director || "Desconocido",
+        script: data.script || "N/A",
+        cast: Array.isArray(data.cast) ? data.cast : String(data.cast || "").split(',').map((s: string) => s.trim()).filter(Boolean),
+        music: data.music || "N/A",
+        photography: data.photography || "N/A",
+        companies: data.companies || "N/A",
+        genre: data.genre || "Cine",
+        synopsis: data.synopsis || "Sin argumento registrado.",
+        poster: data.poster || DEMO_POSTER,
+        reviews: data.reviews || "Sin reseñas verificadas.",
+        awards: data.awards || "Sin premios registrados.",
+        ageRating: data.ageRating || "N/A",
+        format: data.format || "No disponible",
+        estante: data.estante || "N/A",
+        createdAt: isAddingNew ? new Date().toISOString() : (data.createdAt || data.updatedAt || new Date().toISOString()),
         updatedAt: new Date().toISOString(),
         needsReview: false
       };
       
       await upsertMovie(payload);
       
-      setIsAddingNew(false); setIsEditing(false); setSelectedMovie({ ...selectedMovie, ...payload } as Movie); setSyncInput("");
+      setIsAddingNew(false);
+      setIsEditing(false);
+      setSelectedMovie({ ...selectedMovie, ...payload } as Movie);
+      setSyncInput("");
       setSyncError("");
-    } catch (e: any) { setSyncError("Fallo al persistir registro: " + e.message); }
+      setSyncStatus("¡Guardado exitoso!");
+    } catch (e: any) {
+      setSyncError("Fallo al persistir registro: " + e.message);
+    }
+  };
+
+  const handleSave = async (forceSave = false) => {
+    if (!isAdmin || !user) return;
+
+    if (isAddingNew && !forceSave) {
+      const titleToSave = editForm.title || "Obra sin título";
+      const yearToSave = parseInt(editForm.year as any) || new Date().getFullYear();
+      const isDuplicate = movies.some(m => 
+        m.title?.toLowerCase().trim() === titleToSave.toLowerCase().trim() && 
+        m.year == yearToSave
+      );
+      if (isDuplicate) {
+        setDuplicateWarningModal({
+          open: true,
+          title: titleToSave,
+          year: yearToSave,
+          onConfirm: () => {
+            setDuplicateWarningModal({ open: false, title: "", year: 0, onConfirm: null });
+            persistMovieData();
+          }
+        });
+        return;
+      }
+    }
+
+    await persistMovieData();
   };
 
   const handleSync = async (autoSave: boolean = false) => {
@@ -1462,53 +1487,32 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       setSyncStatus("¡Ficha extraída correctamente!");
 
       if (autoSave) {
+        const titleToSave = merged.title || "Obra sin título";
+        const yearToSave = parseInt(merged.year as any) || new Date().getFullYear();
+
         if (isAddingNew) {
-          const titleToSave = merged.title || "Obra sin título";
-          const yearToSave = parseInt(merged.year as any) || new Date().getFullYear();
           const isDuplicate = movies.some(m => 
             m.title?.toLowerCase().trim() === titleToSave.toLowerCase().trim() && 
             m.year == yearToSave
           );
           if (isDuplicate) {
-            setSyncError(`La película "${titleToSave}" (${yearToSave}) ya existe en la mediateca.`);
             setIsSyncing(false);
+            setSyncStatus("");
+            setDuplicateWarningModal({
+              open: true,
+              title: titleToSave,
+              year: yearToSave,
+              onConfirm: () => {
+                setDuplicateWarningModal({ open: false, title: "", year: 0, onConfirm: null });
+                setSyncStatus("Guardando en la bóveda...");
+                persistMovieData(merged);
+              }
+            });
             return;
           }
         }
         setSyncStatus("Guardando en la bóveda...");
-        const id = isAddingNew ? generateMovieId() : (merged.id || "");
-        if (!id) throw new Error("No se pudo referenciar la obra. Intenta de nuevo.");
-
-        const payload: Movie = {
-          id,
-          title: merged.title || "Obra sin título",
-          originalTitle: merged.originalTitle || merged.title || "Original Title",
-          year: parseInt(merged.year as any) || new Date().getFullYear(),
-          rating: Math.min(10, Math.max(0, parseFloat(merged.rating as any) || 0)),
-          duration: merged.duration || "N/A",
-          country: merged.country || "N/A",
-          director: merged.director || "Desconocido",
-          script: merged.script || "N/A",
-          cast: Array.isArray(merged.cast) ? merged.cast : String(merged.cast || "").split(',').map(s => s.trim()).filter(Boolean),
-          music: merged.music || "N/A",
-          photography: merged.photography || "N/A",
-          companies: merged.companies || "N/A",
-          genre: merged.genre || "Cine",
-          synopsis: merged.synopsis || "Sin argumento registrado.",
-          poster: merged.poster || DEMO_POSTER,
-          reviews: merged.reviews || "Sin reseñas verificadas.",
-          awards: merged.awards || "Sin premios registrados.",
-          ageRating: merged.ageRating || "N/A",
-          format: merged.format || "No disponible",
-          estante: merged.estante || "N/A",
-          createdAt: isAddingNew ? new Date().toISOString() : (merged.createdAt || merged.updatedAt || new Date().toISOString()),
-          updatedAt: new Date().toISOString(),
-          needsReview: false
-        };
-        await upsertMovie(payload);
-        
-        setIsAddingNew(false); setIsEditing(false); setSelectedMovie({ ...selectedMovie, ...payload } as Movie); setSyncInput("");
-        setSyncStatus("¡Guardado exitoso!");
+        await persistMovieData(merged);
       }
     } catch (err: any) { setSyncError(err.message); } finally { setIsSyncing(false); setTimeout(() => setSyncStatus(""), 3000); }
   };
@@ -3806,6 +3810,54 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         </div>
       </footer>
       
+      {/* MODAL DE ADVERTENCIA DE DUPLICADO */}
+      {duplicateWarningModal.open && (
+        <div className="fixed inset-0 z-[350] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-4 animate-in fade-in duration-300 font-sans">
+          <div className="bg-[#0c0c0e] border border-amber-500/30 rounded-[2rem] max-w-md w-full p-6 sm:p-8 shadow-[0_0_80px_rgba(245,158,11,0.15)] flex flex-col relative overflow-hidden text-center">
+            {/* Ambient top glowing line */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500/20 via-amber-500 to-amber-500/20" />
+            
+            <div className="mx-auto mb-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 w-fit">
+              <AlertTriangle size={36} className="animate-pulse" />
+            </div>
+
+            <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-2 font-sans">
+              Película Duplicada
+            </h3>
+            
+            <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed mb-6 font-medium">
+              La obra <span className="font-extrabold text-amber-400">"{duplicateWarningModal.title}" ({duplicateWarningModal.year || "S/A"})</span> ya se encuentra registrada en el catálogo.
+            </p>
+
+            <p className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold mb-6">
+              ¿Deseas subirla de todas formas o cancelar la acción?
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => setDuplicateWarningModal({ open: false, title: "", year: 0, onConfirm: null })}
+                className="flex-1 px-5 py-3.5 rounded-xl border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 font-sans font-extrabold uppercase text-[10px] tracking-[0.2em] transition-all active:scale-95"
+              >
+                Cancelar
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  if (duplicateWarningModal.onConfirm) {
+                    duplicateWarningModal.onConfirm();
+                  }
+                }}
+                className="flex-1 px-5 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-sans font-black uppercase text-[10px] tracking-[0.2em] transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.5)] active:scale-95"
+              >
+                Subir de todas formas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ADMINS MODAL */}
       {showAdminsModal && (
         <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
