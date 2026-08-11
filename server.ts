@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 
@@ -1372,6 +1373,40 @@ ${JSON.stringify(lightweightMovies, null, 2)}`;
       res.status(500).json({ error: err.message || "Error procesando filtro" });
     }
   });
+
+// Servir la carpeta de imágenes subidas manualmente
+const uploadsDir = path.join(process.cwd(), "public", "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use("/uploads", express.static(uploadsDir));
+
+app.post("/api/upload-image", (req, res) => {
+  try {
+    const { image } = req.body;
+    if (!image || typeof image !== "string") {
+      return res.status(400).json({ error: "No image payload provided" });
+    }
+
+    const matches = image.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ error: "Formato de imagen inválido" });
+    }
+
+    const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+    const buffer = Buffer.from(matches[2], "base64");
+    const filename = `poster_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+
+    fs.writeFileSync(filePath, buffer);
+
+    const imageUrl = `/uploads/${filename}`;
+    return res.json({ url: imageUrl });
+  } catch (err: any) {
+    console.error("Error al guardar la imagen subida:", err);
+    return res.status(500).json({ error: "Fallo al guardar la imagen" });
+  }
+});
 
 // Setup Vite and Listen only when not on Vercel
 async function setupViteAndListen() {
