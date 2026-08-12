@@ -359,7 +359,6 @@ export default function App() {
   const hoverScrollVelRef = useRef<number>(0);
   const hoverLoopActiveRef = useRef<boolean>(false);
   const [isHoverScrolling, setIsHoverScrolling] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const startHoverScrollLoop = () => {
     if (hoverLoopActiveRef.current) return;
@@ -838,33 +837,11 @@ export default function App() {
   };
 
   const handleManualPosterUpdate = async (newPoster: string) => {
-    let posterToSave = newPoster;
-    if (newPoster && newPoster.startsWith('data:image/')) {
-      setIsUploadingImage(true);
-      try {
-        const response = await fetch("/api/upload-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: newPoster })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.url) {
-            posterToSave = data.url;
-          }
-        }
-      } catch (err) {
-        console.warn("No se pudo convertir base64 a URL corta:", err);
-      } finally {
-        setIsUploadingImage(false);
-      }
-    }
-
     if (isAddingNew || isEditing) {
-      setEditForm((prev: any) => ({ ...prev, poster: posterToSave }));
+      setEditForm({ ...editForm, poster: newPoster });
     } else if (selectedMovie) {
       const updatedAt = new Date().toISOString();
-      const payload = { ...selectedMovie, poster: posterToSave, updatedAt };
+      const payload = { ...selectedMovie, poster: newPoster, updatedAt };
       setSelectedMovie(payload);
       
       try {
@@ -879,11 +856,10 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsUploadingImage(true);
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = async () => {
+      img.onload = () => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
@@ -907,36 +883,13 @@ export default function App() {
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
           const base64 = canvas.toDataURL('image/jpeg', 0.8);
-
-          try {
-            const response = await fetch("/api/upload-image", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ image: base64 })
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              if (data.url) {
-                handleManualPosterUpdate(data.url);
-                setIsUploadingImage(false);
-                return;
-              }
-            }
-          } catch (err) {
-            console.warn("Fallo en la subida al servidor, usando imagen comprimida:", err);
-          }
-
           handleManualPosterUpdate(base64);
         }
-        setIsUploadingImage(false);
       };
-      img.onerror = () => setIsUploadingImage(false);
       if (event.target?.result) {
         img.src = event.target.result as string;
       }
     };
-    reader.onerror = () => setIsUploadingImage(false);
     reader.readAsDataURL(file);
     e.target.value = null;
   };
@@ -1211,35 +1164,6 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly]);
-
-  // Auto-migración silenciosa de imágenes base64 preexistentes a URLs cortas del servidor
-  useEffect(() => {
-    if (!isAdmin || movies.length === 0) return;
-    const convertExistingBase64 = async () => {
-      const base64Movies = movies.filter(m => m.poster && m.poster.startsWith('data:image/'));
-      if (base64Movies.length === 0) return;
-
-      for (const m of base64Movies) {
-        try {
-          const res = await fetch("/api/upload-image", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: m.poster })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.url) {
-              const updatedMovie = { ...m, poster: data.url, updatedAt: new Date().toISOString() };
-              await upsertMovie(updatedMovie);
-            }
-          }
-        } catch (err) {
-          console.warn("Fallo al migrar póster base64 de:", m.title, err);
-        }
-      }
-    };
-    convertExistingBase64();
-  }, [movies.length, isAdmin]);
 
   const dynamicGenres = useMemo(() => {
     // 21 categorías + Todos + Clásico + Mexicanas como se solicita
@@ -2404,13 +2328,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       className="flex-1 bg-transparent border-b border-t-0 border-l-0 border-r-0 border-white/20 focus:border-[#b41d1d] py-2 px-1 text-xs font-sans text-zinc-300 outline-none transition-colors" 
                       placeholder="Pegar dirección del póster..."
                     />
-                    <label className={`bg-white/5 hover:bg-[#b41d1d]/15 border border-white/10 text-white p-3 rounded-lg flex items-center justify-center cursor-pointer transition-all shrink-0 ${isUploadingImage ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                      {isUploadingImage ? (
-                        <Loader2 size={14} className="animate-spin text-[#b41d1d]" />
-                      ) : (
-                        <Upload size={14} />
-                      )}
-                      <input type="file" accept="image/*" className="hidden" disabled={isUploadingImage} onChange={handleImageUpload} />
+                    <label className="bg-white/5 hover:bg-[#b41d1d]/15 border border-white/10 text-white p-3 rounded-lg flex items-center justify-center cursor-pointer transition-all shrink-0">
+                      <Upload size={14} />
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                     </label>
                   </div>
                 </div>
