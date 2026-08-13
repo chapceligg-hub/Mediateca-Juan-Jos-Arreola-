@@ -6,7 +6,7 @@ import {
   Zap, ImageIcon, Landmark, History as HistoryIcon, Type, ChevronRight, ChevronLeft, ChevronDown, Globe, 
   DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload, Download,
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
-  Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, BookOpen, Shield, Orbit, Flag, Activity,
+  Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
   Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain
 } from 'lucide-react';
 import { 
@@ -343,6 +343,7 @@ export default function App() {
   const [selectedGenre, setSelectedGenre] = useState("Todos");
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [selectedYearRange, setSelectedYearRange] = useState<{ label: string, start: number, end: number } | null>(null);
+  const [isDayMode, setIsDayMode] = useState(false);
   
   // Director Filter premium curate state
   const [isDirectorFilterActive, setIsDirectorFilterActive] = useState(false);
@@ -1616,7 +1617,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
   }, [selectedGenre, currentPage, selectedLetter, selectedYearRange, showHistoryOnly, showReviewOnly, searchTerm]);
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-[#0a0a0a] text-zinc-100 font-sans selection:bg-[var(--color-brand-main)]/40 overflow-hidden antialiased scroll-smooth">
+    <div className={`flex flex-col md:flex-row h-screen font-sans selection:bg-[var(--color-brand-main)]/40 overflow-hidden antialiased scroll-smooth transition-colors duration-500 ${isDayMode ? 'bg-zinc-100 text-zinc-900 day-mode' : 'bg-[#0a0a0a] text-zinc-100'}`}>
       
       {/* SIDEBAR */}
       {isMobileMenuOpen && (
@@ -1625,8 +1626,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       <aside className={`w-72 bg-[#050505] border-r border-white/5 flex-col h-full shrink-0 z-[70] transition-transform duration-300 ${isFavoriteOfMonthActive ? 'hidden' : isMobileMenuOpen ? 'fixed left-0 translate-x-0 flex' : 'fixed -translate-x-full md:relative md:translate-x-0 md:flex'}`}>
         <div className="p-6 flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
           
-          {/* Logo */}
-          <div className="flex items-center justify-between border-b border-white/[0.08] pb-6 mb-2">
+          {/* Logo & Theme Toggle */}
+          <div className="flex items-center justify-between border-b border-white/[0.08] pb-6 mb-2 relative">
             <div className="flex flex-col items-center cursor-pointer group mx-auto w-[140px]" onClick={() => { window.scrollTo({top: 0, behavior: 'smooth'}); clearFiltersAndSearch(); }}>
               <img 
                 src="/android-chrome-512x512.png" 
@@ -1637,8 +1638,15 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 }}
               />
             </div>
-            <button className="md:hidden text-white absolute right-8 top-8" onClick={() => setIsMobileMenuOpen(false)}>
-              <X size={28} />
+            <button 
+              onClick={() => setIsDayMode(!isDayMode)} 
+              className="absolute left-0 top-0 p-2 border border-white/10 hover:bg-white/10 rounded-xl transition-all text-amber-400 hover:scale-105"
+              title={isDayMode ? "Cambiar a Modo Noche" : "Cambiar a Modo Día (Temporal)"}
+            >
+              {isDayMode ? <Moon size={16} className="text-indigo-500" /> : <Sun size={16} className="text-amber-400" />}
+            </button>
+            <button className="md:hidden text-white absolute right-2 top-0" onClick={() => setIsMobileMenuOpen(false)}>
+              <X size={24} />
             </button>
           </div>
 
@@ -1924,7 +1932,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
              }}
            />
          </div>
-         <div className="flex gap-2">
+         <div className="flex gap-2 items-center">
+            <button 
+              onClick={() => setIsDayMode(!isDayMode)} 
+              className="p-2 border border-white/10 rounded-xl text-amber-400 hover:bg-white/5 transition-colors"
+              title={isDayMode ? "Modo Noche" : "Modo Día"}
+            >
+              {isDayMode ? <Moon size={18} className="text-indigo-500" /> : <Sun size={18} />}
+            </button>
             {isAdmin && <button onClick={() => setShowPasteModal(true)} className="p-2 border border-white/10 rounded-xl"><ClipboardPaste size={18}/></button>}
             {isAdmin && <button onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false }); setSyncInput(""); setIsAddingNew(true); }} className="p-2 bg-[#b91c1c] hover:bg-[#dc2626] transition-colors text-white rounded-xl"><Plus size={18}/></button>}
             <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 border border-white/10 rounded-xl text-zinc-400 hover:text-white"><Menu size={18}/></button>

@@ -352,3 +352,490 @@
     animation: infinite-scroll 45s linear infinite;
   }
 }
+
+/* ==========================================================================
+   MODO DÍA (LIGHT MODE) - DISEÑO OFICIAL Y DE ALTO CONTEXTO (RESTFUL & CLEAN)
+   ========================================================================== */
+
+.day-mode {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Base Layout Containers */
+.day-mode aside {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.03) !important;
+}
+
+.day-mode main {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.day-mode nav,
+.day-mode header {
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Background Containers, Cards & Section Overrides */
+.day-mode .bg-\[\#0a0a0a\],
+.day-mode .bg-\[\#050505\],
+.day-mode .bg-\[\#030303\],
+.day-mode .bg-\[\#08080a\],
+.day-mode .bg-\[\#0c0c0e\],
+.day-mode .bg-\[\#121215\],
+.day-mode .bg-\[\#08080c\],
+.day-mode .bg-\[\#050507\]\/95,
+.day-mode .bg-zinc-900,
+.day-mode .bg-zinc-950,
+.day-mode .bg-zinc-900\/80,
+.day-mode .bg-zinc-900\/90,
+.day-mode .bg-black\/95,
+.day-mode .bg-black\/90,
+.day-mode .bg-black\/80 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Borders & Dividers */
+.day-mode .border-white\/5,
+.day-mode .border-white\/10,
+.day-mode .border-white\/20,
+.day-mode .border-white\/\[0\.04\],
+.day-mode .border-white\/\[0\.06\],
+.day-mode .border-white\/\[0\.08\],
+.day-mode .border-white\/\[0\.15\],
+.day-mode .border-zinc-800,
+.day-mode .border-zinc-800\/80 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Typography Colors */
+.day-mode h1, 
+.day-mode h2, 
+.day-mode h3, 
+.day-mode h4, 
+.day-mode h5, 
+.day-mode h6 {
+  color: #0f172a !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+.day-mode .text-white {
+  color: #0f172a !important;
+}
+
+.day-mode .text-zinc-100,
+.day-mode .text-zinc-200,
+.day-mode .text-zinc-300 {
+  color: #1e293b !important;
+  text-shadow: none !important;
+}
+
+.day-mode .text-zinc-400,
+.day-mode .text-zinc-500 {
+  color: #475569 !important;
+  text-shadow: none !important;
+}
+
+.day-mode .text-zinc-600,
+.day-mode .text-zinc-700 {
+  color: #64748b !important;
+}
+
+/* Sidebar Section Headers & Titles */
+.day-mode aside span.uppercase {
+  color: #64748b !important;
+}
+
+/* Sidebar Items & Accordion Buttons */
+.day-mode aside button {
+  color: #334155 !important;
+}
+
+.day-mode aside button:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.day-mode aside button svg {
+  color: #64748b !important;
+}
+
+.day-mode aside button:hover svg {
+  color: #b91c1c !important;
+}
+
+/* Active Sidebar Navigation Items */
+.day-mode aside button.bg-white\/\[0\.04\],
+.day-mode aside button.bg-\[rgba\(229\,62\,62\,0\.15\)\],
+.day-mode aside button.bg-\[rgba\(229\,62\,62\,0\.12\)\] {
+  background-color: #fef2f2 !important;
+  border-left-color: #b91c1c !important;
+  border-color: #fecaca !important;
+  color: #991b1b !important;
+}
+
+.day-mode aside button.bg-white\/\[0\.04\] svg,
+.day-mode aside button.bg-\[rgba\(229\,62\,62\,0\.15\)\] svg,
+.day-mode aside button.bg-\[rgba\(229\,62\,62\,0\.12\)\] svg {
+  color: #b91c1c !important;
+}
+
+/* Alphabet & Year Filter Pills */
+.day-mode aside button.bg-white.text-black {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+
+.day-mode aside button.text-zinc-400 {
+  color: #475569 !important;
+}
+
+.day-mode aside button.text-zinc-400:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Sidebar Search Input Component & Beam Fix */
+.day-mode #sidebar-search-input {
+  color: #0f172a !important;
+  background-color: #f8fafc !important;
+}
+
+.day-mode #sidebar-search-input::placeholder {
+  color: #64748b !important;
+}
+
+.day-mode .group:has(#sidebar-search-input) .bg-\[\#08080a\],
+.day-mode .group:has(#sidebar-search-input) .bg-\[\#0c0c0e\] {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .group:has(#sidebar-search-input) svg {
+  color: #64748b !important;
+}
+
+.day-mode .group:has(#sidebar-search-input):focus-within svg {
+  color: #b91c1c !important;
+}
+
+/* Disable harsh spinning dark laser beams on search inputs in Day Mode */
+.day-mode .group:has(#sidebar-search-input) .bg-\[conic-gradient\],
+.day-mode .group:has(#sidebar-search-input) .animate-\[spin_2\.5s_linear_infinite\] {
+  display: none !important;
+  opacity: 0 !important;
+}
+
+/* Main Catalog Category Title (Stranger Title Text) */
+.day-mode .stranger-title-text {
+  background-image: none !important;
+  background: none !important;
+  -webkit-text-fill-color: #0f172a !important;
+  color: #0f172a !important;
+  filter: none !important;
+  drop-shadow: none !important;
+  text-shadow: none !important;
+}
+
+.day-mode .animate-cinematic-subtitle {
+  color: #475569 !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
+
+/* Movie Cards */
+.day-mode .group\/card,
+.day-mode article,
+.day-mode .aspect-\[2\/3\] {
+  border-color: #cbd5e1 !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05) !important;
+}
+
+.day-mode .aspect-\[2\/3\]:hover {
+  border-color: #94a3b8 !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1) !important;
+}
+
+.day-mode .card-hover-gradient {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 50%, rgba(15, 23, 42, 0.75) 100%) !important;
+}
+
+/* Rating badge inside card hover */
+.day-mode .reveal-on-hover .bg-black\/40 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .reveal-on-hover .bg-black\/40 span {
+  color: #0f172a !important;
+}
+
+/* Inputs, Textareas and Select Controls */
+.day-mode input,
+.day-mode textarea,
+.day-mode select {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+.day-mode input::placeholder,
+.day-mode textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Modals & Backdrop */
+.day-mode .fixed.inset-0.bg-black\/98,
+.day-mode .fixed.inset-0.bg-black\/90,
+.day-mode .fixed.inset-0.bg-black\/80,
+.day-mode .fixed.inset-0.bg-black\/70 {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(6px) !important;
+}
+
+.day-mode .fixed .bg-zinc-950\/80,
+.day-mode .fixed .bg-\[\#050505\],
+.day-mode .fixed .bg-\[\#0a0a0a\],
+.day-mode .fixed .bg-zinc-900 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Keep Brand Colored Buttons White Text */
+.day-mode button.bg-\[\#b91c1c\],
+.day-mode button.bg-\[\#b41d1d\],
+.day-mode button.bg-red-600,
+.day-mode button.bg-red-700,
+.day-mode .bg-\[\#b91c1c\] *,
+.day-mode .bg-red-600 *,
+.day-mode .badge-white-text {
+  color: #ffffff !important;
+}
+
+/* Secondary / Cancel buttons in modals */
+.day-mode button.border-white\/10,
+.day-mode button.border-white\/20 {
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+.day-mode button.border-white\/10:hover,
+.day-mode button.border-white\/20:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* ==========================================================================
+   MODO DÍA (LIGHT MODE) - FICHA TÉCNICA Y MODAL DE DETALLE DE PELÍCULA
+   ========================================================================== */
+
+/* Main Modal Container & Sidebar */
+.day-mode .fixed .bg-\[\#050507\],
+.day-mode .fixed .bg-\[\#09090b\]\/80,
+.day-mode .fixed .bg-\[\#050505\] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Modal Close Button */
+.day-mode .fixed button.bg-neutral-900\/60 {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .fixed button.bg-neutral-900\/60:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #b41d1d !important;
+}
+
+/* Modal Poster Container */
+.day-mode .fixed .bg-black\/\[0\.1\] {
+  background-color: #f8fafc !important;
+}
+
+/* Poster Manual Bar in Modal */
+.day-mode .fixed .bg-black\/40 {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+.day-mode .fixed .bg-black\/40 span {
+  color: #475569 !important;
+}
+
+/* Badges (Genre Pills & Clock) */
+.day-mode .fixed span.bg-neutral-950 {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #b41d1d !important;
+}
+
+.day-mode .fixed span.bg-white\/5 {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .fixed span.bg-white\/5 svg {
+  color: #64748b !important;
+}
+
+/* Rating Unit Box in Modal */
+.day-mode .fixed .bg-white\/\[0\.03\] {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .fixed .bg-white\/\[0\.03\] span {
+  color: #0f172a !important;
+}
+
+.day-mode .fixed .bg-white\/\[0\.03\] span.text-zinc-500 {
+  color: #64748b !important;
+}
+
+/* Info Cards (Dirección, Año, País, Clasificación) in Modal */
+.day-mode .fixed .group.bg-black\/60 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03) !important;
+}
+
+.day-mode .fixed .group.bg-black\/60:hover {
+  background-color: #ffffff !important;
+  border-color: #b41d1d !important;
+  box-shadow: 0 8px 16px rgba(180, 29, 29, 0.12) !important;
+}
+
+.day-mode .fixed .group.bg-black\/60 span.text-zinc-400 {
+  color: #64748b !important;
+}
+
+.day-mode .fixed .group.bg-black\/60 span.text-white {
+  color: #0f172a !important;
+}
+
+.day-mode .fixed .group.bg-black\/60 svg {
+  color: #64748b !important;
+}
+
+/* Synopsis Section */
+.day-mode .fixed section h4 {
+  color: #475569 !important;
+}
+
+.day-mode .fixed section h4 div {
+  background-color: #cbd5e1 !important;
+}
+
+.day-mode .fixed section p {
+  color: #1e293b !important;
+}
+
+/* Reviews & Awards Boxes in Modal */
+.day-mode .fixed .bg-white\/5.border-l-\[\#b41d1d\] {
+  background-color: #fef2f2 !important;
+  border-color: #fecaca !important;
+  border-left-color: #b41d1d !important;
+}
+
+.day-mode .fixed .bg-white\/5.border-l-\[\#f59e0b\] {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+  border-left-color: #f59e0b !important;
+}
+
+.day-mode .fixed .bg-white\/5 h5 {
+  color: #334155 !important;
+}
+
+.day-mode .fixed .bg-white\/5 p {
+  color: #1e293b !important;
+}
+
+/* Tech Specs Grid Labels and Values */
+.day-mode .fixed .grid span.text-zinc-600 {
+  color: #64748b !important;
+}
+
+.day-mode .fixed .grid span.text-zinc-400 {
+  color: #1e293b !important;
+}
+
+/* Clickable Cast Buttons in Modal */
+.day-mode .fixed button.bg-white\/\[0\.07\] {
+  background-color: #f1f5f9 !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .fixed button.bg-white\/\[0\.07\]:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+}
+
+.day-mode .fixed button.bg-white\/\[0\.07\] svg {
+  color: #64748b !important;
+}
+
+/* Smart Extraction & Edit Fields in Modal */
+.day-mode .fixed .bg-white\/\[0\.01\] {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .fixed .bg-white\/\[0\.02\],
+.day-mode .fixed .group .bg-white\/\[0\.02\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+
+.day-mode .fixed .bg-white\/\[0\.02\] label span,
+.day-mode .fixed .group label span {
+  color: #64748b !important;
+}
+
+.day-mode .fixed .bg-white\/\[0\.02\] textarea,
+.day-mode .fixed input,
+.day-mode .fixed textarea {
+  color: #0f172a !important;
+}
+
+.day-mode .fixed .bg-white\/\[0\.02\] textarea::placeholder,
+.day-mode .fixed input::placeholder,
+.day-mode .fixed textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Custom Scrollbars in Day Mode */
+.day-mode ::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+}
+.day-mode ::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 4px !important;
+}
+.day-mode ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8 !important;
+}
+
+
