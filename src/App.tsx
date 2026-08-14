@@ -1664,7 +1664,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
             {/* Main visually non-clipped container to allow overflow of shadow, has border on idle but transparent on focus to show laser behind it */}
             <div className="relative w-full bg-[#08080a] group-focus-within:bg-transparent border border-white/[0.06] group-focus-within:border-transparent rounded-2xl transition-all duration-300 group-focus-within:shadow-[0_0_30px_rgba(229,62,62,0.45)] z-10 flex items-center">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400/80 group-focus-within:text-[#e53e3e] group-focus-within:scale-110 transition-all duration-300 ease-out z-20" />
+              <Search className="search-icon-sidebar absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400/80 group-focus-within:text-[#e53e3e] group-focus-within:scale-110 transition-all duration-300 ease-out z-30" />
               <input 
                 id="sidebar-search-input"
                 type="text" 
@@ -2141,11 +2141,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
       {/* GALERÍA PAGINADA (CUADRÍCULA 7x3) */}
       {!isDirectorFilterActive && !isFavoriteOfMonthActive && (
-        <div className="relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-2">
+        <div className={`relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-2 ${selectedGenre !== "Todos" ? "category-section-view" : "archivo-section-view"}`}>
         
         {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
         {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
-          <div key={selectedGenre} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
+          <div id="category-header-section" key={selectedGenre} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
 
             <h2 className="relative z-10 text-[36px] md:text-[64px] flex items-center gap-4 text-white drop-shadow-[0_10px_20px_rgba(0,0,0,0.95)]">
               {/* Dynamic elegant filmmaker laser beam with a non-distracting slow shimmer */}
@@ -2295,7 +2295,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
       {/* MODAL DETALLES / CATALOGACIÓN */}
       {(selectedMovie || isAddingNew) && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/98 backdrop-blur-3xl animate-in fade-in duration-300 overflow-y-auto">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/[0.45] backdrop-blur-sm animate-in fade-in duration-300 overflow-y-auto">
           <div className={`bg-[#050507] border border-[#b41d1d]/20 w-full max-w-7xl rounded-2xl overflow-hidden relative shadow-[0_30px_100px_rgba(0,0,0,0.95),0_0_80px_rgba(180,29,29,0.15)] flex flex-col ${(isEditing || isAddingNew) ? 'md:flex-row-reverse' : 'md:flex-row'} max-h-[95vh] my-auto animate-in zoom-in-95 duration-500`}>
             <button 
               onClick={() => { setSelectedMovie(null); setIsAddingNew(false); setIsEditing(false); setIsDeleting(false); }} 
@@ -2899,8 +2899,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   <ChevronRight size={18} />
                 </button>
               </div>
-              <p className="text-[10px] md:text-xs font-bold text-zinc-500 uppercase tracking-[0.25em] mt-2 select-none">
-                TOTAL: <span className="text-white font-black">{filteredMovies.length}</span> PELÍCULAS • PÁGINA <span className="text-[#b41d1d] font-black">{currentPage}</span> DE <span className="text-zinc-400 font-extrabold">{totalPages}</span>
+              <p className={`pagination-summary-text text-[10px] md:text-xs font-bold uppercase tracking-[0.25em] mt-3 select-none ${isDayMode ? 'text-slate-600' : 'text-zinc-500'}`}>
+                TOTAL: <span className={`total-movies-count font-black ${isDayMode ? 'text-black' : 'text-white'}`}>{filteredMovies.length}</span> PELÍCULAS • PÁGINA <span className="current-page-num text-[#b41d1d] font-black">{currentPage}</span> DE <span className={`total-pages-count font-extrabold ${isDayMode ? 'text-black' : 'text-zinc-400'}`}>{totalPages}</span>
               </p>
             </div>
           )}
@@ -3515,7 +3515,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
       {/* FAVORITAS DEL MES */}
       {isFavoriteOfMonthActive && (
-        <div className="relative z-10 w-full min-h-screen px-0 pt-0 pb-10 md:pb-16 select-none animate-in fade-in duration-1000 bg-transparent overflow-hidden">
+        <div id="fav-of-month-section" className="relative z-10 w-full min-h-screen px-0 pt-0 pb-10 md:pb-16 select-none animate-in fade-in duration-1000 bg-transparent overflow-hidden">
           
           <div className="relative z-10 max-w-[100vw] overflow-hidden flex flex-col items-center pt-2 sm:pt-3 md:pt-4">
             

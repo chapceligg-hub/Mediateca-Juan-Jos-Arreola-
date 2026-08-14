@@ -507,7 +507,7 @@
 /* Sidebar Search Input Component & Beam Fix */
 .day-mode #sidebar-search-input {
   color: #0f172a !important;
-  background-color: #f8fafc !important;
+  background-color: transparent !important;
 }
 
 .day-mode #sidebar-search-input::placeholder {
@@ -515,17 +515,26 @@
 }
 
 .day-mode .group:has(#sidebar-search-input) .bg-\[\#08080a\],
-.day-mode .group:has(#sidebar-search-input) .bg-\[\#0c0c0e\] {
+.day-mode .group:has(#sidebar-search-input) .bg-\[\#0c0c0e\],
+.day-mode div:has(> #sidebar-search-input) {
   background-color: #f8fafc !important;
   border-color: #cbd5e1 !important;
 }
 
-.day-mode .group:has(#sidebar-search-input) svg {
-  color: #64748b !important;
+.day-mode .search-icon-sidebar,
+.day-mode .group:has(#sidebar-search-input) svg,
+.day-mode div:has(#sidebar-search-input) svg {
+  color: #475569 !important;
+  stroke: #475569 !important;
+  z-index: 30 !important;
+  opacity: 1 !important;
 }
 
-.day-mode .group:has(#sidebar-search-input):focus-within svg {
+.day-mode .group:has(#sidebar-search-input):focus-within .search-icon-sidebar,
+.day-mode .group:has(#sidebar-search-input):focus-within svg,
+.day-mode div:has(#sidebar-search-input):focus-within svg {
   color: #b91c1c !important;
+  stroke: #b91c1c !important;
 }
 
 /* Disable harsh spinning dark laser beams on search inputs in Day Mode */
@@ -535,21 +544,28 @@
   opacity: 0 !important;
 }
 
-/* Main Catalog Category Title (Stranger Title Text) */
+/* Main Catalog Category Title (Stranger Title Text) - Mantiene su estilo cinematográfico oscuro en Modo Día */
 .day-mode .stranger-title-text {
-  background-image: none !important;
-  background: none !important;
-  -webkit-text-fill-color: #0f172a !important;
-  color: #0f172a !important;
-  filter: none !important;
-  drop-shadow: none !important;
-  text-shadow: none !important;
+  font-family: var(--font-barlow-condensed), "Inter", sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 0.85;
+  background-image: 
+    linear-gradient(110deg, transparent 35%, rgba(220, 38, 38, 0) 40%, rgba(239, 68, 68, 0.95) 48%, rgba(255, 77, 77, 1) 50%, rgba(239, 68, 68, 0.95) 52%, rgba(220, 38, 38, 0) 60%, transparent 65%),
+    linear-gradient(to bottom, #ffffff 0%, #ffffff 48%, #e4e4e7 49%, #a1a1aa 100%) !important;
+  background-size: 260% 100%, 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: 220% 0, 0 0 !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  filter: drop-shadow(0 6px 4px rgba(0,0,0,0.95)) drop-shadow(0 1px 1px rgba(0,0,0,0.85)) !important;
 }
 
 .day-mode .animate-cinematic-subtitle {
-  color: #475569 !important;
-  filter: none !important;
-  text-shadow: none !important;
+  color: #a1a1aa !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8) !important;
 }
 
 /* Movie Cards */
@@ -837,5 +853,575 @@
 .day-mode ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8 !important;
 }
+
+/* ==========================================================================
+   MODO DÍA (LIGHT MODE) - SECCIÓN DE PAGINACIÓN Y BOLETOS CINEMATOGRÁFICOS
+   ========================================================================== */
+
+/* Buttons Prev / Next */
+.day-mode button.bg-zinc-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05) !important;
+}
+
+.day-mode button.bg-zinc-900\/60:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+.day-mode button.bg-zinc-900\/60:disabled {
+  opacity: 0.3 !important;
+  background-color: #f8fafc !important;
+}
+
+/* ==========================================================================
+   BOLETOS DE PAGINACIÓN: NO AFECTADOS POR MODO DÍA (BOLETO OSCURO ORIGINAL)
+   Solo se adapta el texto sobre los boletos para máxima nitidez y legibilidad
+   ========================================================================== */
+
+/* Active Ticket Text Overlay in Day Mode */
+.day-mode div:has(.cinema-ticket-glowing) span.text-white {
+  color: #ffffff !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95) !important;
+  font-weight: 900 !important;
+}
+
+.day-mode div:has(.cinema-ticket-glowing) span.text-zinc-400 {
+  color: #e4e4e7 !important;
+  opacity: 0.9 !important;
+  font-weight: 800 !important;
+}
+
+.day-mode div:has(.cinema-ticket-glowing) span.text-\[\#ef4444\] {
+  color: #f87171 !important;
+  opacity: 1 !important;
+  font-weight: 800 !important;
+}
+
+/* Inactive Ticket Text Overlay in Day Mode */
+.day-mode button svg[viewBox="0 0 72 40"] + div span {
+  color: #e4e4e7 !important;
+  opacity: 0.85 !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+}
+
+.day-mode button svg[viewBox="0 0 72 40"] + div span.text-zinc-500 {
+  color: #f4f4f5 !important;
+  opacity: 0.9 !important;
+  font-weight: 700 !important;
+}
+
+.day-mode button:hover svg[viewBox="0 0 72 40"] + div span {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* Pagination Text Summary Below (Total Películas y Páginas) - DYNAMIC DARK/DAY MODE */
+.day-mode .pagination-summary-text,
+.day-mode footer p.pagination-summary-text {
+  color: #3b5166 !important;
+  font-weight: 800 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  display: block !important;
+}
+
+.day-mode .pagination-summary-text .total-movies-count,
+.day-mode .total-movies-count,
+.day-mode span.total-movies-count {
+  color: #000000 !important;
+  font-weight: 900 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+}
+
+.day-mode .pagination-summary-text .current-page-num,
+.day-mode .current-page-num,
+.day-mode span.current-page-num {
+  color: #b41d1d !important;
+  font-weight: 900 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+}
+
+.day-mode .pagination-summary-text .total-pages-count,
+.day-mode .total-pages-count,
+.day-mode span.total-pages-count {
+  color: #000000 !important;
+  font-weight: 900 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ==========================================================================
+   MODO DÍA (LIGHT MODE) - INSIGNIAS Y ETIQUETAS EN SECCIÓN ARCHIVO
+   ========================================================================== */
+
+/* Badge 'CLÁSICO' sobre el póster en Archivo */
+.day-mode .archivo-section-view .aspect-\[2\/3\] .absolute.top-3.left-3 {
+  background-color: rgba(15, 23, 42, 0.88) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  backdrop-filter: blur(8px) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25) !important;
+  font-weight: 900 !important;
+}
+
+.day-mode .archivo-section-view .aspect-\[2\/3\] .absolute.top-3.left-3 svg {
+  color: #fbbf24 !important; /* Ámbar/Dorado en Clásico */
+}
+
+/* Badge 'REVISAR' sobre el póster en Archivo */
+.day-mode .archivo-section-view .aspect-\[2\/3\] .absolute.top-3.left-3.bg-\[var\(--color-brand-main\)\]\/90,
+.day-mode .archivo-section-view .aspect-\[2\/3\] .absolute.top-3.left-3.shadow-\[0_0_20px_rgba\(179\,5\,0\,0\.5\)\] {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+  border: 1px solid #991b1b !important;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4) !important;
+  font-weight: 900 !important;
+}
+
+.day-mode .archivo-section-view .aspect-\[2\/3\] .absolute.top-3.left-3.bg-\[var\(--color-brand-main\)\]\/90 svg,
+.day-mode .archivo-section-view .aspect-\[2\/3\] .absolute.top-3.left-3.shadow-\[0_0_20px_rgba\(179\,5\,0\,0\.5\)\] svg {
+  color: #ffffff !important;
+}
+
+/* Título de la película debajo del póster (Solo en Archivo) */
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div h3 {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  text-shadow: none !important;
+}
+
+/* Año y Director debajo del póster (Solo en Archivo) */
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div div {
+  color: #475569 !important;
+  font-weight: 600 !important;
+  text-shadow: none !important;
+}
+
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div div span.bg-zinc-500 {
+  background-color: #94a3b8 !important;
+}
+
+/* ==========================================================================
+   EXCLUSIÓN MODO DÍA - APARTADO DE CATEGORÍAS (CONSERVA ESTILO OSCURO / NOCTURNO)
+   ========================================================================== */
+
+.day-mode .category-section-view .aspect-\[2\/3\] + div h3 {
+  color: #f4f4f5 !important;
+  font-weight: 500 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+.day-mode .category-section-view .aspect-\[2\/3\] + div div {
+  color: #a1a1aa !important;
+  font-weight: 500 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+}
+
+.day-mode .category-section-view .aspect-\[2\/3\] + div div span.bg-zinc-500 {
+  background-color: #71717a !important;
+}
+
+/* ==========================================================================
+   MODO DÍA (LIGHT MODE) - ACCIONES Y BOTONES DEL MODAL (REVISIÓN Y ESTRELLA)
+   ========================================================================== */
+
+/* Star Toggle Switch (Favoritas del Mes) */
+.day-mode button[title*="Favoritas del Mes"] {
+  background-color: #e2e8f0 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+.day-mode button[title*="Favoritas del Mes"] > div {
+  background-color: #ffffff !important;
+  color: #64748b !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) !important;
+}
+
+.day-mode button[title*="Favoritas del Mes"] > div.bg-\[\#b41d1d\] {
+  background-color: #b41d1d !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(180, 29, 29, 0.35) !important;
+}
+
+/* Review Button (MARCAR / QUITAR REVISIÓN) */
+.day-mode .group\/btn-review {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05) !important;
+}
+
+.day-mode .group\/btn-review .animate-\[spin_4s_linear_infinite\] {
+  display: none !important;
+}
+
+/* Inner span of Review button */
+.day-mode .group\/btn-review span.inset-\[1px\] {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+.day-mode .group\/btn-review span.inset-\[1px\]:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+/* QUITAR REVISIÓN Active State (When selectedMovie.needsReview is true) */
+.day-mode .group\/btn-review span.bg-\[\#b41d1d\] {
+  background-color: #fef2f2 !important;
+  border: 1.5px solid #fca5a5 !important;
+  color: #991b1b !important;
+}
+
+.day-mode .group\/btn-review span.bg-\[\#b41d1d\]:hover {
+  background-color: #fee2e2 !important;
+  border-color: #f87171 !important;
+  color: #7f1d1d !important;
+}
+
+.day-mode .group\/btn-review span.bg-\[\#b41d1d\] svg,
+.day-mode .group\/btn-review span.bg-\[\#b41d1d\] span {
+  color: #991b1b !important;
+}
+
+/* Edit, Copy, Delete Buttons in Modal */
+.day-mode .group\/btn-edit {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05) !important;
+}
+
+.day-mode .group\/btn-edit .animate-\[spin_4s_linear_infinite\] {
+  display: none !important;
+}
+
+.day-mode .group\/btn-edit span.inset-\[1px\] {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+.day-mode .group\/btn-edit span.inset-\[1px\]:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+.day-mode .fixed button.h-14.bg-\[\#0c0c0e\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+}
+
+.day-mode .fixed button.h-14.bg-\[\#0c0c0e\]:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+/* ==========================================================================
+   MODO DÍA (LIGHT MODE) - FILTRO DEL DIRECTOR / DIAL DEL DIRECTOR
+   ========================================================================== */
+
+/* Outer Curator Box Container */
+.day-mode div:has(> .max-w-5xl) .max-w-5xl.bg-black\/40,
+.day-mode .max-w-5xl.bg-black\/40 {
+  background-color: #ffffff !important;
+  background-image: radial-gradient(circle at center, rgba(180, 29, 29, 0.03) 0%, transparent 85%) !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Header Text in Director Filter */
+.day-mode .max-w-5xl h3 {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+.day-mode .max-w-5xl p.text-neutral-400 {
+  color: #475569 !important;
+}
+
+/* Numbered Step Headings (1. ¿CON QUIÉN...?, 2. ¿QUÉ RITMO...?, etc.) */
+.day-mode .max-w-5xl .text-\[10px\].tracking-\[0\.2em\] {
+  color: #475569 !important;
+  font-weight: 700 !important;
+}
+
+/* Option Button Containers (Solo/Duo/Grupo & Ritmo) */
+.day-mode .max-w-5xl .bg-\[\#09090b\]\/60 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Option Buttons Inactive */
+.day-mode .max-w-5xl button.bg-neutral-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+}
+
+.day-mode .max-w-5xl button.bg-neutral-900\/60:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+/* Option Buttons Active */
+.day-mode .max-w-5xl button.bg-neutral-950.border-\[\#b41d1d\] {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #b41d1d !important;
+  box-shadow: 0 4px 12px rgba(180, 29, 29, 0.2) !important;
+}
+
+/* Dropdown Buttons (Género & Época) */
+.day-mode .max-w-5xl button.bg-\[\#09090b\]\/60 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.day-mode .max-w-5xl button.bg-\[\#09090b\]\/60 span {
+  color: #0f172a !important;
+}
+
+/* Floating Dropdown Menus */
+.day-mode .max-w-5xl .bg-neutral-950\/95 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12) !important;
+}
+
+.day-mode .max-w-5xl .bg-neutral-950\/95 button.text-neutral-400 {
+  color: #475569 !important;
+}
+
+.day-mode .max-w-5xl .bg-neutral-950\/95 button.text-neutral-400:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.day-mode .max-w-5xl .bg-neutral-950\/95 button.bg-neutral-950 {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #b41d1d !important;
+}
+
+/* Trigger Column & Clapperboard Button */
+.day-mode .max-w-5xl .border-neutral-800\/60 {
+  border-color: #e2e8f0 !important;
+}
+
+.day-mode .max-w-5xl .bg-neutral-950\/20 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04) !important;
+}
+
+.day-mode .max-w-5xl button:hover .bg-neutral-950\/20,
+.day-mode .max-w-5xl button:hover .bg-neutral-950\/40 {
+  background-color: #f1f5f9 !important;
+  border-color: #b41d1d !important;
+}
+
+/* Clapperboard SVG Colors */
+.day-mode .max-w-5xl svg path[fill="#0c0c0e"] {
+  fill: #ffffff !important;
+}
+
+.day-mode .max-w-5xl svg path[fill="#030303"] {
+  fill: #f1f5f9 !important;
+}
+
+/* Recommendation Search Text "¡BUSCAR RECOMENDACIONES!" */
+.day-mode .recommendation-char-std {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+.day-mode button:hover .recommendation-char-std {
+  color: #b41d1d !important;
+}
+
+/* Curating State Text */
+.day-mode .max-w-5xl .text-neutral-300 {
+  color: #0f172a !important;
+}
+
+.day-mode .max-w-5xl .text-neutral-500 {
+  color: #64748b !important;
+}
+
+/* Top 3 Recommendations Section */
+.day-mode h2.text-[#eeeeee] {
+  color: #0f172a !important;
+}
+
+.day-mode .recommendation-number {
+  color: #cbd5e1 !important;
+  opacity: 0.8 !important;
+  text-shadow: none !important;
+}
+
+/* Recommendation Cards */
+.day-mode div.bg-\[\#050507\].border-neutral-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06) !important;
+}
+
+.day-mode div.bg-\[\#050507\].border-neutral-900\/60:hover {
+  border-color: #b41d1d !important;
+  box-shadow: 0 16px 36px rgba(180, 29, 29, 0.12) !important;
+}
+
+.day-mode div.bg-\[\#050507\] .bg-gradient-to-b.from-\[\#050508\].to-neutral-950 {
+  background-color: #ffffff !important;
+  background-image: none !important;
+}
+
+.day-mode div.bg-\[\#050507\] h3 {
+  color: #0f172a !important;
+}
+
+.day-mode div.bg-\[\#050507\] span.bg-neutral-900\/30 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+}
+
+.day-mode div.bg-\[\#050507\] .text-neutral-400,
+.day-mode div.bg-\[\#050507\] .text-neutral-300 {
+  color: #475569 !important;
+}
+
+.day-mode div.bg-\[\#050507\] .bg-black\/60,
+.day-mode div.bg-\[\#050507\] .bg-neutral-900\/40 {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+/* ==========================================================================
+   EXCLUSIÓN DE MODO DÍA: PELÍCULAS DEL MES (MANTIENE ESTILO OSCURO)
+   ========================================================================== */
+
+.day-mode #fav-of-month-section {
+  background-color: transparent !important;
+  color: #f4f4f5 !important;
+}
+
+.day-mode #fav-of-month-section h2 {
+  color: #ffffff !important;
+  text-shadow: 0 10px 30px rgba(0,0,0,0.9) !important;
+}
+
+.day-mode #fav-of-month-section p {
+  color: #a1a1aa !important;
+}
+
+.day-mode #fav-of-month-section span.text-\[\#b41d1d\] {
+  color: #b41d1d !important;
+}
+
+.day-mode #fav-of-month-section span.text-\[\#DFB15B\]\/90 {
+  color: rgba(223, 177, 91, 0.9) !important;
+}
+
+.day-mode #fav-of-month-section span.text-white {
+  color: #ffffff !important;
+}
+
+.day-mode #fav-of-month-section span.text-white\/75 {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+
+.day-mode #fav-of-month-section span.text-white\/90 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.day-mode #fav-of-month-section span.text-white\/60 {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.day-mode #fav-of-month-section span.text-white\/40 {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.day-mode #fav-of-month-section span.text-zinc-300,
+.day-mode #fav-of-month-section span.text-zinc-400 {
+  color: #d4d4d8 !important;
+}
+
+.day-mode #fav-of-month-section button {
+  color: #ffffff !important;
+}
+
+.day-mode #fav-of-month-section button.bg-zinc-950\/80 {
+  background-color: rgba(9, 9, 11, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: #d4d4d8 !important;
+}
+
+.day-mode #fav-of-month-section button.bg-zinc-950\/80:hover {
+  background-color: rgba(24, 24, 27, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  color: #ffffff !important;
+}
+
+.day-mode #fav-of-month-section button.bg-black\/60 {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+}
+
+.day-mode #fav-of-month-section .aspect-\[2\/3\] {
+  background-color: #0c0c0e !important;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6) !important;
+}
+
+.day-mode #fav-of-month-section .aspect-\[2\/3\].border-2 {
+  border-color: rgba(161, 24, 24, 0.95) !important;
+  box-shadow: 0 0 35px rgba(239, 68, 68, 0.85), inset 0 0 15px rgba(239, 68, 68, 0.4) !important;
+}
+
+.day-mode #fav-of-month-section .aspect-\[2\/3\]:not(.border-2) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.day-mode #fav-of-month-section .bg-black\/60 {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+}
+
+.day-mode #fav-of-month-section .border-white\/20 {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.day-mode #fav-of-month-section .border-white\/15 {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+
+
+
+
 
 
