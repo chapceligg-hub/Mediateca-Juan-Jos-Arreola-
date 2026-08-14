@@ -343,7 +343,22 @@ export default function App() {
   const [selectedGenre, setSelectedGenre] = useState("Todos");
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [selectedYearRange, setSelectedYearRange] = useState<{ label: string, start: number, end: number } | null>(null);
-  const [isDayMode, setIsDayMode] = useState(false);
+  const [isDayMode, setIsDayMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("videoteca_day_mode");
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("videoteca_day_mode", JSON.stringify(isDayMode));
+    } catch (e) {
+      console.error("Error saving day mode preference:", e);
+    }
+  }, [isDayMode]);
   
   // Director Filter premium curate state
   const [isDirectorFilterActive, setIsDirectorFilterActive] = useState(false);
@@ -1572,23 +1587,25 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
     }
   };
 
+  const isFichaOpen = !!selectedMovie || isAddingNew;
+
   const {
     containerRef: genreStripRef,
     handleMouseMove: handleGenreMouseMove,
     handleMouseLeave: handleGenreMouseLeave
-  } = useAutoScroll();
+  } = useAutoScroll(isFichaOpen);
 
   const {
     containerRef: infoBoxesRef,
     handleMouseMove: handleInfoBoxesMouseMove,
     handleMouseLeave: handleInfoBoxesMouseLeave
-  } = useAutoScroll();
+  } = useAutoScroll(isFichaOpen);
 
   const {
     containerRef: mainContentRef,
     handleMouseMove: handleMainMouseMove,
     handleMouseLeave: handleMainMouseLeave
-  } = useAutoScrollVertical();
+  } = useAutoScrollVertical(isFichaOpen);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1598,10 +1615,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
   };
 
   useEffect(() => {
-    if (isDirectorFilterActive || isFavoriteOfMonthActive) {
+    if (isDirectorFilterActive || isFavoriteOfMonthActive || isFichaOpen) {
       handleMainMouseLeave();
+      handleGenreMouseLeave();
+      handleInfoBoxesMouseLeave();
     }
-  }, [isDirectorFilterActive, isFavoriteOfMonthActive]);
+  }, [isDirectorFilterActive, isFavoriteOfMonthActive, isFichaOpen]);
 
   useEffect(() => {
     if (selectedGenre !== prevGenreRef.current) {
@@ -1641,7 +1660,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             <button 
               onClick={() => setIsDayMode(!isDayMode)} 
               className="absolute left-0 top-0 p-2 border border-white/10 hover:bg-white/10 rounded-xl transition-all text-amber-400 hover:scale-105"
-              title={isDayMode ? "Cambiar a Modo Noche" : "Cambiar a Modo Día (Temporal)"}
+              title={isDayMode ? "Cambiar a Modo Noche" : "Cambiar a Modo Día"}
             >
               {isDayMode ? <Moon size={16} className="text-indigo-500" /> : <Sun size={16} className="text-amber-400" />}
             </button>
@@ -1950,7 +1969,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       <main 
         ref={mainContentRef as any}
         onMouseMove={(e) => {
-          if (!isDirectorFilterActive && !isFavoriteOfMonthActive) {
+          if (!isDirectorFilterActive && !isFavoriteOfMonthActive && !isFichaOpen) {
             handleMainMouseMove(e as any);
           } else {
             handleMainMouseLeave();
@@ -2222,10 +2241,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                   <div translate="no" className="flex flex-col gap-1 px-1 notranslate">
                     <h3 className="text-zinc-100 font-medium text-[13px] leading-tight line-clamp-2 group-hover:text-brand-light transition-colors drop-shadow-sm tracking-normal">{toTitleCase(movie.title)}</h3>
-                    <div className="flex items-center text-[11px] tracking-wide gap-2 mt-0.5 text-zinc-400 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                      <span>{movie.year}</span>
-                      <span className="w-1 h-1 rounded-full bg-zinc-500" />
-                      <span className="truncate">{movie.director?.split(',')[0] || "Unknown"}</span>
+                    <div className={`flex items-center text-[11px] tracking-wide gap-2 mt-0.5 font-bold ${isDayMode ? '' : 'text-zinc-400 font-medium drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]'}`}>
+                      <span className={isDayMode ? 'text-[#b41d1d]' : ''}>{movie.year}</span>
+                      <span className={`w-1 h-1 rounded-full ${isDayMode ? 'bg-slate-400' : 'bg-zinc-500'}`} />
+                      <span className={`truncate ${isDayMode ? 'text-slate-900 font-semibold' : ''}`}>{movie.director?.split(',')[0] || "Unknown"}</span>
                     </div>
                   </div>
                 </div>
@@ -2557,7 +2576,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       >
                         {selectedMovie.title}
                       </h2>
-                      <h3 className="font-barlow-condensed text-sm md:text-base text-zinc-400 font-semibold uppercase tracking-[0.25em]">{selectedMovie.originalTitle}</h3>
+                      <h3 className={`font-barlow-condensed text-sm md:text-base font-semibold uppercase tracking-[0.25em] ${isDayMode ? 'text-[#b41d1d]' : 'text-zinc-400'}`}>{selectedMovie.originalTitle}</h3>
                     </div>
 
                     {/* Prominent Rating Unit */}

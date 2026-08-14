@@ -682,6 +682,12 @@
   border-color: #b41d1d !important;
 }
 
+/* Modal Original Title h3 in Day Mode */
+.day-mode .fixed h3.font-barlow-condensed,
+.day-mode .fixed div > h3.font-barlow-condensed {
+  color: #b41d1d !important;
+}
+
 /* Modal Poster Container */
 .day-mode .fixed .bg-black\/\[0\.1\] {
   background-color: #f8fafc !important;
@@ -817,23 +823,62 @@
 .day-mode .fixed .bg-white\/\[0\.01\] {
   background-color: #f8fafc !important;
   border-color: #cbd5e1 !important;
+  transition: all 0.3s ease !important;
 }
 
 .day-mode .fixed .bg-white\/\[0\.02\],
 .day-mode .fixed .group .bg-white\/\[0\.02\] {
   background-color: #ffffff !important;
   border-color: #cbd5e1 !important;
+  transition: all 0.3s ease !important;
+}
+
+.day-mode .fixed .bg-white\/\[0\.02\]:hover,
+.day-mode .fixed .group:hover .bg-white\/\[0\.02\] {
+  border-color: #94a3b8 !important;
+}
+
+/* Icon inside EditField / Input recuadro in day mode - default state */
+.day-mode .fixed .bg-white\/\[0\.02\] svg,
+.day-mode .fixed .group svg {
+  color: #64748b;
+  transition: color 0.3s ease !important;
+  filter: none !important;
+}
+
+/* Focus-within state for recuadros in day mode - Exact parity with Dark Mode */
+.day-mode .fixed .bg-white\/\[0\.02\]:focus-within,
+.day-mode .fixed .group:focus-within .bg-white\/\[0\.02\] {
+  border-color: #b41d1d !important;
+  box-shadow: 0 0 0 1px rgba(180, 29, 29, 0.2) !important;
+  background-color: rgba(180, 29, 29, 0.01) !important;
+}
+
+/* Icon illuminating in RED on focus in day mode (matching dark mode) */
+.day-mode .fixed .bg-white\/\[0\.02\]:focus-within svg,
+.day-mode .fixed .group:focus-within .bg-white\/\[0\.02\] svg,
+.day-mode .fixed .group:focus-within svg {
+  color: #b41d1d !important;
+  filter: none !important;
 }
 
 .day-mode .fixed .bg-white\/\[0\.02\] label span,
 .day-mode .fixed .group label span {
-  color: #64748b !important;
+  color: #64748b;
+  transition: color 0.3s ease;
 }
 
 .day-mode .fixed .bg-white\/\[0\.02\] textarea,
 .day-mode .fixed input,
 .day-mode .fixed textarea {
   color: #0f172a !important;
+}
+
+.day-mode .fixed textarea:focus,
+.day-mode .fixed input:focus {
+  outline: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .day-mode .fixed .bg-white\/\[0\.02\] textarea::placeholder,
@@ -1008,14 +1053,24 @@
   text-shadow: none !important;
 }
 
-/* Año y Director debajo del póster (Solo en Archivo) */
-.day-mode .archivo-section-view .aspect-\[2\/3\] + div div {
-  color: #475569 !important;
-  font-weight: 600 !important;
+/* Año en Rojo y Director en Negro debajo del póster (Solo en Archivo) */
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div div span:first-child {
+  color: #b41d1d !important;
+  font-weight: 700 !important;
   text-shadow: none !important;
+  filter: none !important;
 }
 
-.day-mode .archivo-section-view .aspect-\[2\/3\] + div div span.bg-zinc-500 {
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div div span.truncate,
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div div span:last-child {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div div span.bg-zinc-500,
+.day-mode .archivo-section-view .aspect-\[2\/3\] + div div span.bg-slate-400 {
   background-color: #94a3b8 !important;
 }
 

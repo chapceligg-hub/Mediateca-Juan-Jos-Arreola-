@@ -1,11 +1,12 @@
 import React, { useRef, useEffect } from 'react';
 
-export function useAutoScrollVertical() {
+export function useAutoScrollVertical(disabled: boolean = false) {
   const containerRef = useRef<HTMLElement>(null);
   const scrollAnimationFrame = useRef<number | null>(null);
   const scrollIntensity = useRef<number>(0);
 
   const startScrolling = () => {
+    if (disabled) return;
     if (scrollAnimationFrame.current === null) {
       const scrollStep = () => {
         if (containerRef.current && scrollIntensity.current !== 0) {
@@ -26,6 +27,11 @@ export function useAutoScrollVertical() {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (disabled) {
+      stopScrolling();
+      return;
+    }
+
     const isMobileOrTablet = typeof window !== 'undefined' && 
       (window.innerWidth < 1024 || window.matchMedia('(pointer: coarse)').matches);
     if (isMobileOrTablet) return;
@@ -57,8 +63,14 @@ export function useAutoScrollVertical() {
   };
 
   useEffect(() => {
+    if (disabled) {
+      stopScrolling();
+    }
+  }, [disabled]);
+
+  useEffect(() => {
     return () => stopScrolling();
   }, []);
 
-  return { containerRef, handleMouseMove, handleMouseLeave };
+  return { containerRef, handleMouseMove, handleMouseLeave, stopScrolling };
 }
