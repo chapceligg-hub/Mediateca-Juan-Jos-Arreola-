@@ -812,7 +812,8 @@ export default function App() {
     title: string;
     year: number;
     onConfirm: (() => void) | null;
-  }>({ open: false, title: "", year: 0, onConfirm: null });
+    onCancel?: (() => void) | null;
+  }>({ open: false, title: "", year: 0, onConfirm: null, onCancel: null });
   const [authDenied, setAuthDenied] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
@@ -993,6 +994,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setBatchProgress({ active: true, total: parsedMovies.length, current: 0, currentMovie: "Iniciando descarga y catalogación..." });
 
       let skipped: string[] = [];
+      let addedInBatch: Movie[] = [];
 
       let index = 0;
       for (const m of parsedMovies) {
@@ -1001,17 +1003,41 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
           continue;
         }
         
+        const titleTrim = m.title?.toLowerCase().trim();
+        const yearVal = m.year;
+
         const isDuplicate = movies.some(existingMovie => 
-          existingMovie.title?.toLowerCase().trim() === m.title?.toLowerCase().trim() && 
-          existingMovie.year == m.year
+          existingMovie.title?.toLowerCase().trim() === titleTrim && 
+          existingMovie.year == yearVal
+        ) || addedInBatch.some(bMovie =>
+          bMovie.title?.toLowerCase().trim() === titleTrim &&
+          bMovie.year == yearVal
         );
 
         if (isDuplicate) {
-          skipped.push(`"${m.title}" (${m.year || "S/A"})`);
-          setBatchProgress(p => ({ ...p, current: index + 1, currentMovie: `Omitiendo duplicado: ${m.title}` }));
-          await new Promise(r => setTimeout(r, 200));
-          index++;
-          continue;
+          const shouldUploadAnyway = await new Promise<boolean>((resolve) => {
+            setDuplicateWarningModal({
+              open: true,
+              title: m.title || "Obra sin título",
+              year: Number(m.year) || 0,
+              onConfirm: () => {
+                setDuplicateWarningModal({ open: false, title: "", year: 0, onConfirm: null, onCancel: null });
+                resolve(true);
+              },
+              onCancel: () => {
+                setDuplicateWarningModal({ open: false, title: "", year: 0, onConfirm: null, onCancel: null });
+                resolve(false);
+              }
+            });
+          });
+
+          if (!shouldUploadAnyway) {
+            skipped.push(`"${m.title}" (${m.year || "S/A"})`);
+            setBatchProgress(p => ({ ...p, current: index + 1, currentMovie: `Omitiendo duplicado: ${m.title}` }));
+            await new Promise(r => setTimeout(r, 200));
+            index++;
+            continue;
+          }
         }
 
         setBatchProgress(p => ({ ...p, currentMovie: `Procesando y reordenando: ${m.title}...`, current: index }));
@@ -1053,6 +1079,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         };
 
         await upsertMovie(finalMovie);
+        addedInBatch.push(finalMovie);
 
         setBatchProgress(p => ({ ...p, current: index + 1 }));
         await new Promise(r => setTimeout(r, 100)); // Breve pausa visual
@@ -3898,7 +3925,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             <div className="flex flex-col sm:flex-row gap-3 w-full">
               <button
                 type="button"
-                onClick={() => setDuplicateWarningModal({ open: false, title: "", year: 0, onConfirm: null })}
+                onClick={() => {
+                  if (duplicateWarningModal.onCancel) {
+                    duplicateWarningModal.onCancel();
+                  } else {
+                    setDuplicateWarningModal({ open: false, title: "", year: 0, onConfirm: null, onCancel: null });
+                  }
+                }}
                 className="flex-1 px-5 py-3.5 rounded-xl border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 font-sans font-extrabold uppercase text-[10px] tracking-[0.2em] transition-all active:scale-95"
               >
                 Cancelar
