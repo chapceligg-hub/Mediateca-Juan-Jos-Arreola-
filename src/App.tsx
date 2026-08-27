@@ -1283,7 +1283,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       const matchReview = showReviewOnly ? !!m.needsReview : true;
 
       const movieSec = String(m.section || 'peliculas').toLowerCase().trim();
-      const matchTab = activeExploreTab === 'centauro'
+      const isSearching = searchTerm.trim() !== "";
+      const matchTab = isSearching
+        ? true
+        : activeExploreTab === 'centauro'
         ? movieSec === 'centauro'
         : activeExploreTab === 'series'
         ? movieSec === 'series'
@@ -1763,8 +1766,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
                 onKeyDown={(e) => { e.stopPropagation(); if(e.key === 'Enter') setIsMobileMenuOpen(false); }} 
-                className="w-full bg-transparent py-3 pl-12 pr-4 text-sm text-white outline-none font-semibold placeholder:text-zinc-500 rounded-2xl z-20" 
+                className="w-full bg-transparent py-3 pl-12 pr-10 text-sm text-white outline-none font-semibold placeholder:text-zinc-500 rounded-2xl z-20" 
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(""); setSearchTerm(""); }}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-white rounded-full hover:bg-white/10 transition-colors z-30"
+                  title="Limpiar búsqueda"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
           </div>
 
@@ -2838,39 +2851,91 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   </div>
                   
                   {/* Info bar: Premium, cine-themed containers with sleek glassmorphic card design */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
-                        <Clapperboard size={14} />
+                  {((searchTerm && searchTerm.trim() !== "") || (searchQuery && searchQuery.trim() !== "")) ? (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 py-2">
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <Clapperboard size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Dirección</span>
+                        <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Dirección</span>
-                      <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
-                    </div>
 
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
-                        <CalendarDays size={14} />
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <CalendarDays size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Año</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Año</span>
-                      <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
-                    </div>
 
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
-                        <Globe size={14} />
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <Globe size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">País</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">País</span>
-                      <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
-                    </div>
 
-                    <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
-                      <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
-                        <Eye size={14} />
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <Eye size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Clasificación</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.ageRating || "No disponible"}</span>
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Clasificación</span>
-                      <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.ageRating || "No disponible"}</span>
+
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans col-span-2 md:col-span-1">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          {selectedMovie.section === 'centauro' ? <Compass size={14} className="text-[#b41d1d]" /> : <Clapperboard size={14} />}
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Pestaña</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4 capitalize flex items-center gap-1.5">
+                          {selectedMovie.section === 'centauro' ? (
+                            <span className="text-[#e23636] font-black">Centauro</span>
+                          ) : selectedMovie.section === 'series' ? (
+                            <span className="text-indigo-400 font-black">Series</span>
+                          ) : (
+                            <span>Películas</span>
+                          )}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <Clapperboard size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Dirección</span>
+                        <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
+                      </div>
+
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <CalendarDays size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Año</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
+                      </div>
+
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <Globe size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">País</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
+                      </div>
+
+                      <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
+                        <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
+                          <Eye size={14} />
+                        </div>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Clasificación</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.ageRating || "No disponible"}</span>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Synopsis */}
                   <section className="space-y-4">
