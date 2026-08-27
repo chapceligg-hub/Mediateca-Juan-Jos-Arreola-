@@ -1370,12 +1370,25 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
   console.log('RENDER', { movies: movies.length, filtered: filteredMovies.length });
 
-  const paginatedMovies = useMemo(() => {
-    const startIndex = (currentPage - 1) * moviesPerPage;
-    return filteredMovies.slice(startIndex, startIndex + moviesPerPage);
-  }, [filteredMovies, currentPage]);
+  const totalPages = Math.max(1, Math.ceil(filteredMovies.length / moviesPerPage));
 
-  const totalPages = Math.ceil(filteredMovies.length / moviesPerPage);
+  // Si la página actual excede el total de páginas de la pestaña/filtro activo, corregir automáticamente
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [currentPage, totalPages]);
+
+  // Restablecer a página 1 de inmediato al alternar entre Películas, Series o Centauro
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeExploreTab]);
+
+  const paginatedMovies = useMemo(() => {
+    const pageToUse = (currentPage > totalPages && totalPages > 0) ? 1 : Math.max(1, currentPage);
+    const startIndex = (pageToUse - 1) * moviesPerPage;
+    return filteredMovies.slice(startIndex, startIndex + moviesPerPage);
+  }, [filteredMovies, currentPage, totalPages]);
 
   const exportToCSV = () => {
     if (filteredMovies.length === 0) {
@@ -1789,6 +1802,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        setShowHistoryOnly(false);
                        setIsDirectorFilterActive(false);
                        setIsFavoriteOfMonthActive(false);
+                       setCurrentPage(1);
                        scrollToTop();
                      }}
                    >
@@ -1810,6 +1824,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        setShowHistoryOnly(false);
                        setIsDirectorFilterActive(false);
                        setIsFavoriteOfMonthActive(false);
+                       setCurrentPage(1);
                        scrollToTop();
                      }}
                    >
@@ -2342,21 +2357,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         {(activeExploreTab === 'peliculas' || filteredMovies.length > 0 || searchTerm || selectedGenre !== "Todos" || selectedLetter || selectedYearRange || showHistoryOnly || showReviewOnly) && (
           <>
             {/* ENCABEZADO DE SECCIÓN CENTAURO */}
-            {activeExploreTab === 'centauro' && !searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre === "Todos" && (
-              <div className="mb-10 flex items-center gap-4 border-b border-white/10 pb-4 select-none">
-                <div className="p-3 bg-[#b41d1d]/10 border border-[#b41d1d]/30 text-[#b41d1d] rounded-2xl shadow-[0_0_20px_rgba(180,29,29,0.2)]">
-                  <Compass size={28} />
-                </div>
-                <div>
-                  <h2 className="text-3xl md:text-5xl font-black uppercase text-white tracking-widest font-barlow-condensed">
-                    Colección Centauro
-                  </h2>
-                  <p className="text-[10px] md:text-xs font-bold text-zinc-400 uppercase tracking-[0.2em] mt-0.5">
-                    Obras registradas exclusivamente en la pestaña Centauro
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* Removido según solicitud de usuario */}
         {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
         {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
           <div id="category-header-section" key={selectedGenre} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">

@@ -79,7 +79,7 @@ export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boole
 
 export const getCachedMovies = async (): Promise<any[] | null> => {
   try {
-    // 1. Intentar leer de la caché única global de super-integridad
+    // 1. Intentar leer de la caché única global en IndexedDB
     const cache = await get("videoteca_movies_cache");
     if (cache) {
       const parsed = typeof cache === 'string' ? JSON.parse(cache) : cache;
@@ -88,7 +88,20 @@ export const getCachedMovies = async (): Promise<any[] | null> => {
       }
     }
     
-    // 2. Fallback de compatibilidad: si no existe, buscar en las claves antiguas segmentadas
+    // 2. Fallback a localStorage (útil para iframes de desarrollo y entornos con IndexedDB particionado)
+    try {
+      const localFallback = localStorage.getItem("videoteca_movies_cache");
+      if (localFallback) {
+        const parsed = JSON.parse(localFallback);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Intentar guardarlo también en IndexedDB
+          try { await set("videoteca_movies_cache", parsed); } catch (_) {}
+          return parsed;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Fallback de compatibilidad: si no existe, buscar en las claves antiguas segmentadas
     const uid = auth.currentUser?.uid;
     const legacyKeys = uid ? [`videoteca_movies_cache_${uid}`, "videoteca_movies_cache_anonymous"] : ["videoteca_movies_cache_anonymous"];
     for (const key of legacyKeys) {
@@ -98,27 +111,42 @@ export const getCachedMovies = async (): Promise<any[] | null> => {
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Migrar inmediatamente a la caché global unificada
           await set("videoteca_movies_cache", parsed);
+          try { localStorage.setItem("videoteca_movies_cache", JSON.stringify(parsed)); } catch (_) {}
           return parsed;
         }
       }
     }
   } catch (e) {
     console.warn("Error leyendo la caché local única global:", e);
+    try {
+      const localFallback = localStorage.getItem("videoteca_movies_cache");
+      if (localFallback) {
+        const parsed = JSON.parse(localFallback);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
   }
   return null;
 };
 
 export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false) => {
   try {
-    const currentCache = await get("videoteca_movies_cache");
-    let currentMovies: any[] = [];
-    if (currentCache) {
-      currentMovies = typeof currentCache === 'string' ? JSON.parse(currentCache) : currentCache;
-    }
+    const currentCache = await getCachedMovies();
+    let currentMovies: any[] = currentCache || [];
     
     // Validar integridad antes de persistir en la caché global única
     if (bypassIntegrity || shouldUpdateCache(currentMovies, newMovies)) {
-      await set("videoteca_movies_cache", newMovies);
+      try {
+        await set("videoteca_movies_cache", newMovies);
+      } catch (idbErr) {
+        console.warn("No se pudo escribir en IndexedDB (posible iframe aislado):", idbErr);
+      }
+      
+      try {
+        localStorage.setItem("videoteca_movies_cache", JSON.stringify(newMovies));
+      } catch (lsErr) {
+        // En caso de que exceda los 5MB de localStorage, IndexedDB ya lo tiene
+      }
       console.log(`[Cache Manager] Caché única global actualizada exitosamente (${newMovies.length} películas)`);
     } else {
       console.log(`[Cache Manager] Integridad rechazada. Conservando caché unificada previa de ${currentMovies.length} películas.`);
