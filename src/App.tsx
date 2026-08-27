@@ -666,7 +666,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const clearFiltersAndSearch = () => {
+  const clearFiltersAndSearch = (keepCurrentTab: boolean = true) => {
+    if (!keepCurrentTab) {
+      setActiveExploreTab('peliculas');
+    }
     setSelectedLetter(null);
     setSelectedYearRange(null);
     setSelectedGenre("Todos");
@@ -798,12 +801,20 @@ export default function App() {
       "REVISAR": "REVIEW",
       "CLÁSICO": "CLASSIC",
       "ARCHIVO": "ARCHIVE",
+      "PELÍCULAS": "MOVIES",
+      "Peliculas": "Movies",
+      "SERIES": "SERIES",
+      "Series": "Series",
+      "CENTAURO": "CENTAURO",
+      "Centauro": "Centauro",
       "HISTORIAL": "HISTORY",
     };
     return dictionary[key] || key;
   };
 
 
+  const [activeExploreTab, setActiveExploreTab] = useState<'peliculas' | 'series' | 'centauro'>('peliculas');
+  const [pasteTargetSection, setPasteTargetSection] = useState<'peliculas' | 'centauro' | 'series'>('peliculas');
   const [batchProgress, setBatchProgress] = useState({ active: false, total: 0, current: 0, currentMovie: "" });
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showAdminsModal, setShowAdminsModal] = useState(false);
@@ -821,7 +832,7 @@ export default function App() {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const moviesPerPage = 24;
 
-  const isArchiveActive = !selectedLetter && !selectedYearRange && selectedGenre === "Todos" && !showReviewOnly && !showHistoryOnly && !isDirectorFilterActive && !isFavoriteOfMonthActive;
+  const isArchiveActive = activeExploreTab === 'peliculas' && !selectedLetter && !selectedYearRange && selectedGenre === "Todos" && !showReviewOnly && !showHistoryOnly && !isDirectorFilterActive && !isFavoriteOfMonthActive;
 
   const getSidebarItemClass = (isActive: boolean) => {
     return isActive 
@@ -970,11 +981,13 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     setShowPasteModal(false);
     setBatchProgress({ active: true, total: 1, current: 0, currentMovie: "Interpretando texto con IA..." });
 
+    const targetSec = pasteTargetSection || 'peliculas';
+
     try {
       const response = await fetch('/api/batch-parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: pastedText, limit: pasteLimit })
+        body: JSON.stringify({ text: `[PESTAÑA DESTINO: ${targetSec.toUpperCase()}]\n` + pastedText, limit: pasteLimit })
       });
       
       const textResponse = await response.text();
@@ -1073,6 +1086,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
           ageRating: m.ageRating || "No disponible",
           format: m.format || "No disponible",
           estante: m.estante || "N/A",
+          section: targetSec,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           needsReview: false
@@ -1089,6 +1103,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setPastedText("");
       setTimeout(() => {
         setBatchProgress({ active: false, total: 0, current: 0, currentMovie: "" });
+        if (addedInBatch.length > 0) {
+          setActiveExploreTab(targetSec);
+          clearFiltersAndSearch(true);
+        }
         if (skipped.length > 0) {
           alert(`Se procesó el lote correctamente. Se omitieron algunas películas por duplicidad con el catálogo:\n\n${skipped.join("\n")}`);
         }
@@ -1264,7 +1282,14 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       const matchYear = !selectedYearRange || (movieYear >= selectedYearRange.start && movieYear < selectedYearRange.end);
       const matchReview = showReviewOnly ? !!m.needsReview : true;
 
-      return matchSearch && matchGenre && matchLetter && matchYear && matchReview;
+      const movieSec = String(m.section || 'peliculas').toLowerCase().trim();
+      const matchTab = activeExploreTab === 'centauro'
+        ? movieSec === 'centauro'
+        : activeExploreTab === 'series'
+        ? movieSec === 'series'
+        : (movieSec === 'peliculas' || movieSec === '');
+
+      return matchSearch && matchGenre && matchLetter && matchYear && matchReview && matchTab;
     }).sort((a, b) => {
       if (searchTerm.trim() !== "") {
         const normSearch = normalizeText(searchTerm);
@@ -1341,7 +1366,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         return timeB.localeCompare(timeA);
       }
     });
-  }, [searchTerm, movies, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly]);
+  }, [searchTerm, movies, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly, activeExploreTab]);
 
   console.log('RENDER', { movies: movies.length, filtered: filteredMovies.length });
 
@@ -1420,6 +1445,8 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setSyncError("No se pudo referenciar la obra. Intenta de nuevo.");
       return;
     }
+    const rawTarget = data.section || editForm.section || (activeExploreTab === 'centauro' ? 'centauro' : 'peliculas');
+    const targetSection = String(rawTarget).toLowerCase().trim() as 'peliculas' | 'centauro' | 'series';
     try {
       const payload: Movie = {
         id,
@@ -1443,6 +1470,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         ageRating: data.ageRating || "N/A",
         format: data.format || "No disponible",
         estante: data.estante || "N/A",
+        section: targetSection,
         createdAt: isAddingNew ? new Date().toISOString() : (data.createdAt || data.updatedAt || new Date().toISOString()),
         updatedAt: new Date().toISOString(),
         needsReview: false
@@ -1456,6 +1484,8 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setSyncInput("");
       setSyncError("");
       setSyncStatus("¡Guardado exitoso!");
+      setActiveExploreTab(targetSection);
+      clearFiltersAndSearch(true);
     } catch (e: any) {
       setSyncError("Fallo al persistir registro: " + e.message);
     }
@@ -1492,11 +1522,12 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     if (!syncInput) return;
     setIsSyncing(true); setSyncError("");
     setSyncStatus("Analizando texto con IA...");
+    const targetSec = editForm.section || (activeExploreTab === 'centauro' ? 'centauro' : 'peliculas');
     try {
       const response = await fetch('/api/batch-parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: "MODO NUEVA ENTRADA (Analiza única y exclusivamente los datos de esta película en un único objeto): " + syncInput, limit: 1 })
+        body: JSON.stringify({ text: `MODO NUEVA ENTRADA (Pestaña destino: ${targetSec.toUpperCase()}): ` + syncInput, limit: 1 })
       });
       const textResponse = await response.text();
       let parsedData;
@@ -1525,6 +1556,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       } else if (!merged.poster) {
         merged.poster = editForm.poster;
       }
+      merged.section = targetSec;
 
       setEditForm(merged);
       
@@ -1730,16 +1762,59 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
              <div className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-[0.12em] text-white/[0.28] font-bold px-5 mb-1 mt-5 select-none block">{t("Explorar")}</span>
                 <div className="flex flex-col gap-1">
-                   {/* Archive */}
+                   {/* Películas */}
                    <button 
-                     className={getArchiveSidebarClass(isArchiveActive)} 
+                     className={getArchiveSidebarClass(activeExploreTab === 'peliculas' && isArchiveActive)} 
                      onClick={() => {
+                       setActiveExploreTab('peliculas');
                        clearFiltersAndSearch();
                        scrollToTop();
                      }}
                    >
                      <Clapperboard className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
-                     <span>{t("ARCHIVO")}</span>
+                     <span>{t("PELÍCULAS")}</span>
+                   </button>
+
+                   {/* Series */}
+                   <button 
+                     className={getArchiveSidebarClass(activeExploreTab === 'series')} 
+                     onClick={() => {
+                       setActiveExploreTab('series');
+                       setSelectedLetter(null);
+                       setSelectedYearRange(null);
+                       setSelectedGenre("Todos");
+                       setSearchQuery("");
+                       setSearchTerm("");
+                       setShowReviewOnly(false);
+                       setShowHistoryOnly(false);
+                       setIsDirectorFilterActive(false);
+                       setIsFavoriteOfMonthActive(false);
+                       scrollToTop();
+                     }}
+                   >
+                     <Tv className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
+                     <span>{t("SERIES")}</span>
+                   </button>
+
+                   {/* Centauro */}
+                   <button 
+                     className={getArchiveSidebarClass(activeExploreTab === 'centauro')} 
+                     onClick={() => {
+                       setActiveExploreTab('centauro');
+                       setSelectedLetter(null);
+                       setSelectedYearRange(null);
+                       setSelectedGenre("Todos");
+                       setSearchQuery("");
+                       setSearchTerm("");
+                       setShowReviewOnly(false);
+                       setShowHistoryOnly(false);
+                       setIsDirectorFilterActive(false);
+                       setIsFavoriteOfMonthActive(false);
+                       scrollToTop();
+                     }}
+                   >
+                     <Compass className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
+                     <span>{t("CENTAURO")}</span>
                    </button>
                    
                    {/* ALFABÉTICO */}
@@ -1881,7 +1956,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       <span className="text-[10px] uppercase tracking-[0.12em] text-white/[0.28] font-bold px-5 mb-1 mt-5 select-none block">Gestión</span>
                       <div className="flex flex-col gap-1">
                          <button 
-                           onClick={() => setShowPasteModal(true)} 
+                           onClick={() => { setPasteTargetSection(activeExploreTab === 'centauro' ? 'centauro' : 'peliculas'); setShowPasteModal(true); }} 
                            disabled={batchProgress.active} 
                            className={`${getSidebarItemClass(false)} disabled:opacity-50`}
                          >
@@ -1921,7 +1996,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         <div className="p-6 flex flex-col gap-6 mt-auto border-t border-white/5 bg-[#030303] shrink-0">
           {isAdmin && (
             <button 
-              onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false }); setSyncInput(""); setIsAddingNew(true); }} 
+              onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false, section: activeExploreTab === 'centauro' ? 'centauro' : 'peliculas' }); setSyncInput(""); setIsAddingNew(true); }} 
               className="relative group overflow-hidden w-full h-14 rounded-xl z-10 flex items-center justify-center p-[2px] transition-all duration-300 active:scale-95 shadow-[0_0_20px_rgba(180,29,29,0.15)] hover:shadow-[0_0_30px_rgba(180,29,29,0.3)]"
             >
               {/* Repeating animated conic gradient background */}
@@ -1986,8 +2061,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             >
               {isDayMode ? <Moon size={18} className="text-indigo-500" /> : <Sun size={18} />}
             </button>
-            {isAdmin && <button onClick={() => setShowPasteModal(true)} className="p-2 border border-white/10 rounded-xl"><ClipboardPaste size={18}/></button>}
-            {isAdmin && <button onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false }); setSyncInput(""); setIsAddingNew(true); }} className="p-2 bg-[#b91c1c] hover:bg-[#dc2626] transition-colors text-white rounded-xl"><Plus size={18}/></button>}
+            {isAdmin && <button onClick={() => { setPasteTargetSection(activeExploreTab === 'centauro' ? 'centauro' : 'peliculas'); setShowPasteModal(true); }} className="p-2 border border-white/10 rounded-xl"><ClipboardPaste size={18}/></button>}
+            {isAdmin && <button onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false, section: activeExploreTab === 'centauro' ? 'centauro' : 'peliculas' }); setSyncInput(""); setIsAddingNew(true); }} className="p-2 bg-[#b91c1c] hover:bg-[#dc2626] transition-colors text-white rounded-xl"><Plus size={18}/></button>}
             <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 border border-white/10 rounded-xl text-zinc-400 hover:text-white"><Menu size={18}/></button>
          </div>
       </nav>
@@ -2139,9 +2214,56 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 </button>
               </div>
             </div>
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-zinc-500 mb-6 pl-1 font-sans">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-zinc-500 mb-4 pl-1 font-sans">
               Convierte texto plano en fichas mágicamente usando IA
             </p>
+
+            {/* SELECCIÓN DE PESTAÑA DESTINO */}
+            <div className="mb-5 flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2">
+                <span>Pestaña Destino:</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2 bg-white/[0.02] border border-white/[0.07] p-1.5 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setPasteTargetSection('peliculas')}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                    pasteTargetSection === 'peliculas'
+                      ? 'bg-[#b41d1d] text-white shadow-lg shadow-[#b41d1d]/30 font-extrabold'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Clapperboard size={16} />
+                  <span>Películas</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPasteTargetSection('centauro')}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                    pasteTargetSection === 'centauro'
+                      ? 'bg-[#b41d1d] text-white shadow-lg shadow-[#b41d1d]/30 font-extrabold'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Compass size={16} />
+                  <span>Centauro</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled
+                  title="Sección Series en desarrollo"
+                  className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 opacity-40 cursor-not-allowed text-zinc-500 bg-white/[0.01] border border-dashed border-white/10"
+                >
+                  <Tv size={16} />
+                  <span>Series</span>
+                  <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal normal-case ml-1">
+                    Pronto
+                  </span>
+                </button>
+              </div>
+            </div>
             
             <div className="relative group w-full bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.07] hover:border-white/[0.15] focus-within:border-[#b41d1d] focus-within:ring-1 focus-within:ring-[#b41d1d]/20 focus-within:bg-[#b41d1d]/[0.01] transition-all duration-300 rounded-2xl p-6 shadow-inner">
               <textarea
@@ -2185,10 +2307,56 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         </div>
       )}
 
-      {/* GALERÍA PAGINADA (CUADRÍCULA 7x3) */}
+      {/* GALERÍA PAGINADA (CUADRÍCULA 7x3) O VISTAS DE PESTAÑAS */}
       {!isDirectorFilterActive && !isFavoriteOfMonthActive && (
         <div className={`relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-2 ${selectedGenre !== "Todos" ? "category-section-view" : "archivo-section-view"}`}>
         
+        {activeExploreTab === 'series' && filteredMovies.length === 0 && !searchTerm && selectedGenre === "Todos" && !selectedLetter && !selectedYearRange && !showHistoryOnly && !showReviewOnly && (
+          <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 animate-in fade-in duration-500 my-12">
+            <div className="w-20 h-20 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] group">
+              <Tv size={38} className="text-[#b41d1d] transition-transform duration-500 group-hover:scale-110" />
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-white uppercase tracking-widest font-barlow-condensed mb-3">
+              Series
+            </h2>
+            <p className="text-xs md:text-sm text-zinc-400 font-extrabold uppercase tracking-[0.25em] max-w-md">
+              Sección vacía por el momento
+            </p>
+          </div>
+        )}
+
+        {activeExploreTab === 'centauro' && filteredMovies.length === 0 && !searchTerm && selectedGenre === "Todos" && !selectedLetter && !selectedYearRange && !showHistoryOnly && !showReviewOnly && (
+          <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 animate-in fade-in duration-500 my-12">
+            <div className="w-20 h-20 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] group">
+              <Compass size={38} className="text-[#b41d1d] transition-transform duration-500 group-hover:scale-110" />
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-white uppercase tracking-widest font-barlow-condensed mb-3">
+              Centauro
+            </h2>
+            <p className="text-xs md:text-sm text-zinc-400 font-extrabold uppercase tracking-[0.25em] max-w-md">
+              Sección vacía por el momento
+            </p>
+          </div>
+        )}
+
+        {(activeExploreTab === 'peliculas' || filteredMovies.length > 0 || searchTerm || selectedGenre !== "Todos" || selectedLetter || selectedYearRange || showHistoryOnly || showReviewOnly) && (
+          <>
+            {/* ENCABEZADO DE SECCIÓN CENTAURO */}
+            {activeExploreTab === 'centauro' && !searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre === "Todos" && (
+              <div className="mb-10 flex items-center gap-4 border-b border-white/10 pb-4 select-none">
+                <div className="p-3 bg-[#b41d1d]/10 border border-[#b41d1d]/30 text-[#b41d1d] rounded-2xl shadow-[0_0_20px_rgba(180,29,29,0.2)]">
+                  <Compass size={28} />
+                </div>
+                <div>
+                  <h2 className="text-3xl md:text-5xl font-black uppercase text-white tracking-widest font-barlow-condensed">
+                    Colección Centauro
+                  </h2>
+                  <p className="text-[10px] md:text-xs font-bold text-zinc-400 uppercase tracking-[0.2em] mt-0.5">
+                    Obras registradas exclusivamente en la pestaña Centauro
+                  </p>
+                </div>
+              </div>
+            )}
         {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
         {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
           <div id="category-header-section" key={selectedGenre} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
@@ -2335,6 +2503,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           </div>
         )}
 
+        </>
+        )}
+
 
         </div>
       )}
@@ -2424,6 +2595,53 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <h2 className="text-xl font-black uppercase tracking-[0.15em] text-white font-sans">{isAddingNew ? "NUEVA PELÍCULA" : "EDITAR PELÍCULA"}</h2>
                   </div>
                   
+                  {/* SELECCIÓN DE PESTAÑA DESTINO (NUEVA ENTRADA / EDITAR) */}
+                  <div className="bg-white/[0.01] border border-white/[0.05] p-5 rounded-2xl space-y-3 font-sans shadow-lg">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2">
+                      <span>Pestaña Destino:</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-2 bg-white/[0.02] border border-white/[0.07] p-1.5 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, section: 'peliculas' })}
+                        className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                          (editForm.section || 'peliculas') === 'peliculas'
+                            ? 'bg-[#b41d1d] text-white shadow-lg shadow-[#b41d1d]/30 font-extrabold'
+                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <Clapperboard size={16} />
+                        <span>Películas</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, section: 'centauro' })}
+                        className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                          editForm.section === 'centauro'
+                            ? 'bg-[#b41d1d] text-white shadow-lg shadow-[#b41d1d]/30 font-extrabold'
+                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <Compass size={16} />
+                        <span>Centauro</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled
+                        title="Sección Series en desarrollo"
+                        className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 opacity-40 cursor-not-allowed text-zinc-500 bg-white/[0.01] border border-dashed border-white/10"
+                      >
+                        <Tv size={16} />
+                        <span>Series</span>
+                        <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal normal-case ml-1">
+                          Pronto
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="bg-white/[0.01] border border-white/[0.05] p-6 rounded-2xl space-y-5 font-sans shadow-lg">
                     <div className="flex items-center gap-3 text-white font-extrabold text-xs uppercase tracking-[0.25em]"><Sparkles size={16} className="text-[#b41d1d]" /> Extracción Inteligente</div>
                     <div className="flex flex-col gap-4">
@@ -2618,7 +2836,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     </div>
                   </div>
                   
-                  {/* Info bar: Premium, cine-themed containers with sleek glassmorphism and custom indicators */}
+                  {/* Info bar: Premium, cine-themed containers with sleek glassmorphic card design */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
                     <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                       <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
@@ -2749,10 +2967,41 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         </span>
                       </button>
 
+                      {/* Button: MOVER DE SECCIÓN (PELÍCULAS <-> CENTAURO) */}
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          const currentSec = (selectedMovie.section || 'peliculas').toLowerCase();
+                          const nextSec = currentSec === 'centauro' ? 'peliculas' : 'centauro';
+                          const updated = { ...selectedMovie, section: nextSec, updatedAt: new Date().toISOString() };
+                          setSelectedMovie(updated);
+                          setMovies(prev => prev.map(m => m.id === selectedMovie.id ? updated : m));
+                          try {
+                            await updateMovie(selectedMovie.id, { section: nextSec, updatedAt: new Date().toISOString() });
+                          } catch (err) {
+                            console.error("Error updating movie section:", err);
+                          }
+                        }}
+                        className="h-14 px-5 bg-[#0c0c0e] hover:bg-[#121215] border border-white/5 hover:border-[#b41d1d]/40 text-zinc-350 hover:text-white rounded-xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)] shrink-0"
+                        title={`Mover obra a pestaña ${selectedMovie.section === 'centauro' ? 'Películas' : 'Centauro'}`}
+                      >
+                        {selectedMovie.section === 'centauro' ? (
+                          <>
+                            <Clapperboard size={15} className="text-zinc-400 group-hover:text-[#b41d1d]" />
+                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A PELÍCULAS</span>
+                          </>
+                        ) : (
+                          <>
+                            <Compass size={15} className="text-[#b41d1d]" />
+                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A CENTAURO</span>
+                          </>
+                        )}
+                      </button>
+
                       {/* Button: EDITAR */}
                       <button 
                         type="button"
-                        onClick={() => { setEditForm(selectedMovie); setIsEditing(true); }} 
+                        onClick={() => { setEditForm({ ...selectedMovie, section: selectedMovie.section || 'peliculas' }); setIsEditing(true); }} 
                         className="relative group/btn-edit overflow-hidden flex-1 min-w-[150px] h-14 rounded-xl z-10 flex items-center justify-center p-[1px] transition-all duration-300 active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)]"
                       >
                         {/* Spin border only visible on hover */}
