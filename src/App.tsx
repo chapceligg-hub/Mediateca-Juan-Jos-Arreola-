@@ -2499,7 +2499,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       src={movie.poster || DEMO_POSTER} 
                       className="w-full h-full object-cover bg-zinc-900 card-scale-img" 
                       alt={movie.title} 
-                      onError={(e: any) => e.target.src = DEMO_POSTER} 
+                      referrerPolicy="no-referrer"
+                      onError={(e: any) => { if (e.target.src !== DEMO_POSTER) e.target.src = DEMO_POSTER; }} 
                       loading="lazy"
                     />
                     
@@ -2621,6 +2622,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <img 
                   key={(isAddingNew || isEditing) ? editForm.poster : selectedMovie?.poster}
                   src={(isAddingNew || isEditing) ? (editForm.poster || DEMO_POSTER) : (selectedMovie?.poster || DEMO_POSTER)} 
+                  referrerPolicy="no-referrer"
                   className={`w-full max-h-[500px] object-contain transition-all duration-700 cursor-pointer ${
                     isEditing || isAddingNew 
                       ? 'rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.85)]' 
@@ -2628,7 +2630,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   } opacity-95 group-hover:opacity-100`} 
                   onClick={() => setFullscreenImage((isAddingNew || isEditing) ? (editForm.poster || DEMO_POSTER) : (selectedMovie?.poster || DEMO_POSTER))}
                   alt="Poster Preview" 
-                  onError={(e: any) => e.target.src = DEMO_POSTER} 
+                  onError={(e: any) => { if (e.target.src !== DEMO_POSTER) e.target.src = DEMO_POSTER; }} 
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/20 via-transparent to-transparent pointer-events-none" />
                 {/* INDICADOR DE CARGA DE PÓSTER */}
@@ -4190,6 +4192,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <img 
                           src={movie.poster || DEMO_POSTER} 
                           alt={movie.title} 
+                          referrerPolicy="no-referrer"
                           className="w-full h-full object-cover transition-transform duration-[1.2s] ease-[cubic-bezier(0.25,1,0.5,1)] group-hover/card:scale-105 pointer-events-none"
                           onError={(e) => { e.currentTarget.src = DEMO_POSTER; e.currentTarget.classList.add('opacity-40', 'grayscale'); }} 
                           draggable="false"

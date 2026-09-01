@@ -203,6 +203,7 @@ export const syncMoviesDelta = async (localMovies: any[]): Promise<any[]> => {
 
     // Guardar los datos combinados en la caché de super-integridad
     await setCachedMovies(mergedList, true);
+    notifyMovieSubscribers(mergedList);
     return mergedList;
   } catch (error) {
     console.warn("Error en sincronización Delta manual:", error);
