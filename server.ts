@@ -33,7 +33,9 @@ export function sanitizeMovieData(rawData: any): any {
     companies: rawData.companies ?? rawData.estudio ?? rawData.compania ?? rawData.compañía ?? rawData.estudios ?? "",
     reviews: rawData.reviews ?? rawData.reseñas ?? rawData.critica ?? rawData.crítica ?? "",
     awards: rawData.awards ?? rawData.premios ?? "",
-    estante: rawData.estante ?? rawData.ubicacion ?? rawData.ubicación ?? ""
+    estante: rawData.estante ?? rawData.seccion ?? rawData.sección ?? rawData.ubicacion ?? rawData.ubicación ?? "",
+    season: rawData.season ?? rawData.temporada ?? rawData.temporadas ?? "",
+    section: rawData.section ?? rawData.seccion_destino ?? rawData.pestana_destino ?? ""
   };
 
   // Convert all null/undefined values to empty strings (except year, rating, and cast which is an array)
@@ -780,7 +782,8 @@ ${text}`;
               awards: { type: Type.STRING, description: "Premios ganados o relevantes" },
               ageRating: { type: Type.STRING, description: "Clasificación de edad (Ej: B15, R, A)" },
               format: { type: Type.STRING, description: "Formato físico o digital del elemento pegado" },
-              estante: { type: Type.STRING, description: "Ubicación o estante físico de la mediateca" }
+              estante: { type: Type.STRING, description: "Ubicación o estante físico de la mediateca" },
+              section: { type: Type.STRING, description: "Pestaña de destino: 'series', 'centauro' o 'peliculas'" }
             },
             required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "format", "estante"]
           }

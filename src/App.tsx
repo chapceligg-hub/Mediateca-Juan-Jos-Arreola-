@@ -962,7 +962,7 @@ export default function App() {
 📅 Año: ${selectedMovie.year || 'No disponible'}
 ⭐ Rating Global: ${selectedMovie.rating ? `${selectedMovie.rating}/10 IMDb` : '0/10 IMDb'}
 🎭 Género: ${cleanGenres}
-📺 Temporada: ${seasonVal}
+📺 Temporadas : ${seasonVal}
 ⏱️ Capítulos y Duración: ${durationVal}
 🌍 País: ${selectedMovie.country || 'No disponible'}
 🔞 Clasificación: ${selectedMovie.ageRating || 'No disponible'}
@@ -1636,7 +1636,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 📅 Año: ${merged.year || 'No disponible'}
 ⭐ Rating Global: ${merged.rating ? `${merged.rating}/10 IMDb` : '0/10 IMDb'}
 🎭 Género: ${merged.genre || 'No disponible'}
-📺 Temporada: ${merged.season || 'Primera y única'}
+📺 Temporadas : ${merged.season || 'Primera y única'}
 ⏱️ Capítulos y Duración: ${merged.duration || 'No disponible'}
 🌍 País: ${merged.country || 'No disponible'}
 🔞 Clasificación: ${merged.ageRating || 'No disponible'}
@@ -2379,7 +2379,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 className="w-full h-80 bg-transparent border-none p-0 text-zinc-100 text-sm font-semibold tracking-normal outline-none focus:ring-0 placeholder-zinc-700 transition-all resize-none font-sans leading-relaxed custom-scrollbar"
                 placeholder={
                   pasteTargetSection === 'series'
-                    ? `Pega aquí la información de tus series...\n\n1) 13 MIEDOS\n🎬 Título Mediateca: 13 MIEDOS\n🏷️ Título Original: 13 Miedos\n📅 Año: 2007\n⭐ Rating Global: 7.2/10 IMDb\n🎭 Género: Terror / Suspenso / Mexicanas\n📺 Temporada: Primera y única\n⏱️ Capítulos y Duración: 13 Capítulos / 45 min\n🌍 País: México\n🔞 Clasificación: C\n✍️ Guion: Constantino Morán / Ricardo Campos\n📀 Formato y Edición: DVD (4 discos - Copia)\n🎬 Dirección: Varios directores (Lemon Films)\n🎵 Banda Sonora: Música incidental de terror y suspenso\n📸 Fotografía: Televisión / Cine digital\n🏢 Estudio / Productora: Televisa / Lemon Films\n📚 Sección (Localización): Terror\n👥 Elenco Principal: Constantino Morán, Ricardo Campos y reparto\n📖 Argumento:\nSinopsis: ...\n\n(Soporta hasta ${pasteLimit} series al mismo tiempo)`
+                    ? `Pega aquí la información de tus series...\n\n1) 13 MIEDOS\n🎬 Título Mediateca: 13 MIEDOS\n🏷️ Título Original: 13 Miedos\n📅 Año: 2007\n⭐ Rating Global: 7.2/10 IMDb\n🎭 Género: Terror / Suspenso / Mexicanas\n📺 Temporadas : Primera y única\n⏱️ Capítulos y Duración: 13 Capítulos / 45 min\n🌍 País: México\n🔞 Clasificación: C\n✍️ Guion: Constantino Morán / Ricardo Campos\n📀 Formato y Edición: DVD (4 discos - Copia)\n🎬 Dirección: Varios directores (Lemon Films)\n🎵 Banda Sonora: Música incidental de terror y suspenso\n📸 Fotografía: Televisión / Cine digital\n🏢 Estudio / Productora: Televisa / Lemon Films\n📚 Sección (Localización): Terror\n👥 Elenco Principal: Constantino Morán, Ricardo Campos y reparto\n📖 Argumento:\nSinopsis: ...\n\n(Soporta hasta ${pasteLimit} series al mismo tiempo)`
                     : `Pega aquí la información de tus películas...\n\n🖼️ Póster: https://...\n🎬 Título Mediateca: El Padrino\n📅 Año: 1972\n... (Soporta hasta ${pasteLimit} películas al mismo tiempo)`
                 }
               />
