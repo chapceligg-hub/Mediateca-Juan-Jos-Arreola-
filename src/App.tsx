@@ -738,6 +738,7 @@ export default function App() {
   const [syncError, setSyncError] = useState("");
   const [editForm, setEditForm] = useState<Partial<Movie>>({});
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isConfirmingMove, setIsConfirmingMove] = useState(false);
   const [syncInput, setSyncInput] = useState("");
   const [randomQuote, setRandomQuote] = useState<QuoteType | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -2614,7 +2615,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/[0.45] backdrop-blur-sm animate-in fade-in duration-300 overflow-y-auto">
           <div className={`bg-[#050507] border border-[#b41d1d]/20 w-full max-w-7xl rounded-2xl overflow-hidden relative shadow-[0_30px_100px_rgba(0,0,0,0.95),0_0_80px_rgba(180,29,29,0.15)] flex flex-col ${(isEditing || isAddingNew) ? 'md:flex-row-reverse' : 'md:flex-row'} max-h-[95vh] my-auto animate-in zoom-in-95 duration-500`}>
             <button 
-              onClick={() => { setSelectedMovie(null); setIsAddingNew(false); setIsEditing(false); setIsDeleting(false); }} 
+              onClick={() => { setSelectedMovie(null); setIsAddingNew(false); setIsEditing(false); setIsDeleting(false); setIsConfirmingMove(false); }} 
               className="absolute top-6 right-6 p-2.5 bg-neutral-900/60 text-neutral-400 border border-neutral-800/80 rounded-full z-[110] transition-all duration-300 hover:scale-110 hover:bg-neutral-950 hover:text-white hover:border-[#b41d1d] hover:shadow-[0_0_12px_rgba(180,29,29,0.59)] active:scale-95"
             >
               <X size={20} />
@@ -3145,41 +3146,27 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         </span>
                       </button>
 
-                      {/* Button: MOVER DE SECCIÓN (PELÍCULAS <-> CENTAURO <-> SERIES) */}
-                      <button 
-                        type="button"
-                        onClick={async () => {
-                          const currentSec = (selectedMovie.section || 'peliculas').toLowerCase();
-                          const nextSec = currentSec === 'peliculas' ? 'centauro' : currentSec === 'centauro' ? 'series' : 'peliculas';
-                          const updated = { ...selectedMovie, section: nextSec, updatedAt: new Date().toISOString() };
-                          setSelectedMovie(updated);
-                          setMovies(prev => prev.map(m => m.id === selectedMovie.id ? updated : m));
-                          try {
-                            await updateMovie(selectedMovie.id, { section: nextSec, updatedAt: new Date().toISOString() });
-                          } catch (err) {
-                            console.error("Error updating movie section:", err);
-                          }
-                        }}
-                        className="h-14 px-5 bg-[#0c0c0e] hover:bg-[#121215] border border-white/5 hover:border-[#b41d1d]/40 text-zinc-350 hover:text-white rounded-xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)] shrink-0"
-                        title={`Mover obra a pestaña ${selectedMovie.section === 'peliculas' ? 'Centauro' : selectedMovie.section === 'centauro' ? 'Series' : 'Películas'}`}
-                      >
-                        {selectedMovie.section === 'centauro' ? (
-                          <>
-                            <Tv size={15} className="text-indigo-400" />
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A SERIES</span>
-                          </>
-                        ) : selectedMovie.section === 'series' ? (
-                          <>
-                            <Clapperboard size={15} className="text-zinc-400 group-hover:text-[#b41d1d]" />
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A PELÍCULAS</span>
-                          </>
-                        ) : (
-                          <>
-                            <Compass size={15} className="text-[#b41d1d]" />
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A CENTAURO</span>
-                          </>
-                        )}
-                      </button>
+                      {/* Button: MOVER DE SECCIÓN (PELÍCULAS <-> CENTAURO) */}
+                      {selectedMovie.section !== 'series' && (
+                        <button 
+                          type="button"
+                          onClick={() => { setIsDeleting(false); setIsConfirmingMove(true); }}
+                          className="h-14 px-5 bg-[#0c0c0e] hover:bg-[#121215] border border-white/5 hover:border-[#b41d1d]/40 text-zinc-350 hover:text-white rounded-xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)] shrink-0"
+                          title={`Mover obra a pestaña ${selectedMovie.section === 'centauro' ? 'Películas' : 'Centauro'}`}
+                        >
+                          {selectedMovie.section === 'centauro' ? (
+                            <>
+                              <Clapperboard size={15} className="text-zinc-400 group-hover:text-[#b41d1d]" />
+                              <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A PELÍCULAS</span>
+                            </>
+                          ) : (
+                            <>
+                              <Compass size={15} className="text-[#b41d1d]" />
+                              <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A CENTAURO</span>
+                            </>
+                          )}
+                        </button>
+                      )}
 
                       {/* Button: EDITAR */}
                       <button 
@@ -3237,6 +3224,45 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <button 
                           onClick={() => setIsDeleting(false)} 
                           className="flex-1 py-3 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-350 hover:text-white border border-white/5 hover:border-white/10 text-[10px] font-extrabold uppercase tracking-[0.2em] transition-all duration-300 active:scale-95"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {isConfirmingMove && (
+                    <div className="flex flex-col gap-4 p-5 bg-neutral-950/80 border border-[#b41d1d]/40 shadow-[0_0_20px_rgba(180,29,29,0.2)] rounded-xl animate-in zoom-in-95 font-sans mt-4">
+                      <div className="flex items-center gap-2.5 text-white font-bold uppercase text-[11px] tracking-[0.2em] select-none">
+                        <Compass size={15} className="text-[#b41d1d]" />
+                        <span>Confirmar Traslado de Sección</span>
+                      </div>
+                      <p className="text-zinc-300 text-sm font-medium leading-relaxed">
+                        ¿Estás seguro de que deseas mover <span translate="no" className="text-white font-bold notranslate">"{selectedMovie.title}"</span> a la pestaña <span className="text-[#b41d1d] font-black uppercase">{(selectedMovie.section || 'peliculas').toLowerCase() === 'centauro' ? 'Películas' : 'Centauro'}</span>?
+                      </p>
+                      <div className="flex gap-3 pt-1">
+                        <button 
+                          type="button"
+                          onClick={async () => {
+                            const currentSec = (selectedMovie.section || 'peliculas').toLowerCase();
+                            const nextSec = currentSec === 'centauro' ? 'peliculas' : 'centauro';
+                            const updated = { ...selectedMovie, section: nextSec, updatedAt: new Date().toISOString() };
+                            setSelectedMovie(updated);
+                            setMovies(prev => prev.map(m => m.id === selectedMovie.id ? updated : m));
+                            setIsConfirmingMove(false);
+                            try {
+                              await updateMovie(selectedMovie.id, { section: nextSec, updatedAt: new Date().toISOString() });
+                            } catch (err) {
+                              console.error("Error updating movie section:", err);
+                            }
+                          }}
+                          className="flex-1 py-3 rounded-lg bg-[#b41d1d]/20 hover:bg-[#b41d1d] text-white border border-[#b41d1d]/50 hover:border-[#b41d1d] shadow-[0_0_10px_rgba(180,29,29,0.2)] hover:shadow-[0_0_20px_rgba(180,29,29,0.5)] text-[10px] font-extrabold uppercase tracking-[0.2em] transition-all duration-300 active:scale-95 cursor-pointer"
+                        >
+                          Confirmar Traslado
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setIsConfirmingMove(false)} 
+                          className="flex-1 py-3 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-350 hover:text-white border border-white/5 hover:border-white/10 text-[10px] font-extrabold uppercase tracking-[0.2em] transition-all duration-300 active:scale-95 cursor-pointer"
                         >
                           Cancelar
                         </button>
