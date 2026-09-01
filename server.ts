@@ -9,33 +9,53 @@ export function sanitizeMovieData(rawData: any): any {
   }
 
   // Map Spanish key names back to standard Movie interface keys if the IA responded in Spanish
+  const rawSeason = rawData.season 
+    ?? rawData.temporada 
+    ?? rawData.temporadas 
+    ?? rawData.seasons 
+    ?? rawData.numero_temporadas 
+    ?? rawData["Temporadas :"] 
+    ?? rawData["Temporadas:"] 
+    ?? rawData["Temporadas "] 
+    ?? rawData["Temporadas"] 
+    ?? rawData["Temporada :"] 
+    ?? rawData["Temporada:"] 
+    ?? rawData["Temporada"] 
+    ?? rawData["📺 Temporadas :"] 
+    ?? rawData["📺 Temporadas:"] 
+    ?? rawData["📺 Temporada :"] 
+    ?? rawData["📺 Temporada:"] 
+    ?? rawData["📺 Temporada"] 
+    ?? rawData["📺 Temporadas"] 
+    ?? "";
+
   const mapped: any = {
     title: rawData.title ?? rawData.titulo ?? rawData.title_es ?? rawData.display_title ?? "",
     originalTitle: rawData.originalTitle ?? rawData.titulo_original ?? rawData.original_title ?? "",
     year: Number(rawData.year ?? rawData.año ?? rawData.anio ?? rawData.year_released ?? 0) || 0,
     rating: Number(rawData.rating ?? rawData.calificacion ?? rawData.rating_global ?? rawData.score ?? 0) || 0,
-    duration: rawData.duration ?? rawData.duracion ?? rawData.length ?? "",
+    duration: rawData.duration ?? rawData.duracion ?? rawData.length ?? rawData["Capítulos y Duración"] ?? rawData["⏱️ Capítulos y Duración:"] ?? rawData["⏱️ Capítulos y Duración"] ?? rawData["capitulos_y_duracion"] ?? "",
     country: rawData.country ?? rawData.pais ?? rawData.country_of_origin ?? "",
     director: rawData.director ?? rawData.dirección ?? rawData.direction ?? "",
     genre: rawData.genre ?? rawData.genero ?? rawData.género ?? "",
     ageRating: rawData.ageRating ?? rawData.clasificacion ?? rawData.clasificación ?? rawData.rating_age ?? "",
-    format: rawData.format ?? rawData.formato ?? "",
+    format: rawData.format ?? rawData.formato ?? rawData["Formato y Edición"] ?? rawData["📀 Formato y Edición:"] ?? rawData["📀 Formato y Edición"] ?? rawData.formato_y_edicion ?? "",
     poster: rawData.poster ?? rawData.imagen ?? rawData.poster_url ?? "",
     synopsis: rawData.synopsis ?? rawData.sinopsis ?? rawData.argumento ?? "",
-    cast: Array.isArray(rawData.cast ?? rawData.elenco ?? rawData.actores) 
-      ? (rawData.cast ?? rawData.elenco ?? rawData.actores) 
-      : (typeof (rawData.cast ?? rawData.elenco ?? rawData.actores) === 'string'
-        ? (rawData.cast ?? rawData.elenco ?? rawData.actores).split(/[,/]+/).map((a: string) => a.trim()).filter(Boolean)
+    cast: Array.isArray(rawData.cast ?? rawData.elenco ?? rawData.actores ?? rawData["Elenco Principal"] ?? rawData["👥 Elenco Principal"]) 
+      ? (rawData.cast ?? rawData.elenco ?? rawData.actores ?? rawData["Elenco Principal"] ?? rawData["👥 Elenco Principal"]) 
+      : (typeof (rawData.cast ?? rawData.elenco ?? rawData.actores ?? rawData["Elenco Principal"] ?? rawData["👥 Elenco Principal"]) === 'string'
+        ? (rawData.cast ?? rawData.elenco ?? rawData.actores ?? rawData["Elenco Principal"] ?? rawData["👥 Elenco Principal"]).split(/[,/]+/).map((a: string) => a.trim()).filter(Boolean)
         : []),
     script: rawData.script ?? rawData.guion ?? rawData.guión ?? "",
     music: rawData.music ?? rawData.banda_sonora ?? rawData.música ?? rawData.musica ?? "",
     photography: rawData.photography ?? rawData.fotografia ?? rawData.fotografía ?? "",
-    companies: rawData.companies ?? rawData.estudio ?? rawData.compania ?? rawData.compañía ?? rawData.estudios ?? "",
+    companies: rawData.companies ?? rawData.estudio ?? rawData.compania ?? rawData.compañía ?? rawData.estudios ?? rawData.productora ?? rawData["Estudio / Productora"] ?? rawData["🏢 Estudio / Productora"] ?? "",
     reviews: rawData.reviews ?? rawData.reseñas ?? rawData.critica ?? rawData.crítica ?? "",
     awards: rawData.awards ?? rawData.premios ?? "",
-    estante: rawData.estante ?? rawData.seccion ?? rawData.sección ?? rawData.ubicacion ?? rawData.ubicación ?? "",
-    season: rawData.season ?? rawData.temporada ?? rawData.temporadas ?? "",
-    section: rawData.section ?? rawData.seccion_destino ?? rawData.pestana_destino ?? ""
+    estante: rawData.estante ?? rawData.seccion ?? rawData.sección ?? rawData.ubicacion ?? rawData.ubicación ?? rawData["Sección (Localización)"] ?? rawData["📚 Sección (Localización)"] ?? rawData["Estante (Localización)"] ?? rawData["📚 Estante (Localización)"] ?? "",
+    season: rawSeason,
+    section: rawData.section ?? rawData.seccion_destino ?? rawData.pestana_destino ?? rawData.pestaña_destino ?? (rawSeason ? "series" : "")
   };
 
   // Convert all null/undefined values to empty strings (except year, rating, and cast which is an array)
@@ -248,7 +268,9 @@ REGLAS GLOBALES Y FORMATO INQUEBRANTABLE:
           awards: { type: Type.STRING, description: "Principales premios ganados" },
           ageRating: { type: Type.STRING, description: "Clasificación de edad (Ej: B15, R, PG-13)" },
           format: { type: Type.STRING, description: "Formato físico o digital de la película" },
-          estante: { type: Type.STRING, description: "Ubicación o estante físico de la mediateca" }
+          estante: { type: Type.STRING, description: "Ubicación o estante físico de la mediateca" },
+          season: { type: Type.STRING, description: "Temporada o temporadas si es serie (ej: 'Primera y única', 'Temporada 1', etc.)" },
+          section: { type: Type.STRING, description: "Pestaña de destino: 'series', 'centauro' o 'peliculas'" }
         },
         required: ["title", "originalTitle", "year", "rating", "duration", "country", "director", "script", "cast", "music", "photography", "companies", "genre", "synopsis", "poster", "reviews", "awards", "ageRating", "format", "estante"]
       };
@@ -699,7 +721,7 @@ Deberás mapear exactamente los siguientes campos presentes en la entrada a sus 
 4. "Año" o "📅 Año" -> mapéalo a "year" (extrae el número entero).
 5. "Rating Global" o "⭐ Rating Global" -> mapéalo a "rating" (extrae el número decimal de calificación, por ejemplo de "8.5 /10 IMDb" extrae 8.5).
 6. "Género" o "🎭 Género" -> mapéalo a "genre" (conserva el listado o redacción del usuario).
-7. "Temporada" o "📺 Temporada" -> mapéalo a "season" (ej: "Primera y única" o "Temporada 1").
+7. "Temporadas :" o "Temporadas:" o "Temporadas" o "Temporada:" o "Temporada" o "📺 Temporadas :" o "📺 Temporadas:" o "📺 Temporada:" o "📺 Temporada" -> mapéalo obligatoriamente a "season" (conserva exactamente el texto literal tras los dos puntos, ej: "Primera y única", "Temporada 1", "Temporadas 1 a 3", "2 Temporadas", etc. NUNCA lo omitas si el texto lo menciona).
 8. "Capítulos y Duración" o "⏱️ Capítulos y Duración" o "Temporada y Duración" o "📺 Temporada y Duración" o "Duración" o "⏱️ Duración" -> mapéalo a "duration" (conserva el texto literal original, ej: "13 Capítulos / 45 min", "Temporada 1 / 8 Capítulos / 50 min" o "155 minutos").
 9. "País" o "🌍 País" -> mapéalo a "country" (conserva el texto literal).
 10. "Clasificación" o "🔞 Clasificación" -> mapéalo a "ageRating" (ej: "A", "B", "B15", "C").
