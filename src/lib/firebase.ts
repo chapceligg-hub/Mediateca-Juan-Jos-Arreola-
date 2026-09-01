@@ -239,8 +239,17 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   return data;
 };
 
+const movieSubscribers = new Set<(movies: any[]) => void>();
+
+export const notifyMovieSubscribers = (movies: any[]) => {
+  movieSubscribers.forEach(cb => {
+    try { cb(movies); } catch (e) { console.error("Error in movie subscriber:", e); }
+  });
+};
+
 export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (err: any) => void) => {
   console.log("[Firebase] Iniciando suscripción con Sincronización Delta inteligente...");
+  movieSubscribers.add(callback);
 
   // 1. Cargar caché local global de inmediato para pintar la pantalla al instante
   (async () => {
@@ -249,8 +258,14 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
       if (cached && cached.length > 0) {
         callback(cached);
         // Sincronización Delta inicial silenciosa para traer cambios rápidos del servidor
-        const updatedList = await syncMoviesDelta(cached);
-        callback(updatedList);
+        try {
+          const updatedList = await syncMoviesDelta(cached);
+          if (updatedList && updatedList.length > 0) {
+            callback(updatedList);
+          }
+        } catch (deltaErr) {
+          console.warn("Delta sync skipped:", deltaErr);
+        }
       }
     } catch (e) {
       console.warn("Error cargando caché inicial en suscripción:", e);
@@ -260,7 +275,7 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
   // 2. Listener de tiempo real para mantener todo actualizado.
   // Gracias a persistentLocalCache de Firestore, Firebase no consumirá lecturas por lo que ya conoce.
   const q = query(collection(db, 'movies'));
-  return onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
+  const unsubFirestore = onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
     const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
     movies.sort((a, b) => {
@@ -270,13 +285,18 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
     });
 
     if (movies.length > 0) {
-      await setCachedMovies(movies);
-      callback(movies);
+      await setCachedMovies(movies, true);
+      notifyMovieSubscribers(movies);
     }
   }, (error) => {
-    console.error("Error en la suscripción en tiempo real:", error);
+    console.warn("Aviso en la suscripción en tiempo real de Firestore (operando con caché local):", error);
     onError(error);
   });
+
+  return () => {
+    movieSubscribers.delete(callback);
+    unsubFirestore();
+  };
 };
 
 export const fetchAdminsOptimized = async (forceServer = false) => {
@@ -324,15 +344,12 @@ export const upsertMovie = async (movie: any) => {
   const movieId = movie.id || generateMovieId();
   const movieData = { ...movie, id: movieId };
   
-  // Transacción activa de escritura en el servidor real:
-  await setDoc(doc(db, 'movies', movieId), movieData, { merge: true });
-  
-  // Sincronizar de inmediato la caché local
+  // 1. Sincronizar de inmediato la caché local y notificar en tiempo real a los observadores
   try {
     const offlineData = await getCachedMovies();
     let list: any[] = [];
     if (offlineData) {
-      list = offlineData;
+      list = [...offlineData];
     }
     const index = list.findIndex((m: any) => m.id === movieId);
     if (index > -1) {
@@ -346,20 +363,26 @@ export const upsertMovie = async (movie: any) => {
       return timeB.localeCompare(timeA);
     });
     await setCachedMovies(list, true);
+    notifyMovieSubscribers(list);
   } catch (e) {
     console.error("Error actualizando la caché local tras upsertMovie:", e);
+  }
+
+  // 2. Transacción activa de escritura en el servidor real:
+  try {
+    await setDoc(doc(db, 'movies', movieId), movieData, { merge: true });
+  } catch (err) {
+    console.warn("Aviso al guardar en Firestore (registro asegurado en caché local):", err);
   }
 
   return movieData;
 };
 
 export const updateMovie = async (id: string, updates: any) => {
-  await updateDoc(doc(db, 'movies', id), updates);
-  
   try {
     const offlineData = await getCachedMovies();
     if (offlineData) {
-      let list: any[] = offlineData;
+      let list: any[] = [...offlineData];
       const index = list.findIndex((m: any) => m.id === id);
       if (index > -1) {
         list[index] = { ...list[index], ...updates };
@@ -369,24 +392,35 @@ export const updateMovie = async (id: string, updates: any) => {
           return timeB.localeCompare(timeA);
         });
         await setCachedMovies(list, true);
+        notifyMovieSubscribers(list);
       }
     }
   } catch (e) {}
+
+  try {
+    await updateDoc(doc(db, 'movies', id), updates);
+  } catch (err) {
+    console.warn("Aviso al actualizar en Firestore (actualizado en caché local):", err);
+  }
 
   return { id, ...updates };
 };
 
 export const deleteMovie = async (id: string) => {
-  await deleteDoc(doc(db, 'movies', id));
-  
   try {
     const offlineData = await getCachedMovies();
     if (offlineData) {
-      let list: any[] = offlineData;
-      list = list.filter((m: any) => m.id !== id);
+      let list: any[] = offlineData.filter((m: any) => m.id !== id);
       await setCachedMovies(list, true);
+      notifyMovieSubscribers(list);
     }
   } catch (e) {}
+
+  try {
+    await deleteDoc(doc(db, 'movies', id));
+  } catch (err) {
+    console.warn("Aviso al eliminar en Firestore (eliminado en caché local):", err);
+  }
 };
 
 export const upsertAdmin = async (admin: any) => {

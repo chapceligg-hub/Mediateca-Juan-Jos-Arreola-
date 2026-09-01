@@ -866,16 +866,20 @@ export default function App() {
 
   const handleManualPosterUpdate = async (newPoster: string) => {
     if (isAddingNew || isEditing) {
-      setEditForm({ ...editForm, poster: newPoster });
+      setEditForm(prev => ({ ...prev, poster: newPoster }));
+      if (selectedMovie) {
+        setSelectedMovie(prev => prev ? ({ ...prev, poster: newPoster }) : null);
+      }
     } else if (selectedMovie) {
       const updatedAt = new Date().toISOString();
       const payload = { ...selectedMovie, poster: newPoster, updatedAt };
       setSelectedMovie(payload);
+      setMovies(prev => prev.map(m => m.id === payload.id ? payload : m));
       
       try {
         await upsertMovie(payload);
       } catch (error: any) {
-        setSyncError("Error actualizando póster");
+        console.warn("Aviso al actualizar póster:", error);
       }
     }
   };
@@ -1124,6 +1128,11 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
         await upsertMovie(finalMovie);
         addedInBatch.push(finalMovie);
+        setMovies(prev => {
+          const exists = prev.some(m => m.id === finalMovie.id);
+          if (exists) return prev.map(m => m.id === finalMovie.id ? finalMovie : m);
+          return [finalMovie, ...prev];
+        });
 
         setBatchProgress(p => ({ ...p, current: index + 1 }));
         await new Promise(r => setTimeout(r, 100)); // Breve pausa visual
@@ -1486,12 +1495,12 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
   const persistMovieData = async (dataToUse?: any) => {
     const data = dataToUse || editForm;
-    const id = isAddingNew ? generateMovieId() : (data.id || "");
+    const id = isAddingNew ? generateMovieId() : (data.id || selectedMovie?.id || "");
     if (!id) {
       setSyncError("No se pudo referenciar la obra. Intenta de nuevo.");
       return;
     }
-    const rawTarget = data.section || editForm.section || (activeExploreTab === 'centauro' ? 'centauro' : 'peliculas');
+    const rawTarget = data.section || editForm.section || selectedMovie?.section || (activeExploreTab === 'centauro' ? 'centauro' : 'peliculas');
     const targetSection = String(rawTarget).toLowerCase().trim() as 'peliculas' | 'centauro' | 'series';
     try {
       const payload: Movie = {
@@ -1510,20 +1519,28 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         companies: data.companies || "N/A",
         genre: data.genre || "Cine",
         synopsis: data.synopsis || "Sin argumento registrado.",
-        poster: data.poster || DEMO_POSTER,
+        poster: data.poster || editForm.poster || selectedMovie?.poster || DEMO_POSTER,
         reviews: data.reviews || "Sin reseñas verificadas.",
         awards: data.awards || "Sin premios registrados.",
         ageRating: data.ageRating || "N/A",
         format: data.format || "No disponible",
         estante: data.estante || "N/A",
         section: targetSection,
-        createdAt: isAddingNew ? new Date().toISOString() : (data.createdAt || data.updatedAt || new Date().toISOString()),
+        createdAt: isAddingNew ? new Date().toISOString() : (data.createdAt || selectedMovie?.createdAt || data.updatedAt || new Date().toISOString()),
         updatedAt: new Date().toISOString(),
         needsReview: false
       };
       
-      await upsertMovie(payload);
-      
+      setMovies(prev => {
+        const index = prev.findIndex(m => m.id === payload.id);
+        if (index > -1) {
+          const updated = [...prev];
+          updated[index] = payload;
+          return updated;
+        } else {
+          return [payload, ...prev];
+        }
+      });
       setIsAddingNew(false);
       setIsEditing(false);
       setSelectedMovie({ ...selectedMovie, ...payload } as Movie);
@@ -1532,6 +1549,8 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setSyncStatus("¡Guardado exitoso!");
       setActiveExploreTab(targetSection);
       clearFiltersAndSearch(true);
+
+      await upsertMovie(payload);
     } catch (e: any) {
       setSyncError("Fallo al persistir registro: " + e.message);
     }
@@ -1697,9 +1716,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
     if (!isAdmin || !user || !selectedMovie) return;
     const deletedId = selectedMovie.id;
     try {
+      setMovies(prev => prev.filter(m => m.id !== deletedId));
+      setSelectedMovie(null); 
+      setIsDeleting(false);
       await deleteMovie(deletedId);
-      
-      setSelectedMovie(null); setIsDeleting(false);
     } catch (e: any) { setSyncError("Error al intentar eliminar la obra: " + e.message); }
   };
 
@@ -1709,13 +1729,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
     const newValue = !movie.needsReview;
     try {
       const updatedAt = new Date().toISOString();
-      await updateMovie(movie.id, { needsReview: newValue, updatedAt });
-      
+      setMovies(prev => prev.map(m => m.id === movie.id ? { ...m, needsReview: newValue, updatedAt } : m));
       if (selectedMovie && selectedMovie.id === movie.id) {
         setSelectedMovie({ ...selectedMovie, needsReview: newValue, updatedAt });
       }
+      await updateMovie(movie.id, { needsReview: newValue, updatedAt });
     } catch(e: any) {
-      alert("Error al actualizar estado de revisión: " + e.message);
+      console.warn("Error al actualizar estado de revisión:", e);
     }
   };
 
