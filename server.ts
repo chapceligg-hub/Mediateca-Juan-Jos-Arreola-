@@ -29,12 +29,25 @@ export function sanitizeMovieData(rawData: any): any {
     ?? rawData["📺 Temporadas"] 
     ?? "";
 
+  let cleanSeason = String(rawSeason || "").trim();
+  cleanSeason = cleanSeason.replace(/^(📺\s*)?(Temporadas?|TEMPORADAS?)\s*:?\s*/i, "").trim();
+
+  let cleanDuration = String(rawData.duration ?? rawData.duracion ?? rawData.length ?? rawData["Capítulos y Duración"] ?? rawData["⏱️ Capítulos y Duración:"] ?? rawData["⏱️ Capítulos y Duración"] ?? rawData["capitulos_y_duracion"] ?? "").trim();
+  cleanDuration = cleanDuration.replace(/^(⏱️\s*)?(Capítulos\s*y\s*Duración|Duración)\s*:?\s*/i, "").trim();
+
+  let reqSection = rawData.section ?? rawData.seccion_destino ?? rawData.pestana_destino ?? rawData.pestaña_destino ?? "";
+  if (!reqSection || (reqSection === "peliculas" && cleanSeason)) {
+    if (cleanSeason) {
+      reqSection = "series";
+    }
+  }
+
   const mapped: any = {
     title: rawData.title ?? rawData.titulo ?? rawData.title_es ?? rawData.display_title ?? "",
     originalTitle: rawData.originalTitle ?? rawData.titulo_original ?? rawData.original_title ?? "",
     year: Number(rawData.year ?? rawData.año ?? rawData.anio ?? rawData.year_released ?? 0) || 0,
     rating: Number(rawData.rating ?? rawData.calificacion ?? rawData.rating_global ?? rawData.score ?? 0) || 0,
-    duration: rawData.duration ?? rawData.duracion ?? rawData.length ?? rawData["Capítulos y Duración"] ?? rawData["⏱️ Capítulos y Duración:"] ?? rawData["⏱️ Capítulos y Duración"] ?? rawData["capitulos_y_duracion"] ?? "",
+    duration: cleanDuration,
     country: rawData.country ?? rawData.pais ?? rawData.country_of_origin ?? "",
     director: rawData.director ?? rawData.dirección ?? rawData.direction ?? "",
     genre: rawData.genre ?? rawData.genero ?? rawData.género ?? "",
@@ -54,8 +67,8 @@ export function sanitizeMovieData(rawData: any): any {
     reviews: rawData.reviews ?? rawData.reseñas ?? rawData.critica ?? rawData.crítica ?? "",
     awards: rawData.awards ?? rawData.premios ?? "",
     estante: rawData.estante ?? rawData.seccion ?? rawData.sección ?? rawData.ubicacion ?? rawData.ubicación ?? rawData["Sección (Localización)"] ?? rawData["📚 Sección (Localización)"] ?? rawData["Estante (Localización)"] ?? rawData["📚 Estante (Localización)"] ?? "",
-    season: rawSeason,
-    section: rawData.section ?? rawData.seccion_destino ?? rawData.pestana_destino ?? rawData.pestaña_destino ?? (rawSeason ? "series" : "")
+    season: cleanSeason,
+    section: reqSection
   };
 
   // Convert all null/undefined values to empty strings (except year, rating, and cast which is an array)
