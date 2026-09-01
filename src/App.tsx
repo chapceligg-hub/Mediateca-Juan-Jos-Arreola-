@@ -2089,6 +2089,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                            <Download className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
                            <span>{t("EXPORTAR CSV")}</span>
                          </button>
+
                       </div>
                    </div>
                 </>

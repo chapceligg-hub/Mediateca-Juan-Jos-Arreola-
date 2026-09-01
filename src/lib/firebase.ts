@@ -79,7 +79,6 @@ export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boole
 
 export const getCachedMovies = async (): Promise<any[] | null> => {
   try {
-    // 1. Intentar leer de la caché principal en IndexedDB
     const cache = await get("videoteca_movies_cache");
     if (cache) {
       const parsed = typeof cache === 'string' ? JSON.parse(cache) : cache;
@@ -87,75 +86,8 @@ export const getCachedMovies = async (): Promise<any[] | null> => {
         return parsed;
       }
     }
-    
-    // 2. Intentar leer de localStorage (clave estándar)
-    try {
-      const localFallback = localStorage.getItem("videoteca_movies_cache");
-      if (localFallback) {
-        const parsed = JSON.parse(localFallback);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          try { await set("videoteca_movies_cache", parsed); } catch (_) {}
-          return parsed;
-        }
-      }
-    } catch (_) {}
-
-    // 3. Barrido exhaustivo de todas las claves históricas (tanto en IndexedDB como en localStorage)
-    const uid = auth.currentUser?.uid;
-    const legacyKeyNames = [
-      "videoteca_movies_cache_anonymous",
-      "videoteca_movies_cache_master",
-      "videoteca_movies_backup",
-      "videoteca_movies",
-      "movies_cache",
-      "videoteca_data",
-      ...(uid ? [`videoteca_movies_cache_${uid}`, `movies_${uid}`] : [])
-    ];
-
-    // Buscar en IndexedDB
-    for (const key of legacyKeyNames) {
-      try {
-        const legacyCache = await get(key);
-        if (legacyCache) {
-          const parsed = typeof legacyCache === 'string' ? JSON.parse(legacyCache) : legacyCache;
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            await set("videoteca_movies_cache", parsed);
-            try { localStorage.setItem("videoteca_movies_cache", JSON.stringify(parsed)); } catch (_) {}
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Buscar en localStorage recorriendo todas las llaves almacenadas en el navegador
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && (k.includes("videoteca") || k.includes("movie"))) {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.title) {
-                await set("videoteca_movies_cache", parsed);
-                localStorage.setItem("videoteca_movies_cache", JSON.stringify(parsed));
-                return parsed;
-              }
-            } catch (_) {}
-          }
-        }
-      }
-    } catch (_) {}
-
   } catch (e) {
     console.warn("Error leyendo la caché local en este dispositivo:", e);
-    try {
-      const localFallback = localStorage.getItem("videoteca_movies_cache");
-      if (localFallback) {
-        const parsed = JSON.parse(localFallback);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (_) {}
   }
   return null;
 };
@@ -165,25 +97,15 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
     const currentCache = await getCachedMovies();
     let currentMovies: any[] = currentCache || [];
     
-    // Validar integridad antes de persistir en la caché global única
+    // Validar integridad antes de persistir en la caché
     if (bypassIntegrity || shouldUpdateCache(currentMovies, newMovies)) {
-      try {
-        await set("videoteca_movies_cache", newMovies);
-      } catch (idbErr) {
-        console.warn("No se pudo escribir en IndexedDB (posible iframe aislado):", idbErr);
-      }
-      
-      try {
-        localStorage.setItem("videoteca_movies_cache", JSON.stringify(newMovies));
-      } catch (lsErr) {
-        // En caso de que exceda los 5MB de localStorage, IndexedDB ya lo tiene
-      }
-      console.log(`[Cache Manager] Caché única global actualizada exitosamente (${newMovies.length} películas)`);
+      await set("videoteca_movies_cache", newMovies);
+      console.log(`[Cache Manager] Caché local en IndexedDB actualizada exitosamente (${newMovies.length} películas)`);
     } else {
       console.log(`[Cache Manager] Integridad rechazada. Conservando caché unificada previa de ${currentMovies.length} películas.`);
     }
   } catch (e) {
-    console.error("Error al escribir en la caché local única global:", e);
+    console.error("Error al escribir en la caché local IndexedDB:", e);
   }
 };
 
@@ -199,11 +121,17 @@ export const syncMoviesDelta = async (localMovies: any[]): Promise<any[]> => {
 
     console.log(`[Delta Sync] Consultando cambios desde la última fecha local: ${maxUpdatedAt}`);
     
-    // Consultar a Firestore ÚNICAMENTE por las películas creadas/editadas después de maxUpdatedAt
-    const q = query(
-      collection(db, 'movies'), 
-      where('updatedAt', '>', maxUpdatedAt)
-    );
+    let q;
+    if (localMovies.length < 5) {
+      // Si el dispositivo tiene muy pocas películas, intentar traer todo el catálogo
+      q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
+    } else {
+      // Consultar a Firestore ÚNICAMENTE por las películas creadas/editadas después de maxUpdatedAt
+      q = query(
+        collection(db, 'movies'), 
+        where('updatedAt', '>', maxUpdatedAt)
+      );
+    }
     
     const snapshot = await getDocsFromServer(q);
     
@@ -304,30 +232,64 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
     }
   })();
 
-  // 2. Listener de tiempo real para mantener todo actualizado.
-  // Gracias a persistentLocalCache de Firestore, Firebase no consumirá lecturas por lo que ya conoce.
-  const q = query(collection(db, 'movies'));
-  const unsubFirestore = onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
-    const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
-    movies.sort((a, b) => {
-      const timeA = a.createdAt || a.updatedAt || "";
-      const timeB = b.createdAt || b.updatedAt || "";
-      return timeB.localeCompare(timeA);
-    });
+  let unsubFirestore: (() => void) | null = null;
+  let retryTimeout: any = null;
+  let isSubscribed = true;
 
-    if (movies.length > 0) {
-      await setCachedMovies(movies, true);
-      notifyMovieSubscribers(movies);
+  const startSnapshotListener = () => {
+    if (!isSubscribed) return;
+    try {
+      const q = query(collection(db, 'movies'));
+      unsubFirestore = onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
+        const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        movies.sort((a, b) => {
+          const timeA = a.createdAt || a.updatedAt || "";
+          const timeB = b.createdAt || b.updatedAt || "";
+          return timeB.localeCompare(timeA);
+        });
+
+        if (movies.length > 0) {
+          await setCachedMovies(movies, true);
+          notifyMovieSubscribers(movies);
+        }
+      }, (error) => {
+        console.warn("Aviso en la suscripción en tiempo real de Firestore (operando con caché local):", error);
+        (async () => {
+          try {
+            const local = await getCachedMovies();
+            if (local && local.length > 0) {
+              callback(local);
+            }
+          } catch (_) {}
+        })();
+        onError(error);
+
+        // Reintentar reconectar el listener en tiempo real automáticamente
+        if (isSubscribed) {
+          clearTimeout(retryTimeout);
+          retryTimeout = setTimeout(() => {
+            if (isSubscribed) {
+              console.log("[Firebase] Reintentando reconexión en tiempo real con Firestore...");
+              startSnapshotListener();
+            }
+          }, 30000); // Reintenta cada 30 segundos
+        }
+      });
+    } catch (e) {
+      console.warn("Error al inicializar onSnapshot:", e);
     }
-  }, (error) => {
-    console.warn("Aviso en la suscripción en tiempo real de Firestore (operando con caché local):", error);
-    onError(error);
-  });
+  };
+
+  startSnapshotListener();
 
   return () => {
+    isSubscribed = false;
+    clearTimeout(retryTimeout);
     movieSubscribers.delete(callback);
-    unsubFirestore();
+    if (unsubFirestore) {
+      unsubFirestore();
+    }
   };
 };
 
@@ -490,3 +452,4 @@ export const deleteAdmin = async (id: string) => {
     }
   } catch (e) {}
 };
+
