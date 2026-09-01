@@ -27,6 +27,7 @@ export interface Movie {
   tmdbId?: string;
   posterCandidates?: string[];
   estante?: string;
+  season?: string;
   section?: 'peliculas' | 'centauro' | 'series';
 }
 

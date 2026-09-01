@@ -684,33 +684,35 @@ Si un dato no existe, usa "" (o 0 si es numérico, o [] para 'cast'). Responde S
         return res.status(500).json({ error: "No se ha configurado ninguna API Key para batch-parse." });
       }
 
-      const prompt = `IMPORTANTE - MODO REORDENACIÓN ULTRA ESTRICTA Y FIDEDIGNA: El usuario no desea búsquedas externas, alucinaciones o invención de datos. Tu ÚNICA Y EXCLUSIVA tarea es leer el texto provisto por el usuario, extraer de él los datos y reorganizarlos/clasificarlos de forma fidedigna y literal al 100% en un JSON válido estructurando los campos correspondientes. Está TERMINANTEMENTE PROHIBIDO alucinar, inventar, omitir, omitir campos o rellenar de forma diferente a lo que el usuario ha redactado en su texto. Debes mapear los datos exactamente igual a como vienen descritos.
+      const prompt = `IMPORTANTE - MODO REORDENACIÓN ULTRA ESTRICTA Y FIDEDIGNA: El usuario no desea búsquedas externas, alucinaciones o invención de datos. Tu ÚNICA Y EXCLUSIVA tarea es leer el texto provisto por el usuario, extraer de él los datos y reorganizarlos/clasificarlos de forma fidedigna y literal al 100% en un JSON válido estructurando los campos correspondientes. Está TERMINANTEMENTE PROHIBIDO alucinar, inventar, omitir campos o rellenar de forma diferente a lo que el usuario ha redactado en su texto. Debes mapear los datos exactamente igual a como vienen descritos.
 
 REGLA DE CONSERVACIÓN TOTAL:
-Debes procesar y extraer todos y cada uno de los campos presentes en el texto del usuario. No tienes permitido omitir ningún atributo ni dejarlo en blanco o como "No disponible" si el texto de origen sí tiene un valor concreto para ese campo.
+Debes procesar y extraer todos y cada uno de los campos presentes en el texto del usuario (tanto de películas convencionales, colección Centauro como de series de televisión). No tienes permitido omitir ningún atributo ni dejarlo en blanco o como "No disponible" si el texto de origen sí tiene un valor concreto para ese campo.
 
 DICCIONARIO DE MAPEO OBLIGATORIO DE ENTRADA A CAMPOS JSON:
 Deberás mapear exactamente los siguientes campos presentes en la entrada a sus respectivas propiedades JSON indicadas:
 1. "Póster" o "🖼️ Póster" (URL o enlace de imagen TMDB/IMDb) -> mapéalo a "poster" (conserva la URL íntegra).
-2. "Título Español" o "Título Videoteca" o "🎬 Título Español" o "🎬 Título Videoteca" -> mapéalo a "title" (IMPORTANTE: ELIMINA el emoji "⚠️" si está presente, deja solo el título limpio).
+2. "Título Mediateca" o "Título Español" o "Título Videoteca" o "🎬 Título Mediateca" o "🎬 Título Español" o "🎬 Título Videoteca" o encabezados con "### [NÚMERO] [TÍTULO] (TEMPORADA X)" -> mapéalo a "title" (IMPORTANTE: si incluye temporada o subtítulo en la entrada, consérvalo tal cual; ELIMINA el emoji "⚠️" si está presente, dejando el título limpio).
 3. "Título Original" o "🏷️ Título Original" -> mapéalo a "originalTitle".
 4. "Año" o "📅 Año" -> mapéalo a "year" (extrae el número entero).
 5. "Rating Global" o "⭐ Rating Global" -> mapéalo a "rating" (extrae el número decimal de calificación, por ejemplo de "8.5 /10 IMDb" extrae 8.5).
 6. "Género" o "🎭 Género" -> mapéalo a "genre" (conserva el listado o redacción del usuario).
-7. "Duración" o "⏱️ Duración" -> mapéalo a "duration" (conserva el texto original, ej: "155 minutos" o "155 min").
-8. "País" o "🌍 País" -> mapéalo a "country" (conserva el texto literal).
-9. "Clasificación" o "🔞 Clasificación" -> mapéalo a "ageRating" (ej: "B15").
-10. "Guion" o "Guión" o "✍️ Guion" -> mapéalo a "script" (conserva los nombres de guionistas de forma literal).
-11. "Formato" o "📺 Formato" -> mapéalo a "format" (ej: "BLU-RAY Original" o "DVD Copia" o "No disponible").
-12. "Dirección" o "🎬 Dirección" -> mapéalo a "director" (conserva el nombre literal. Elimina cualquier "Nota:" o "Nota de consistencia:").
-13. "Banda Sonora" o "Música" o "🎵 Banda Sonora" -> mapéalo a "music" (conserva el compositor literal).
-14. "Fotografía" o "📸 Fotografía" -> mapéalo a "photography" (conserva el director de foto literal).
-15. "Estudio" o "🏢 Estudio" -> mapéalo a "companies" (conserva el estudio literal).
-16. "Estante (Localización)" o "Estante" o "📚 Estante (Localización)" -> mapéalo a "estante" (conserva la localización literal).
-17. "Elenco" o "👥 Elenco" -> mapéalo a "cast" (ponlo en array de strings. Extrae EXCLUSIVAMENTE los nombres literales que te proporciono. Está ESTRICTAMENTE PROHIBIDO añadir " (Personaje)", " (Voz)" o inventar roles genéricos. De preferencia pon solo los nombres de los actores reales).
-18. "Sinopsis" o "Sinopsis:" -> mapéalo a "synopsis" (conserva la redacción íntegra).
-19. "Reseñas críticas" o "Reseñas críticas:" -> mapéalo a "reviews" (conserva el consenso íntegro).
-20. "Premios históricos" o "Premios históricos:" -> mapéalo a "awards" (conserva los premios íntegros).
+7. "Temporada" o "📺 Temporada" -> mapéalo a "season" (ej: "Primera y única" o "Temporada 1").
+8. "Capítulos y Duración" o "⏱️ Capítulos y Duración" o "Temporada y Duración" o "📺 Temporada y Duración" o "Duración" o "⏱️ Duración" -> mapéalo a "duration" (conserva el texto literal original, ej: "13 Capítulos / 45 min", "Temporada 1 / 8 Capítulos / 50 min" o "155 minutos").
+9. "País" o "🌍 País" -> mapéalo a "country" (conserva el texto literal).
+10. "Clasificación" o "🔞 Clasificación" -> mapéalo a "ageRating" (ej: "A", "B", "B15", "C").
+11. "Guion" o "Guión" o "✍️ Guion" -> mapéalo a "script" (conserva los nombres de guionistas de forma literal).
+12. "Formato y Edición" o "Formato" o "📀 Formato y Edición" o "📺 Formato" -> mapéalo a "format" (ej: "BLU-RAY (1 Original)", "DVD (4 discos - Copia)", "DVD (3 Copia)", "BLU-RAY Original", "DVD Copia" o "No disponible").
+13. "Dirección" o "🎬 Dirección" -> mapéalo a "director" (conserva el nombre literal. Elimina cualquier "Nota:" o "Nota de consistencia:").
+14. "Banda Sonora" o "Música" o "🎵 Banda Sonora" -> mapéalo a "music" (conserva el compositor literal).
+15. "Fotografía" o "📸 Fotografía" -> mapéalo a "photography" (conserva el director de foto literal).
+16. "Estudio / Productora" o "Estudio" o "🏢 Estudio / Productora" o "🏢 Estudio" -> mapéalo a "companies" (conserva el estudio/productora literal).
+17. "Sección (Localización)" o "Estante (Localización)" o "Estante" o "📚 Sección (Localización)" o "📚 Estante (Localización)" -> mapéalo a "estante" (conserva la localización/sección literal).
+18. "Elenco Principal" o "Elenco" o "👥 Elenco Principal" o "👥 Elenco" -> mapéalo a "cast" (ponlo en array de strings. Extrae EXCLUSIVAMENTE los nombres literales que te proporciono).
+19. "Sinopsis" o "Sinopsis:" -> mapéalo a "synopsis" (conserva la redacción íntegra).
+20. "Reseñas críticas" o "Reseñas críticas:" -> mapéalo a "reviews" (conserva el consenso íntegro).
+21. "Premios históricos" o "Premios históricos:" -> mapéalo a "awards" (conserva los premios íntegros).
+22. "Pestaña destino" / "section": Si en la entrada se indica [PESTAÑA DESTINO: SERIES] o si los datos corresponden a una serie con temporadas/capítulos, asigna "section": "series" (o "centauro" si se especifica CENTAURO, o "peliculas").
 
 REGLA DE NOTAS:
 IMPORTANTE: Elimina y descarta cualquier texto que empiece con "Nota:", "Notas:", o "(Nota de consistencia:" en cualquiera de los campos. Extrae EXCLUSIVAMENTE el valor correspondiente del atributo.
@@ -722,6 +724,7 @@ Cada objeto del array dentro del JSON final debe tener EXACTAMENTE la siguiente 
     "originalTitle": "...",
     "year": 0,
     "rating": 0,
+    "season": "...",
     "duration": "...",
     "country": "...",
     "director": "...",
@@ -737,7 +740,8 @@ Cada objeto del array dentro del JSON final debe tener EXACTAMENTE la siguiente 
     "awards": "...",
     "ageRating": "...",
     "format": "...",
-    "estante": "..."
+    "estante": "...",
+    "section": "peliculas"
   }
 ]
 
@@ -760,7 +764,8 @@ ${text}`;
               originalTitle: { type: Type.STRING, description: "Título original" },
               year: { type: Type.INTEGER, description: "Año de lanzamiento" },
               rating: { type: Type.NUMBER, description: "Calificación de la obra de 0 a 10" },
-              duration: { type: Type.STRING, description: "Duración en formato: 120 min" },
+              season: { type: Type.STRING, description: "Temporada de la serie (ej: Primera y única, Temporada 1)" },
+              duration: { type: Type.STRING, description: "Duración o Capítulos y Duración (ej: 13 Capítulos / 45 min o 120 min)" },
               country: { type: Type.STRING, description: "País de origen" },
               director: { type: Type.STRING, description: "Director de la obra" },
               script: { type: Type.STRING, description: "Guionista de la película" },

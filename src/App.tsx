@@ -938,7 +938,7 @@ export default function App() {
     const cleanCast = Array.isArray(selectedMovie.cast) ? selectedMovie.cast.join(', ') : String(selectedMovie.cast || 'No disponible');
     
     let cleanDuration = selectedMovie.duration || 'No disponible';
-    if (cleanDuration && cleanDuration !== 'No disponible') {
+    if (cleanDuration && cleanDuration !== 'No disponible' && selectedMovie.section !== 'series') {
       const numOnly = parseInt(String(cleanDuration));
       if (!isNaN(numOnly)) {
         cleanDuration = `${numOnly} minutos`;
@@ -948,7 +948,36 @@ export default function App() {
     const displayTitle = selectedMovie.title || 'No disponible';
     const headerTitle = displayTitle.replace(/^⚠️\s*/, '').toUpperCase();
 
-    const ficha = `${orderNumber}) ${headerTitle} (${selectedMovie.year || ''})
+    let ficha = "";
+    if (selectedMovie.section === 'series') {
+      const durationVal = selectedMovie.duration || 'No disponible';
+      const seasonVal = selectedMovie.season || 'Primera y única';
+      ficha = `${orderNumber}) ${headerTitle}
+🎬 Título Mediateca: ${headerTitle}
+🏷️ Título Original: ${selectedMovie.originalTitle || 'No disponible'}
+📅 Año: ${selectedMovie.year || 'No disponible'}
+⭐ Rating Global: ${selectedMovie.rating ? `${selectedMovie.rating}/10 IMDb` : '0/10 IMDb'}
+🎭 Género: ${cleanGenres}
+📺 Temporada: ${seasonVal}
+⏱️ Capítulos y Duración: ${durationVal}
+🌍 País: ${selectedMovie.country || 'No disponible'}
+🔞 Clasificación: ${selectedMovie.ageRating || 'No disponible'}
+✍️ Guion: ${selectedMovie.script || 'No disponible'}
+📀 Formato y Edición: ${selectedMovie.format || 'No disponible'}
+🎬 Dirección: ${selectedMovie.director || 'No disponible'}
+🎵 Banda Sonora: ${selectedMovie.music || 'No disponible'}
+📸 Fotografía: ${selectedMovie.photography || 'No disponible'}
+🏢 Estudio / Productora: ${selectedMovie.companies || 'No disponible'}
+📚 Sección (Localización): ${selectedMovie.estante || ''}
+👥 Elenco Principal: ${cleanCast}
+📖 Argumento:
+Sinopsis: ${selectedMovie.synopsis || 'No disponible'}
+
+Reseñas críticas: ${selectedMovie.reviews || 'No disponible'}
+
+Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
+    } else {
+      ficha = `${orderNumber}) ${headerTitle} (${selectedMovie.year || ''})
 🖼️ Póster: ${selectedMovie.poster || 'No disponible'}
 🎬 Título Mediateca: ${headerTitle}
 🏷️ Título Original: ${selectedMovie.originalTitle || 'No disponible'}
@@ -970,6 +999,7 @@ export default function App() {
 Sinopsis: ${selectedMovie.synopsis || 'No disponible'}
 Reseñas críticas: ${selectedMovie.reviews || 'No disponible'}
 Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
+    }
 
     navigator.clipboard.writeText(ficha);
     setCopied(true);
@@ -1538,7 +1568,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     if (!syncInput) return;
     setIsSyncing(true); setSyncError("");
     setSyncStatus("Analizando texto con IA...");
-    const targetSec = editForm.section || (activeExploreTab === 'centauro' ? 'centauro' : 'peliculas');
+    const targetSec = editForm.section || (activeExploreTab === 'series' ? 'series' : activeExploreTab === 'centauro' ? 'centauro' : 'peliculas');
     try {
       const response = await fetch('/api/batch-parse', {
         method: 'POST',
@@ -1580,7 +1610,33 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         ? merged.cast.join(', ')
         : (merged.cast || 'No disponible');
         
-      const formattedFicha = `🖼️ Póster: ${merged.poster || 'No disponible'}
+      let formattedFicha = "";
+      if (targetSec === 'series') {
+        formattedFicha = `🎬 Título Mediateca: ${merged.title || 'No disponible'}
+🏷️ Título Original: ${merged.originalTitle || 'No disponible'}
+📅 Año: ${merged.year || 'No disponible'}
+⭐ Rating Global: ${merged.rating ? `${merged.rating}/10 IMDb` : '0/10 IMDb'}
+🎭 Género: ${merged.genre || 'No disponible'}
+📺 Temporada: ${merged.season || 'Primera y única'}
+⏱️ Capítulos y Duración: ${merged.duration || 'No disponible'}
+🌍 País: ${merged.country || 'No disponible'}
+🔞 Clasificación: ${merged.ageRating || 'No disponible'}
+✍️ Guion: ${merged.script || 'No disponible'}
+📀 Formato y Edición: ${merged.format || 'No disponible'}
+🎬 Dirección: ${merged.director || 'No disponible'}
+🎵 Banda Sonora: ${merged.music || 'No disponible'}
+📸 Fotografía: ${merged.photography || 'No disponible'}
+🏢 Estudio / Productora: ${merged.companies || 'No disponible'}
+📚 Sección (Localización): ${merged.estante || ''}
+👥 Elenco Principal: ${cleanCast}
+📖 Argumento:
+Sinopsis: ${merged.synopsis || 'No disponible'}
+
+Reseñas críticas: ${merged.reviews || 'No disponible'}
+
+Premios históricos: ${merged.awards || 'No disponible'}`;
+      } else {
+        formattedFicha = `🖼️ Póster: ${merged.poster || 'No disponible'}
 🎬 Título Mediateca: ${merged.title || 'No disponible'}
 🏷️ Título Original: ${merged.originalTitle || 'No disponible'}
 📅 Año: ${merged.year || 'No disponible'}
@@ -1601,6 +1657,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 Sinopsis: ${merged.synopsis || 'No disponible'}
 Reseñas críticas: ${merged.reviews || 'No disponible'}
 Premios históricos: ${merged.awards || 'No disponible'}`;
+      }
 
       setSyncInput(formattedFicha);
       setSyncStatus("¡Ficha extraída correctamente!");
@@ -1984,7 +2041,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       <span className="text-[10px] uppercase tracking-[0.12em] text-white/[0.28] font-bold px-5 mb-1 mt-5 select-none block">Gestión</span>
                       <div className="flex flex-col gap-1">
                          <button 
-                           onClick={() => { setPasteTargetSection(activeExploreTab === 'centauro' ? 'centauro' : 'peliculas'); setShowPasteModal(true); }} 
+                           onClick={() => { setPasteTargetSection(activeExploreTab === 'series' ? 'series' : activeExploreTab === 'centauro' ? 'centauro' : 'peliculas'); setShowPasteModal(true); }} 
                            disabled={batchProgress.active} 
                            className={`${getSidebarItemClass(false)} disabled:opacity-50`}
                          >
@@ -2024,7 +2081,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         <div className="p-6 flex flex-col gap-6 mt-auto border-t border-white/5 bg-[#030303] shrink-0">
           {isAdmin && (
             <button 
-              onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false, section: activeExploreTab === 'centauro' ? 'centauro' : 'peliculas' }); setSyncInput(""); setIsAddingNew(true); }} 
+              onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false, section: activeExploreTab === 'series' ? 'series' : activeExploreTab === 'centauro' ? 'centauro' : 'peliculas' }); setSyncInput(""); setIsAddingNew(true); }} 
               className="relative group overflow-hidden w-full h-14 rounded-xl z-10 flex items-center justify-center p-[2px] transition-all duration-300 active:scale-95 shadow-[0_0_20px_rgba(180,29,29,0.15)] hover:shadow-[0_0_30px_rgba(180,29,29,0.3)]"
             >
               {/* Repeating animated conic gradient background */}
@@ -2089,8 +2146,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             >
               {isDayMode ? <Moon size={18} className="text-indigo-500" /> : <Sun size={18} />}
             </button>
-            {isAdmin && <button onClick={() => { setPasteTargetSection(activeExploreTab === 'centauro' ? 'centauro' : 'peliculas'); setShowPasteModal(true); }} className="p-2 border border-white/10 rounded-xl"><ClipboardPaste size={18}/></button>}
-            {isAdmin && <button onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false, section: activeExploreTab === 'centauro' ? 'centauro' : 'peliculas' }); setSyncInput(""); setIsAddingNew(true); }} className="p-2 bg-[#b91c1c] hover:bg-[#dc2626] transition-colors text-white rounded-xl"><Plus size={18}/></button>}
+            {isAdmin && <button onClick={() => { setPasteTargetSection(activeExploreTab === 'series' ? 'series' : activeExploreTab === 'centauro' ? 'centauro' : 'peliculas'); setShowPasteModal(true); }} className="p-2 border border-white/10 rounded-xl"><ClipboardPaste size={18}/></button>}
+            {isAdmin && <button onClick={() => { setEditForm({ title: "", year: 2026, rating: 0, synopsis: "", cast: [], poster: "", duration: "", script: "", photography: "", music: "", companies: "", originalTitle: "", country: "", genre: "", ageRating: "", format: "", reviews: "", awards: "", director: "", needsReview: false, section: activeExploreTab === 'series' ? 'series' : activeExploreTab === 'centauro' ? 'centauro' : 'peliculas' }); setSyncInput(""); setIsAddingNew(true); }} className="p-2 bg-[#b91c1c] hover:bg-[#dc2626] transition-colors text-white rounded-xl"><Plus size={18}/></button>}
             <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 border border-white/10 rounded-xl text-zinc-400 hover:text-white"><Menu size={18}/></button>
          </div>
       </nav>
@@ -2280,15 +2337,15 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                 <button
                   type="button"
-                  disabled
-                  title="Sección Series en desarrollo"
-                  className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 opacity-40 cursor-not-allowed text-zinc-500 bg-white/[0.01] border border-dashed border-white/10"
+                  onClick={() => setPasteTargetSection('series')}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                    pasteTargetSection === 'series'
+                      ? 'bg-[#b41d1d] text-white shadow-lg shadow-[#b41d1d]/30 font-extrabold'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  }`}
                 >
                   <Tv size={16} />
                   <span>Series</span>
-                  <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal normal-case ml-1">
-                    Pronto
-                  </span>
                 </button>
               </div>
             </div>
@@ -2299,7 +2356,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 onChange={(e) => setPastedText(e.target.value)}
                 onKeyDown={(e) => e.stopPropagation()}
                 className="w-full h-80 bg-transparent border-none p-0 text-zinc-100 text-sm font-semibold tracking-normal outline-none focus:ring-0 placeholder-zinc-700 transition-all resize-none font-sans leading-relaxed custom-scrollbar"
-                placeholder={`Pega aquí la información de tus películas...\n\nPóster: https://...\nTítulo Mediateca: El Padrino\nAño: 1972\n... (Soporta hasta ${pasteLimit} películas al mismo tiempo)`}
+                placeholder={
+                  pasteTargetSection === 'series'
+                    ? `Pega aquí la información de tus series...\n\n1) 13 MIEDOS\n🎬 Título Mediateca: 13 MIEDOS\n🏷️ Título Original: 13 Miedos\n📅 Año: 2007\n⭐ Rating Global: 7.2/10 IMDb\n🎭 Género: Terror / Suspenso / Mexicanas\n📺 Temporada: Primera y única\n⏱️ Capítulos y Duración: 13 Capítulos / 45 min\n🌍 País: México\n🔞 Clasificación: C\n✍️ Guion: Constantino Morán / Ricardo Campos\n📀 Formato y Edición: DVD (4 discos - Copia)\n🎬 Dirección: Varios directores (Lemon Films)\n🎵 Banda Sonora: Música incidental de terror y suspenso\n📸 Fotografía: Televisión / Cine digital\n🏢 Estudio / Productora: Televisa / Lemon Films\n📚 Sección (Localización): Terror\n👥 Elenco Principal: Constantino Morán, Ricardo Campos y reparto\n📖 Argumento:\nSinopsis: ...\n\n(Soporta hasta ${pasteLimit} series al mismo tiempo)`
+                    : `Pega aquí la información de tus películas...\n\n🖼️ Póster: https://...\n🎬 Título Mediateca: El Padrino\n📅 Año: 1972\n... (Soporta hasta ${pasteLimit} películas al mismo tiempo)`
+                }
               />
             </div>
             
@@ -2643,15 +2704,15 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                       <button
                         type="button"
-                        disabled
-                        title="Sección Series en desarrollo"
-                        className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 opacity-40 cursor-not-allowed text-zinc-500 bg-white/[0.01] border border-dashed border-white/10"
+                        onClick={() => setEditForm({ ...editForm, section: 'series' })}
+                        className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                          editForm.section === 'series'
+                            ? 'bg-[#b41d1d] text-white shadow-lg shadow-[#b41d1d]/30 font-extrabold'
+                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                        }`}
                       >
                         <Tv size={16} />
                         <span>Series</span>
-                        <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal normal-case ml-1">
-                          Pronto
-                        </span>
                       </button>
                     </div>
                   </div>
@@ -2660,7 +2721,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <div className="flex items-center gap-3 text-white font-extrabold text-xs uppercase tracking-[0.25em]"><Sparkles size={16} className="text-[#b41d1d]" /> Extracción Inteligente</div>
                     <div className="flex flex-col gap-4">
                       <textarea 
-                        placeholder="Pega aquí los datos de la película..." 
+                        placeholder={
+                          editForm.section === 'series'
+                            ? "Pega aquí los datos de la serie...\nEj: ### 1 BREAKING BAD (TEMPORADA 1)\n🎬 Título Mediateca: BREAKING BAD\n..."
+                            : "Pega aquí los datos de la película..."
+                        } 
                         value={syncInput} 
                         onChange={(e) => setSyncInput(e.target.value)} 
                         onKeyDown={(e) => e.stopPropagation()} 
@@ -2710,7 +2775,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <EditField label="Año" value={editForm.year} onChange={(v: string) => setEditForm({...editForm, year: parseInt(v) || 0})} type="number" />
                     <EditField label="Rating" value={editForm.rating} onChange={(v: string) => setEditForm({...editForm, rating: parseFloat(v) || 0})} type="number" />
                     <EditField label="Género" value={editForm.genre} onChange={(v: string) => setEditForm({...editForm, genre: v})} />
-                    <EditField label="Duración" value={editForm.duration} onChange={(v: string) => setEditForm({...editForm, duration: v})} />
+                    {editForm.section === 'series' ? (
+                      <>
+                        <EditField label="Temporada" value={editForm.season || ""} onChange={(v: string) => setEditForm({...editForm, season: v})} placeholder="Ej: Primera y única o Temporada 1" />
+                        <EditField label="Capítulos y Duración" value={editForm.duration} onChange={(v: string) => setEditForm({...editForm, duration: v})} placeholder="Ej: 13 Capítulos / 45 min" />
+                      </>
+                    ) : (
+                      <EditField label="Duración" value={editForm.duration} onChange={(v: string) => setEditForm({...editForm, duration: v})} placeholder="Ej: 120 minutos" />
+                    )}
                     <EditField label="País" value={editForm.country} onChange={(v: string) => setEditForm({...editForm, country: v})} />
                     <EditField label="Clasificación" value={editForm.ageRating} onChange={(v: string) => setEditForm({...editForm, ageRating: v})} />
                   </div>
@@ -2720,15 +2792,15 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <EditField label="Guion" value={editForm.script} onChange={(v: string) => setEditForm({...editForm, script: v})} />
                     <EditField label="Música" value={editForm.music} onChange={(v: string) => setEditForm({...editForm, music: v})} />
                     <EditField label="Fotografía" value={editForm.photography} onChange={(v: string) => setEditForm({...editForm, photography: v})} />
-                    <EditField label="Estudio" value={editForm.companies} onChange={(v: string) => setEditForm({...editForm, companies: v})} />
-                    <EditField label="Estante" value={editForm.estante} onChange={(v: string) => setEditForm({...editForm, estante: v})} placeholder="Ej: Estante: 6.2" />
-                    <EditField label="Formato" value={editForm.format} onChange={(v: string) => setEditForm({...editForm, format: v})} className="col-span-1 md:col-span-2" />
+                    <EditField label={editForm.section === 'series' ? "Estudio / Productora" : "Estudio"} value={editForm.companies} onChange={(v: string) => setEditForm({...editForm, companies: v})} />
+                    <EditField label={editForm.section === 'series' ? "Sección (Localización)" : "Estante"} value={editForm.estante} onChange={(v: string) => setEditForm({...editForm, estante: v})} placeholder={editForm.section === 'series' ? "Ej: Sección: 4.1" : "Ej: Estante: 6.2"} />
+                    <EditField label={editForm.section === 'series' ? "Formato y Edición" : "Formato"} value={editForm.format} onChange={(v: string) => setEditForm({...editForm, format: v})} className="col-span-1 md:col-span-2" placeholder={editForm.section === 'series' ? "Ej: BLU-RAY (3 Original)" : "Ej: DVD (Original)"} />
                   </div>
 
                   <div className="relative group w-full bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.07] hover:border-white/[0.15] focus-within:border-[#b41d1d] focus-within:ring-1 focus-within:ring-[#b41d1d]/20 focus-within:bg-[#b41d1d]/[0.01] transition-all duration-300 rounded-xl p-4 flex flex-col gap-2 shadow-md">
                     <label className="text-[9px] font-extrabold uppercase text-zinc-500 tracking-[0.25em] select-none flex items-center gap-2">
                       <Users size={14} className="text-zinc-500 group-focus-within:text-[#b41d1d] transition-colors duration-300" />
-                      <span>ELENCO (ACTORES)</span>
+                      <span>{editForm.section === 'series' ? "ELENCO PRINCIPAL" : "ELENCO (ACTORES)"}</span>
                     </label>
                     <textarea 
                       value={Array.isArray(editForm.cast) ? editForm.cast.join(", ") : (editForm.cast || "")} 
@@ -2818,6 +2890,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         </span>
                       );
                     })}
+                    {selectedMovie.section === 'series' && selectedMovie.season && (
+                      <span className="text-indigo-400 font-bold text-[10px] tracking-widest flex items-center gap-1.5 bg-indigo-500/10 px-3 py-1.5 rounded-md border border-indigo-500/20">
+                        <Tv size={14} /> {selectedMovie.season}
+                      </span>
+                    )}
                     <span className="text-zinc-400 font-bold text-[10px] tracking-widest flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-md border border-white/5"><Clock size={14} /> {selectedMovie.duration || "N/A"}</span>
                   </div>
                   
@@ -2957,16 +3034,31 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                   {/* Tech Specs */}
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-8 pt-8 border-t border-white/5">
-                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><MonitorPlay size={12} className="text-[#b41d1d]" /> Formato</span><span className="text-zinc-400 font-medium text-xs">{selectedMovie.format || "No disponible"}</span></div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5">
+                        <MonitorPlay size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Formato y Edición" : "Formato"}
+                      </span>
+                      <span className="text-zinc-400 font-medium text-xs">{selectedMovie.format || "No disponible"}</span>
+                    </div>
+                    {selectedMovie.section === 'series' ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5">
+                          <Tv size={12} className="text-[#b41d1d]" /> Temporada
+                        </span>
+                        <span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.season || "Primera y única"}>
+                          {selectedMovie.season || "Primera y única"}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><ClipboardList size={12} className="text-[#b41d1d]" /> Guion</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.script}>{selectedMovie.script}</span></div>
-                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Music size={12} className="text-[#b41d1d]" /> Música</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.music}>{selectedMovie.music}</span></div>
+                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Music size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Banda Sonora" : "Música"}</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.music}>{selectedMovie.music}</span></div>
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><ImageIcon size={12} className="text-[#b41d1d]" /> Fotografía</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.photography}>{selectedMovie.photography}</span></div>
-                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Landmark size={12} className="text-[#b41d1d]" /> Estudio</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.companies}>{selectedMovie.companies}</span></div>
-                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Library size={12} className="text-[#b41d1d]" /> Estante</span><span className="text-zinc-400 font-medium text-xs">{selectedMovie.estante || "N/A"}</span></div>
+                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Landmark size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Estudio / Productora" : "Estudio"}</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.companies}>{selectedMovie.companies}</span></div>
+                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Library size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Sección (Localización)" : "Estante"}</span><span className="text-zinc-400 font-medium text-xs">{selectedMovie.estante || "N/A"}</span></div>
                     
                     {/* Clickable Cast Section */}
                     <div className="flex flex-col gap-3 col-span-full pt-6 border-t border-white/5">
-                      <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Users size={12} className="text-[#b41d1d]" /> Elenco</span>
+                      <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Users size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Elenco Principal" : "Elenco"}</span>
                       <div className="flex flex-wrap gap-2 text-zinc-400 font-medium text-xs leading-relaxed">
                         {(Array.isArray(selectedMovie.cast) ? selectedMovie.cast : String(selectedMovie.cast || "").split('/').map(s => s.trim()).filter(Boolean)).map((actor, aIdx) => (
                           <button 
@@ -3033,12 +3125,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         </span>
                       </button>
 
-                      {/* Button: MOVER DE SECCIÓN (PELÍCULAS <-> CENTAURO) */}
+                      {/* Button: MOVER DE SECCIÓN (PELÍCULAS <-> CENTAURO <-> SERIES) */}
                       <button 
                         type="button"
                         onClick={async () => {
                           const currentSec = (selectedMovie.section || 'peliculas').toLowerCase();
-                          const nextSec = currentSec === 'centauro' ? 'peliculas' : 'centauro';
+                          const nextSec = currentSec === 'peliculas' ? 'centauro' : currentSec === 'centauro' ? 'series' : 'peliculas';
                           const updated = { ...selectedMovie, section: nextSec, updatedAt: new Date().toISOString() };
                           setSelectedMovie(updated);
                           setMovies(prev => prev.map(m => m.id === selectedMovie.id ? updated : m));
@@ -3049,9 +3141,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                           }
                         }}
                         className="h-14 px-5 bg-[#0c0c0e] hover:bg-[#121215] border border-white/5 hover:border-[#b41d1d]/40 text-zinc-350 hover:text-white rounded-xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)] shrink-0"
-                        title={`Mover obra a pestaña ${selectedMovie.section === 'centauro' ? 'Películas' : 'Centauro'}`}
+                        title={`Mover obra a pestaña ${selectedMovie.section === 'peliculas' ? 'Centauro' : selectedMovie.section === 'centauro' ? 'Series' : 'Películas'}`}
                       >
                         {selectedMovie.section === 'centauro' ? (
+                          <>
+                            <Tv size={15} className="text-indigo-400" />
+                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A SERIES</span>
+                          </>
+                        ) : selectedMovie.section === 'series' ? (
                           <>
                             <Clapperboard size={15} className="text-zinc-400 group-hover:text-[#b41d1d]" />
                             <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-300">MOVER A PELÍCULAS</span>
@@ -3074,7 +3171,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <span className="absolute inset-[-400%] bg-[conic-gradient(from_0deg,#b41d1d_0deg,#ffffff_120deg,#0a0a0c_180deg,#b41d1d_240deg,#ffffff_300deg,#b41d1d_360deg)] animate-[spin_4s_linear_infinite] z-0 opacity-0 group-hover/btn-edit:opacity-100 transition-opacity duration-300" />
                         <span className="absolute inset-[1px] bg-[#0c0c0e] rounded-[11px] group-hover/btn-edit:bg-[#121215] border border-white/5 group-hover/btn-edit:border-transparent transition-all duration-300 z-10 flex items-center justify-center gap-2.5 text-zinc-300 group-hover/btn-edit:text-white font-extrabold uppercase tracking-[0.2em] text-[10px] font-sans w-[calc(100%-2px)] h-[calc(100%-2px)]">
                           <Edit2 size={13} className="text-[#b41d1d] group-hover/btn-edit:text-white transition-colors duration-300" /> 
-                          <span>EDITAR PELÍCULA</span>
+                          <span>EDITAR OBRA</span>
                         </span>
                       </button>
 
