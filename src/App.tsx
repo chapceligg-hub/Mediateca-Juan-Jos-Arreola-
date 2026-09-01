@@ -2915,11 +2915,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         </span>
                       );
                     })}
-                    {selectedMovie.section === 'series' && selectedMovie.season && (
-                      <span className="text-indigo-400 font-bold text-[10px] tracking-widest flex items-center gap-1.5 bg-indigo-500/10 px-3 py-1.5 rounded-md border border-indigo-500/20">
-                        <Tv size={14} /> {selectedMovie.season}
-                      </span>
-                    )}
                     <span className="text-zinc-400 font-bold text-[10px] tracking-widest flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-md border border-white/5"><Clock size={14} /> {selectedMovie.duration || "N/A"}</span>
                   </div>
                   
