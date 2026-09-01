@@ -79,7 +79,7 @@ export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boole
 
 export const getCachedMovies = async (): Promise<any[] | null> => {
   try {
-    // 1. Intentar leer de la caché única global en IndexedDB
+    // 1. Intentar leer de la caché principal en IndexedDB
     const cache = await get("videoteca_movies_cache");
     if (cache) {
       const parsed = typeof cache === 'string' ? JSON.parse(cache) : cache;
@@ -88,36 +88,67 @@ export const getCachedMovies = async (): Promise<any[] | null> => {
       }
     }
     
-    // 2. Fallback a localStorage (útil para iframes de desarrollo y entornos con IndexedDB particionado)
+    // 2. Intentar leer de localStorage (clave estándar)
     try {
       const localFallback = localStorage.getItem("videoteca_movies_cache");
       if (localFallback) {
         const parsed = JSON.parse(localFallback);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Intentar guardarlo también en IndexedDB
           try { await set("videoteca_movies_cache", parsed); } catch (_) {}
           return parsed;
         }
       }
     } catch (_) {}
 
-    // 3. Fallback de compatibilidad: si no existe, buscar en las claves antiguas segmentadas
+    // 3. Barrido exhaustivo de todas las claves históricas (tanto en IndexedDB como en localStorage)
     const uid = auth.currentUser?.uid;
-    const legacyKeys = uid ? [`videoteca_movies_cache_${uid}`, "videoteca_movies_cache_anonymous"] : ["videoteca_movies_cache_anonymous"];
-    for (const key of legacyKeys) {
-      const legacyCache = await get(key);
-      if (legacyCache) {
-        const parsed = typeof legacyCache === 'string' ? JSON.parse(legacyCache) : legacyCache;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Migrar inmediatamente a la caché global unificada
-          await set("videoteca_movies_cache", parsed);
-          try { localStorage.setItem("videoteca_movies_cache", JSON.stringify(parsed)); } catch (_) {}
-          return parsed;
+    const legacyKeyNames = [
+      "videoteca_movies_cache_anonymous",
+      "videoteca_movies_cache_master",
+      "videoteca_movies_backup",
+      "videoteca_movies",
+      "movies_cache",
+      "videoteca_data",
+      ...(uid ? [`videoteca_movies_cache_${uid}`, `movies_${uid}`] : [])
+    ];
+
+    // Buscar en IndexedDB
+    for (const key of legacyKeyNames) {
+      try {
+        const legacyCache = await get(key);
+        if (legacyCache) {
+          const parsed = typeof legacyCache === 'string' ? JSON.parse(legacyCache) : legacyCache;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            await set("videoteca_movies_cache", parsed);
+            try { localStorage.setItem("videoteca_movies_cache", JSON.stringify(parsed)); } catch (_) {}
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Buscar en localStorage recorriendo todas las llaves almacenadas en el navegador
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.includes("videoteca") || k.includes("movie"))) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.title) {
+                await set("videoteca_movies_cache", parsed);
+                localStorage.setItem("videoteca_movies_cache", JSON.stringify(parsed));
+                return parsed;
+              }
+            } catch (_) {}
+          }
         }
       }
-    }
+    } catch (_) {}
+
   } catch (e) {
-    console.warn("Error leyendo la caché local única global:", e);
+    console.warn("Error leyendo la caché local en este dispositivo:", e);
     try {
       const localFallback = localStorage.getItem("videoteca_movies_cache");
       if (localFallback) {
