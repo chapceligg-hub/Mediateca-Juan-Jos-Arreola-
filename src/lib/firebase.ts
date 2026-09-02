@@ -111,39 +111,45 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
 
 export const syncMoviesDelta = async (localMovies: any[]): Promise<any[]> => {
   try {
-    let maxUpdatedAt = "1970-01-01T00:00:00.000Z";
-    for (const m of localMovies) {
-      const t = m.updatedAt || m.createdAt || "";
-      if (t && t > maxUpdatedAt) {
-        maxUpdatedAt = t;
-      }
+    if (!localMovies || localMovies.length === 0) {
+      console.log("[Delta Sync] Sin catálogo local. Descargando catálogo inicial...");
+      const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocsFromServer(q);
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      await setCachedMovies(data, true);
+      notifyMovieSubscribers(data);
+      return data;
     }
 
-    console.log(`[Delta Sync] Consultando cambios desde la última fecha local: ${maxUpdatedAt}`);
-    
-    let q;
-    if (localMovies.length < 5) {
-      // Si el dispositivo tiene muy pocas películas, intentar traer todo el catálogo
-      q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
-    } else {
-      // Consultar a Firestore ÚNICAMENTE por las películas creadas/editadas después de maxUpdatedAt
-      q = query(
-        collection(db, 'movies'), 
-        where('updatedAt', '>', maxUpdatedAt)
-      );
+    let maxUpdatedAt = "1970-01-01T00:00:00.000Z";
+    let maxCreatedAt = "1970-01-01T00:00:00.000Z";
+    for (const m of localMovies) {
+      const u = m.updatedAt || "";
+      const c = m.createdAt || "";
+      if (u && u > maxUpdatedAt) maxUpdatedAt = u;
+      if (c && c > maxCreatedAt) maxCreatedAt = c;
     }
-    
-    const snapshot = await getDocsFromServer(q);
-    
-    if (snapshot.empty) {
-      console.log("[Delta Sync] No hay películas nuevas ni modificadas. Lecturas de Firestore consumidas: 0.");
+
+    // Consulta de deltas ultra-optimizada en paralelo:
+    // Solo trae documentos creados o modificados después de la marca de tiempo local más reciente
+    const [snapUpdated, snapCreated] = await Promise.all([
+      getDocsFromServer(query(collection(db, 'movies'), where('updatedAt', '>', maxUpdatedAt))),
+      getDocsFromServer(query(collection(db, 'movies'), where('createdAt', '>', maxCreatedAt)))
+    ]);
+
+    const deltaDocs = new Map<string, any>();
+    snapUpdated.docs.forEach(d => deltaDocs.set(d.id, { id: d.id, ...d.data() }));
+    snapCreated.docs.forEach(d => deltaDocs.set(d.id, { id: d.id, ...d.data() }));
+
+    if (deltaDocs.size === 0) {
+      console.log("[Delta Sync] Catálogo sincronizado al 100%. Cero lecturas adicionales de Firestore.");
       return localMovies;
     }
 
-    const deltaMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    console.log(`[Delta Sync] Se encontraron ${deltaMovies.length} películas nuevas/modificadas. Consumo: ${deltaMovies.length} lecturas.`);
+    const deltaMovies = Array.from(deltaDocs.values());
+    console.log(`[Delta Sync] Sincronizados ${deltaMovies.length} cambios recientes de otros dispositivos.`);
 
-    // Unir los deltas con las películas locales que ya tenemos (sobrescribiendo los cambios)
+    // Unir deltas con la lista local por ID
     const mergedMap = new Map();
     for (const m of localMovies) {
       mergedMap.set(m.id, m);
@@ -153,19 +159,17 @@ export const syncMoviesDelta = async (localMovies: any[]): Promise<any[]> => {
     }
 
     const mergedList = Array.from(mergedMap.values());
-    
     mergedList.sort((a, b) => {
       const timeA = a.createdAt || a.updatedAt || "";
       const timeB = b.createdAt || b.updatedAt || "";
       return timeB.localeCompare(timeA);
     });
 
-    // Guardar los datos combinados en la caché de super-integridad
     await setCachedMovies(mergedList, true);
     notifyMovieSubscribers(mergedList);
     return mergedList;
   } catch (error) {
-    console.warn("Error en sincronización Delta manual:", error);
+    console.warn("[Delta Sync] Aviso en sincronización delta:", error);
     return localMovies;
   }
 };
@@ -211,26 +215,57 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
   console.log("[Firebase] Iniciando suscripción con Sincronización Delta inteligente...");
   movieSubscribers.add(callback);
 
-  // 1. Cargar caché local global de inmediato para pintar la pantalla al instante
+  const runDeltaCheck = async () => {
+    try {
+      const cached = await getCachedMovies();
+      if (cached && cached.length > 0) {
+        const updatedList = await syncMoviesDelta(cached);
+        if (updatedList && updatedList.length > 0) {
+          callback(updatedList);
+        }
+      }
+    } catch (deltaErr) {
+      console.warn("[Delta Sync] Verificación omitida:", deltaErr);
+    }
+  };
+
+  // 1. Cargar caché local global de inmediato para pintar la pantalla al instante (0 lecturas)
   (async () => {
     try {
       const cached = await getCachedMovies();
       if (cached && cached.length > 0) {
         callback(cached);
-        // Sincronización Delta inicial silenciosa para traer cambios rápidos del servidor
-        try {
-          const updatedList = await syncMoviesDelta(cached);
-          if (updatedList && updatedList.length > 0) {
-            callback(updatedList);
-          }
-        } catch (deltaErr) {
-          console.warn("Delta sync skipped:", deltaErr);
+        await runDeltaCheck();
+      } else {
+        const initial = await syncMoviesDelta([]);
+        if (initial && initial.length > 0) {
+          callback(initial);
         }
       }
     } catch (e) {
       console.warn("Error cargando caché inicial en suscripción:", e);
     }
   })();
+
+  // 2. Disparadores inteligentes entre dispositivos: al regresar a la app o cambiar de pestaña
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      runDeltaCheck();
+    }
+  };
+  const handleWindowFocus = () => {
+    runDeltaCheck();
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+
+  // 3. Sondeo delta periódico silencioso (cada 60s) con 0 lecturas si no hay cambios
+  const deltaInterval = setInterval(() => {
+    runDeltaCheck();
+  }, 60000);
 
   let unsubFirestore: (() => void) | null = null;
   let retryTimeout: any = null;
@@ -286,6 +321,11 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
   return () => {
     isSubscribed = false;
     clearTimeout(retryTimeout);
+    clearInterval(deltaInterval);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }
     movieSubscribers.delete(callback);
     if (unsubFirestore) {
       unsubFirestore();
@@ -336,7 +376,13 @@ export const generateMovieId = () => {
 
 export const upsertMovie = async (movie: any) => {
   const movieId = movie.id || generateMovieId();
-  const movieData = { ...movie, id: movieId };
+  const nowIso = new Date().toISOString();
+  const movieData = { 
+    ...movie, 
+    id: movieId,
+    createdAt: movie.createdAt || nowIso,
+    updatedAt: movie.updatedAt || nowIso
+  };
   
   // 1. Sincronizar de inmediato la caché local y notificar en tiempo real a los observadores
   try {
@@ -373,13 +419,19 @@ export const upsertMovie = async (movie: any) => {
 };
 
 export const updateMovie = async (id: string, updates: any) => {
+  const nowIso = new Date().toISOString();
+  const safeUpdates = {
+    ...updates,
+    updatedAt: updates.updatedAt || nowIso
+  };
+
   try {
     const offlineData = await getCachedMovies();
     if (offlineData) {
       let list: any[] = [...offlineData];
       const index = list.findIndex((m: any) => m.id === id);
       if (index > -1) {
-        list[index] = { ...list[index], ...updates };
+        list[index] = { ...list[index], ...safeUpdates };
         list.sort((a, b) => {
           const timeA = a.createdAt || a.updatedAt || "";
           const timeB = b.createdAt || b.updatedAt || "";
@@ -392,7 +444,7 @@ export const updateMovie = async (id: string, updates: any) => {
   } catch (e) {}
 
   try {
-    await updateDoc(doc(db, 'movies', id), updates);
+    await updateDoc(doc(db, 'movies', id), safeUpdates);
   } catch (err) {
     console.warn("Aviso al actualizar en Firestore (actualizado en caché local):", err);
   }
