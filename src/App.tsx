@@ -421,6 +421,7 @@ export default function App() {
       stopHoverScrollLoop();
     };
   }, [isFavoriteOfMonthActive]);
+  const [curatorContentType, setCuratorContentType] = useState<'peliculas' | 'series'>('peliculas');
   const [curatorSala, setCuratorSala] = useState<'Solo' | 'Dúo' | 'Grupo' | null>(null);
   const [curatorTono, setCuratorTono] = useState<'Ligero' | 'Trama' | 'Intenso' | null>(null);
   const [curatorGenero, setCuratorGenero] = useState<string>('Todos');
@@ -498,6 +499,14 @@ export default function App() {
 
     try {
       const isStrictMatch = (m: Movie) => {
+        const sec = String(m.section || 'peliculas').toLowerCase().trim();
+        if (curatorContentType === 'series') {
+          if (sec !== 'series') return false;
+        } else {
+          // curatorContentType === 'peliculas' unifies 'peliculas' and 'centauro'
+          if (sec === 'series') return false;
+        }
+
         const movieGenreUpper = getNormalizedGenres(m.genre).map(g => g.toUpperCase());
         const movieGenreStrRaw = (Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || '')).toUpperCase();
         
@@ -548,7 +557,9 @@ export default function App() {
       const strictlyMatchingMovies = movies.filter(isStrictMatch);
 
       if (strictlyMatchingMovies.length === 0) {
-        setCurationError("El Director no encontró películas que cumplan exactamente con esos parámetros en el catálogo.");
+        setCurationError(curatorContentType === 'series'
+          ? "El Director no encontró series que cumplan exactamente con esos parámetros en el catálogo."
+          : "El Director no encontró películas que cumplan exactamente con esos parámetros en el catálogo.");
         setIsCurating(false);
         return;
       }
@@ -1999,11 +2010,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        setShowHistoryOnly(false);
                        setIsFavoriteOfMonthActive(false);
                        setIsDirectorFilterActive(true);
-                        setCuratorSala(null);
-                        setCuratorTono(null);
-                        setCuratorGenero("Todos");
-                        setCuratorEpoca("Todas");
+                       setCuratorContentType(activeExploreTab === 'series' ? 'series' : 'peliculas');
+                       setCuratorSala(null);
+                       setCuratorTono(null);
+                       setCuratorGenero("Todos");
+                       setCuratorEpoca("Todas");
                        setCuratorRecommendations([]);
+                       setCurationError(null);
                        setCurrentPage(1);
                        setIsMobileMenuOpen(false);
                        scrollToTop();
@@ -3488,10 +3501,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       </div>
                       <div className="space-y-1">
                         <p className="text-neutral-300 text-xs font-mono font-light uppercase tracking-widest animate-pulse">
-                          EL DIRECTOR ESTÁ BUSCANDO LAS MEJORES PELÍCULAS...
+                          {curatorContentType === 'series' ? 'EL DIRECTOR ESTÁ BUSCANDO LAS MEJORES SERIES...' : 'EL DIRECTOR ESTÁ BUSCANDO LAS MEJORES PELÍCULAS...'}
                         </p>
                         <p className="text-[10px] text-neutral-500 font-light font-sans">
-                          Filtrando el catálogo para recomendarte las películas perfectas...
+                          {curatorContentType === 'series' ? 'Filtrando el catálogo para recomendarte las series perfectas...' : 'Filtrando el catálogo para recomendarte las películas perfectas...'}
                         </p>
                       </div>
                     </div>
@@ -3504,10 +3517,59 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   {/* Selectors Column */}
                   <div className="col-span-1 md:col-span-8 space-y-8">
                     
+                    {/* Selector de Contenido: Películas (con Centauro) vs Series */}
+                    <div className="space-y-3 pb-2 border-b border-white/[0.04]">
+                      <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase flex items-center justify-between">
+                        <span>¿QUÉ DESEAS RECOMENDAR?</span>
+                        <span className="text-[9px] font-mono text-neutral-500 lowercase">
+                          {curatorContentType === 'peliculas' ? '(películas y centauro unificados)' : '(catálogo exclusivo de series)'}
+                        </span>
+                      </div>
+                      <div className="flex flex-row border border-neutral-800/80 bg-[#09090b]/80 rounded-2xl p-1.5 gap-2 max-w-lg shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (curatorContentType !== 'peliculas') {
+                              setCuratorContentType('peliculas');
+                              setCuratorRecommendations([]);
+                              setCurationError(null);
+                            }
+                          }}
+                          className={`flex-1 px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-300 flex items-center justify-center gap-2 ${
+                            curatorContentType === 'peliculas'
+                              ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.02]'
+                              : 'bg-neutral-900/40 border border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-white/5'
+                          }`}
+                        >
+                          <Clapperboard size={15} className={curatorContentType === 'peliculas' ? 'text-[#e23636]' : 'text-neutral-500'} />
+                          <span className="uppercase font-sans font-extrabold tracking-wider">Películas</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (curatorContentType !== 'series') {
+                              setCuratorContentType('series');
+                              setCuratorRecommendations([]);
+                              setCurationError(null);
+                            }
+                          }}
+                          className={`flex-1 px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-300 flex items-center justify-center gap-2 ${
+                            curatorContentType === 'series'
+                              ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.02]'
+                              : 'bg-neutral-900/40 border border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-white/5'
+                          }`}
+                        >
+                          <Tv size={15} className={curatorContentType === 'series' ? 'text-[#e23636]' : 'text-neutral-500'} />
+                          <span className="uppercase font-sans font-extrabold tracking-wider">Series</span>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Line 1: LA SALA */}
                     <div className="space-y-3">
                       <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase">
-                        1. ¿CON QUIÉN VERÁS LA PELÍCULA?
+                        {curatorContentType === 'series' ? '1. ¿CON QUIÉN VERÁS LA SERIE?' : '1. ¿CON QUIÉN VERÁS LA PELÍCULA?'}
                       </div>
                       <div className="flex flex-col sm:flex-row border border-neutral-800/80 bg-[#09090b]/60 rounded-2xl p-1 gap-1 max-w-lg">
                         {(['Solo', 'Dúo', 'Grupo'] as const).map((opt) => {
@@ -3831,9 +3893,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         fontVariantLigatures: "none"
                       }}
                     >
-                      NUESTRO <span style={{ color: '#901313' }}>TOP</span> PARA TI
+                      NUESTRO <span style={{ color: '#901313' }}>TOP</span> {curatorContentType === 'series' ? 'DE SERIES' : 'DE PELÍCULAS'} PARA TI
                     </h2>
-                    <p className="text-[10px] text-neutral-500 tracking-wide font-normal">Aquí tienes las 3 mejores opciones que seleccionó el Director de acuerdo a lo que buscas.</p>
+                    <p className="text-[10px] text-neutral-500 tracking-wide font-normal">
+                      {curatorContentType === 'series'
+                        ? 'Aquí tienes las 3 mejores series que seleccionó el Director de acuerdo a lo que buscas.'
+                        : 'Aquí tienes las 3 mejores opciones que seleccionó el Director de acuerdo a lo que buscas.'}
+                    </p>
                   </div>
 
                   {/* CAROUSEL/GRID DUAL LAYOUT: Horizontal scroll in mobile, 3 columns grid on desktop */}
@@ -3880,6 +3946,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         const durationToUse = movieDetails?.duration ? `${movieDetails.duration}` : "Cine";
                         const ageRatingToUse = movieDetails?.ageRating || "N/A";
                         const countryToUse = movieDetails?.country || "Internacional";
+                        const secToUse = String(movieDetails?.section || 'peliculas').toLowerCase().trim();
+                        const isCentauro = secToUse === 'centauro';
+                        const isSeries = secToUse === 'series';
 
                         return (
                           <div 
@@ -3949,7 +4018,19 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                               <div className="space-y-4">
                                 {/* Metadata Strip */}
                                 <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono tracking-wider gap-2">
-                                  <span className="truncate pr-2 max-w-[150px] uppercase font-bold text-neutral-300 bg-neutral-900/30 border border-neutral-800/60 px-2.5 py-1 rounded">{displayGenre}</span>
+                                  <div className="flex items-center gap-1.5 truncate max-w-[190px]">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8.5px] font-extrabold uppercase tracking-wider border shrink-0 ${
+                                      isCentauro 
+                                        ? 'bg-[#e23636]/10 border-[#e23636]/50 text-[#e23636]' 
+                                        : isSeries 
+                                        ? 'bg-indigo-500/10 border-indigo-500/50 text-indigo-400' 
+                                        : 'bg-white/5 border-white/10 text-zinc-300'
+                                    }`}>
+                                      {isCentauro ? <Compass size={9} className="text-[#e23636]" /> : isSeries ? <Tv size={9} className="text-indigo-400" /> : <Clapperboard size={9} className="text-[#b41d1d]" />}
+                                      <span>{isCentauro ? 'Centauro' : isSeries ? 'Series' : 'Películas'}</span>
+                                    </span>
+                                    <span className="truncate pr-1 uppercase font-bold text-neutral-300 bg-neutral-900/30 border border-neutral-800/60 px-2.5 py-0.5 rounded">{displayGenre}</span>
+                                  </div>
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {ageRatingToUse && ageRatingToUse !== "N/A" && ageRatingToUse !== "No disponible" && (
                                       <span className="border border-neutral-700/60 bg-neutral-900/40 px-2 py-1 text-neutral-300 font-mono text-[9px] font-bold tracking-wider rounded">
