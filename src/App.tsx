@@ -2816,7 +2816,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <EditField label="Género" value={editForm.genre} onChange={(v: string) => setEditForm({...editForm, genre: v})} />
                     {editForm.section === 'series' ? (
                       <>
-                        <EditField label="Temporada" value={editForm.season || ""} onChange={(v: string) => setEditForm({...editForm, season: v})} placeholder="Ej: Primera y única o Temporada 1" />
+                        <EditField label="Temporadas" value={editForm.season || ""} onChange={(v: string) => setEditForm({...editForm, season: v})} placeholder="Ej: Primera y única o Temporada 1" />
                         <EditField label="Capítulos y Duración" value={editForm.duration} onChange={(v: string) => setEditForm({...editForm, duration: v})} placeholder="Ej: 13 Capítulos / 45 min" />
                       </>
                     ) : (
@@ -2832,7 +2832,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <EditField label="Música" value={editForm.music} onChange={(v: string) => setEditForm({...editForm, music: v})} />
                     <EditField label="Fotografía" value={editForm.photography} onChange={(v: string) => setEditForm({...editForm, photography: v})} />
                     <EditField label={editForm.section === 'series' ? "Estudio / Productora" : "Estudio"} value={editForm.companies} onChange={(v: string) => setEditForm({...editForm, companies: v})} />
-                    <EditField label={editForm.section === 'series' ? "Sección (Localización)" : "Estante"} value={editForm.estante} onChange={(v: string) => setEditForm({...editForm, estante: v})} placeholder={editForm.section === 'series' ? "Ej: Sección: 4.1" : "Ej: Estante: 6.2"} />
+                    <EditField label={editForm.section === 'series' ? "Sección" : "Estante"} value={editForm.estante} onChange={(v: string) => setEditForm({...editForm, estante: v})} placeholder={editForm.section === 'series' ? "Ej: Sección: 4.1" : "Ej: Estante: 6.2"} />
                     <EditField label={editForm.section === 'series' ? "Formato y Edición" : "Formato"} value={editForm.format} onChange={(v: string) => setEditForm({...editForm, format: v})} className="col-span-1 md:col-span-2" placeholder={editForm.section === 'series' ? "Ej: BLU-RAY (3 Original)" : "Ej: DVD (Original)"} />
                   </div>
 
@@ -3077,7 +3077,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     {selectedMovie.section === 'series' ? (
                       <div className="flex flex-col gap-1">
                         <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5">
-                          <Tv size={12} className="text-[#b41d1d]" /> Temporada
+                          <Tv size={12} className="text-[#b41d1d]" /> Temporadas
                         </span>
                         <span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.season || "Primera y única"}>
                           {selectedMovie.season || "Primera y única"}
@@ -3088,7 +3088,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Music size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Banda Sonora" : "Música"}</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.music}>{selectedMovie.music}</span></div>
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><ImageIcon size={12} className="text-[#b41d1d]" /> Fotografía</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.photography}>{selectedMovie.photography}</span></div>
                     <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Landmark size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Estudio / Productora" : "Estudio"}</span><span className="text-zinc-400 font-medium text-xs truncate" title={selectedMovie.companies}>{selectedMovie.companies}</span></div>
-                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Library size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Sección (Localización)" : "Estante"}</span><span className="text-zinc-400 font-medium text-xs">{selectedMovie.estante || "N/A"}</span></div>
+                    <div className="flex flex-col gap-1"><span className="text-[10px] uppercase tracking-widest text-zinc-600 font-black flex items-center gap-1.5"><Library size={12} className="text-[#b41d1d]" /> {selectedMovie.section === 'series' ? "Sección" : "Estante"}</span><span className="text-zinc-400 font-medium text-xs">{selectedMovie.estante || "N/A"}</span></div>
                     
                     {/* Clickable Cast Section */}
                     <div className="flex flex-col gap-3 col-span-full pt-6 border-t border-white/5">
@@ -3520,10 +3520,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     {/* Selector de Contenido: Películas (con Centauro) vs Series */}
                     <div className="space-y-3 pb-2 border-b border-white/[0.04]">
                       <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase flex items-center justify-between">
-                        <span>¿QUÉ DESEAS RECOMENDAR?</span>
-                        <span className="text-[9px] font-mono text-neutral-500 lowercase">
-                          {curatorContentType === 'peliculas' ? '(películas y centauro unificados)' : '(catálogo exclusivo de series)'}
-                        </span>
+                        <span>¿QUÉ DESEAS VER?</span>
                       </div>
                       <div className="flex flex-row border border-neutral-800/80 bg-[#09090b]/80 rounded-2xl p-1.5 gap-2 max-w-lg shadow-[0_0_20px_rgba(0,0,0,0.5)]">
                         <button
