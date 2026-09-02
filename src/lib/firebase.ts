@@ -262,74 +262,18 @@ export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (e
     document.addEventListener('visibilitychange', handleVisibilityChange);
   }
 
-  // 3. Sondeo delta periódico silencioso (cada 60s) con 0 lecturas si no hay cambios
+  // 3. Sondeo delta periódico silencioso (cada 30s) con 0 lecturas si no hay cambios
   const deltaInterval = setInterval(() => {
     runDeltaCheck();
-  }, 60000);
-
-  let unsubFirestore: (() => void) | null = null;
-  let retryTimeout: any = null;
-  let isSubscribed = true;
-
-  const startSnapshotListener = () => {
-    if (!isSubscribed) return;
-    try {
-      const q = query(collection(db, 'movies'));
-      unsubFirestore = onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
-        const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        movies.sort((a, b) => {
-          const timeA = a.createdAt || a.updatedAt || "";
-          const timeB = b.createdAt || b.updatedAt || "";
-          return timeB.localeCompare(timeA);
-        });
-
-        if (movies.length > 0) {
-          await setCachedMovies(movies, true);
-          notifyMovieSubscribers(movies);
-        }
-      }, (error) => {
-        console.warn("Aviso en la suscripción en tiempo real de Firestore (operando con caché local):", error);
-        (async () => {
-          try {
-            const local = await getCachedMovies();
-            if (local && local.length > 0) {
-              callback(local);
-            }
-          } catch (_) {}
-        })();
-        onError(error);
-
-        // Reintentar reconectar el listener en tiempo real automáticamente
-        if (isSubscribed) {
-          clearTimeout(retryTimeout);
-          retryTimeout = setTimeout(() => {
-            if (isSubscribed) {
-              console.log("[Firebase] Reintentando reconexión en tiempo real con Firestore...");
-              startSnapshotListener();
-            }
-          }, 30000); // Reintenta cada 30 segundos
-        }
-      });
-    } catch (e) {
-      console.warn("Error al inicializar onSnapshot:", e);
-    }
-  };
-
-  startSnapshotListener();
+  }, 30000);
 
   return () => {
-    isSubscribed = false;
-    clearTimeout(retryTimeout);
     clearInterval(deltaInterval);
     if (typeof window !== 'undefined') {
       window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
     movieSubscribers.delete(callback);
-    if (unsubFirestore) {
-      unsubFirestore();
-    }
   };
 };
 
