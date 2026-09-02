@@ -4019,14 +4019,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                 {/* Metadata Strip */}
                                 <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono tracking-wider gap-2">
                                   <div className="flex items-center gap-1.5 truncate max-w-[190px]">
-                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8.5px] font-extrabold uppercase tracking-wider border shrink-0 ${
-                                      isCentauro 
-                                        ? 'bg-[#e23636]/10 border-[#e23636]/50 text-[#e23636]' 
-                                        : isSeries 
-                                        ? 'bg-indigo-500/10 border-indigo-500/50 text-indigo-400' 
-                                        : 'bg-white/5 border-white/10 text-zinc-300'
-                                    }`}>
-                                      {isCentauro ? <Compass size={9} className="text-[#e23636]" /> : isSeries ? <Tv size={9} className="text-indigo-400" /> : <Clapperboard size={9} className="text-[#b41d1d]" />}
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8.5px] font-extrabold uppercase tracking-wider border shrink-0 bg-white/5 border-white/10 text-zinc-300">
+                                      {isCentauro ? <Compass size={9} className="text-[#b41d1d]" /> : isSeries ? <Tv size={9} className="text-[#b41d1d]" /> : <Clapperboard size={9} className="text-[#b41d1d]" />}
                                       <span>{isCentauro ? 'Centauro' : isSeries ? 'Series' : 'Películas'}</span>
                                     </span>
                                     <span className="truncate pr-1 uppercase font-bold text-neutral-300 bg-neutral-900/30 border border-neutral-800/60 px-2.5 py-0.5 rounded">{displayGenre}</span>
