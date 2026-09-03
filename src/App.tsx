@@ -3306,9 +3306,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <button 
                   onClick={() => { if(currentPage > 1) { setCurrentPage(currentPage - 1); window.scrollTo({ top: 300, behavior: 'smooth' }); }}}
                   disabled={currentPage === 1}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900/60 border border-white/[0.05] text-zinc-500 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-all duration-200 disabled:opacity-20 disabled:pointer-events-none z-20 select-none shadow-md"
+                  className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900/60 border border-white/[0.08] text-zinc-300 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-all duration-200 disabled:opacity-25 disabled:pointer-events-none z-20 select-none shadow-md"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={20} strokeWidth={2.2} className="text-zinc-200 group-hover:text-white" />
                 </button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNumber => {
                   if (pageNumber === 1 || pageNumber === totalPages || (pageNumber >= currentPage - 2 && pageNumber <= currentPage + 2)) {
@@ -3358,11 +3358,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                           </svg>
 
                           <div className="relative z-10 flex flex-col items-center justify-center leading-none">
-                            <span className="text-[6.5px] font-mono text-zinc-400 font-extrabold uppercase tracking-widest opacity-60">TKT</span>
+                            <span className="text-[6.5px] font-mono text-[#e4e4e7] font-extrabold uppercase tracking-widest opacity-90">TKT</span>
                             <span className="text-white font-black text-sm tracking-wide font-mono mt-0.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
                               {pageNumber < 10 ? `0${pageNumber}` : pageNumber}
                             </span>
-                            <span className="text-[6.5px] font-mono text-[#ef4444] font-bold uppercase tracking-widest mt-0.5 opacity-80">ADMIT</span>
+                            <span className="text-[6.5px] font-mono text-[#f87171] font-bold uppercase tracking-widest mt-0.5 opacity-95">ADMIT</span>
                           </div>
                         </div>
                       );
@@ -3392,12 +3392,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                             <line x1="57" y1="3" x2="57" y2="37" stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="1,2" />
                           </svg>
 
-                          <div className="relative z-10 flex flex-col items-center justify-center leading-none transition-transform group-hover:scale-105 duration-200">
-                            <span className="text-[6.5px] font-mono text-zinc-500 font-semibold uppercase tracking-widest opacity-40 transition-colors group-hover:text-zinc-400">TKT</span>
-                            <span className="text-zinc-500 group-hover:text-zinc-200 font-bold text-sm tracking-wide font-mono mt-0.5 transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                          <div className="relative z-10 flex flex-col items-center justify-center leading-none">
+                            <span className="text-[6.5px] font-mono text-zinc-500 font-semibold uppercase tracking-widest opacity-40 transition-all duration-200 group-hover:opacity-90 group-hover:text-zinc-200">TKT</span>
+                            <span className="text-zinc-500 group-hover:text-white font-bold text-sm tracking-wide font-mono mt-0.5 transition-all duration-200 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] group-hover:drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                               {pageNumber < 10 ? `0${pageNumber}` : pageNumber}
                             </span>
-                            <span className="text-[6.5px] font-mono text-zinc-500 font-semibold uppercase tracking-widest mt-0.5 opacity-40 transition-colors group-hover:text-zinc-400">PASS</span>
+                            <span className="text-[6.5px] font-mono text-zinc-500 font-semibold uppercase tracking-widest mt-0.5 opacity-40 transition-all duration-200 group-hover:opacity-90 group-hover:text-zinc-200">PASS</span>
                           </div>
                         </button>
                       );
@@ -3411,9 +3411,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <button 
                   onClick={() => { if(currentPage < totalPages) { setCurrentPage(currentPage + 1); window.scrollTo({ top: 300, behavior: 'smooth' }); }}}
                   disabled={currentPage === totalPages}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900/60 border border-white/[0.05] text-zinc-500 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-all duration-200 disabled:opacity-20 disabled:pointer-events-none z-20 select-none shadow-md"
+                  className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900/60 border border-white/[0.08] text-zinc-300 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-all duration-200 disabled:opacity-25 disabled:pointer-events-none z-20 select-none shadow-md"
                 >
-                  <ChevronRight size={18} />
+                  <ChevronRight size={20} strokeWidth={2.2} className="text-zinc-200 group-hover:text-white" />
                 </button>
               </div>
               <p className={`pagination-summary-text text-[10px] md:text-xs font-bold uppercase tracking-[0.25em] mt-3 select-none ${isDayMode ? 'text-slate-600' : 'text-zinc-500'}`}>
@@ -3522,7 +3522,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       <div className="text-[10px] tracking-[0.2em] font-light text-neutral-400 uppercase flex items-center justify-between">
                         <span>¿QUÉ DESEAS VER?</span>
                       </div>
-                      <div className="flex flex-row border border-neutral-800/80 bg-[#09090b]/80 rounded-2xl p-1.5 gap-2 max-w-lg shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                      <div className={`flex flex-row border rounded-2xl p-1.5 gap-2 max-w-lg transition-all duration-300 ${
+                        isDayMode 
+                          ? 'border-slate-300 bg-slate-100/90 shadow-sm' 
+                          : 'border-neutral-800/80 bg-[#09090b]/80 shadow-[0_0_20px_rgba(0,0,0,0.5)]'
+                      }`}>
                         <button
                           type="button"
                           onClick={() => {
@@ -3535,11 +3539,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                           className={`flex-1 px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-300 flex items-center justify-center gap-2 ${
                             curatorContentType === 'peliculas'
                               ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.02]'
-                              : 'bg-neutral-900/40 border border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-white/5'
+                              : 'bg-neutral-900/60 border border-neutral-800/80 text-neutral-400 hover:text-neutral-200'
                           }`}
                         >
-                          <Clapperboard size={15} className={curatorContentType === 'peliculas' ? 'text-[#e23636]' : 'text-neutral-500'} />
-                          <span className="uppercase font-sans font-extrabold tracking-wider">Películas</span>
+                          <Clapperboard size={15} className={curatorContentType === 'peliculas' ? (isDayMode ? 'text-red-500' : 'text-[#e23636]') : (isDayMode ? 'text-slate-500' : 'text-neutral-500')} />
+                          <span className={`uppercase font-sans font-extrabold tracking-wider ${curatorContentType === 'peliculas' ? 'text-white' : (isDayMode ? 'text-slate-800' : 'text-neutral-400')}`}>Películas</span>
                         </button>
 
                         <button
@@ -3554,11 +3558,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                           className={`flex-1 px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-300 flex items-center justify-center gap-2 ${
                             curatorContentType === 'series'
                               ? 'bg-neutral-950 text-white border border-[#b41d1d] shadow-[0_0_15px_rgba(180,29,29,0.75)] scale-[1.02]'
-                              : 'bg-neutral-900/40 border border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-white/5'
+                              : 'bg-neutral-900/60 border border-neutral-800/80 text-neutral-400 hover:text-neutral-200'
                           }`}
                         >
-                          <Tv size={15} className={curatorContentType === 'series' ? 'text-[#e23636]' : 'text-neutral-500'} />
-                          <span className="uppercase font-sans font-extrabold tracking-wider">Series</span>
+                          <Tv size={15} className={curatorContentType === 'series' ? (isDayMode ? 'text-red-500' : 'text-[#e23636]') : (isDayMode ? 'text-slate-500' : 'text-neutral-500')} />
+                          <span className={`uppercase font-sans font-extrabold tracking-wider ${curatorContentType === 'series' ? 'text-white' : (isDayMode ? 'text-slate-800' : 'text-neutral-400')}`}>Series</span>
                         </button>
                       </div>
                     </div>

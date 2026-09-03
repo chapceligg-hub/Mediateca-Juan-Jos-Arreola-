@@ -900,53 +900,99 @@
 }
 
 /* ==========================================================================
-   MODO DÍA (LIGHT MODE) - SECCIÓN DE PAGINACIÓN Y BOLETOS CINEMATOGRÁFICOS
+   SECCIÓN DE PAGINACIÓN Y BOLETOS CINEMATOGRÁFICOS (MODO DÍA Y MODO NOCHE)
+   Los boletos y los botones de cambio entre páginas son idénticos en ambos modos.
    ========================================================================== */
 
-/* Buttons Prev / Next */
-.day-mode button.bg-zinc-900\/60 {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #334155 !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05) !important;
+/* Previous & Next Page Navigation Buttons (Exact Night Mode appearance with high contrast arrows in Day Mode) */
+.day-mode footer button.w-10.h-10,
+.day-mode footer button.bg-zinc-900\/60,
+.day-mode footer button:has(> svg.lucide-chevron-left),
+.day-mode footer button:has(> svg.lucide-chevron-right),
+footer button.w-10.h-10,
+footer button.bg-zinc-900\/60 {
+  background-color: #18181b !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #e4e4e7 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25) !important;
 }
 
-.day-mode button.bg-zinc-900\/60:hover {
-  background-color: #f1f5f9 !important;
-  border-color: #94a3b8 !important;
-  color: #0f172a !important;
+.day-mode footer button.w-10.h-10 svg,
+.day-mode footer button.bg-zinc-900\/60 svg,
+.day-mode footer button svg.lucide-chevron-left,
+.day-mode footer button svg.lucide-chevron-right,
+footer button.w-10.h-10 svg,
+footer button.bg-zinc-900\/60 svg {
+  color: #e4e4e7 !important;
+  stroke: #e4e4e7 !important;
+  stroke-width: 2.2px !important;
+  transition: all 0.2s ease !important;
 }
 
-.day-mode button.bg-zinc-900\/60:disabled {
+.day-mode footer button.w-10.h-10:hover,
+.day-mode footer button.bg-zinc-900\/60:hover,
+.day-mode footer button:has(> svg.lucide-chevron-left):hover,
+.day-mode footer button:has(> svg.lucide-chevron-right):hover,
+footer button.w-10.h-10:hover,
+footer button.bg-zinc-900\/60:hover {
+  background-color: #27272a !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.day-mode footer button.w-10.h-10:hover svg,
+.day-mode footer button.bg-zinc-900\/60:hover svg,
+.day-mode footer button:hover svg.lucide-chevron-left,
+.day-mode footer button:hover svg.lucide-chevron-right,
+footer button.w-10.h-10:hover svg,
+footer button.bg-zinc-900\/60:hover svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+.day-mode footer button.w-10.h-10:disabled,
+.day-mode footer button.bg-zinc-900\/60:disabled,
+.day-mode footer button:has(> svg.lucide-chevron-left):disabled,
+.day-mode footer button:has(> svg.lucide-chevron-right):disabled,
+footer button.w-10.h-10:disabled,
+footer button.bg-zinc-900\/60:disabled {
   opacity: 0.3 !important;
-  background-color: #f8fafc !important;
+  pointer-events: none !important;
+  background-color: #18181b !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  color: #71717a !important;
 }
 
-/* ==========================================================================
-   BOLETOS DE PAGINACIÓN: NO AFECTADOS POR MODO DÍA (BOLETO OSCURO ORIGINAL)
-   Solo se adapta el texto sobre los boletos para máxima nitidez y legibilidad
-   ========================================================================== */
+.day-mode footer button.w-10.h-10:disabled svg,
+.day-mode footer button.bg-zinc-900\/60:disabled svg,
+footer button.w-10.h-10:disabled svg,
+footer button.bg-zinc-900\/60:disabled svg {
+  color: #71717a !important;
+  stroke: #71717a !important;
+}
 
-/* Active Ticket Text Overlay in Day Mode */
-.day-mode div:has(.cinema-ticket-glowing) span.text-white {
+/* Active Ticket Text Overlay (Both Modes) */
+div:has(.cinema-ticket-glowing) span.text-white {
   color: #ffffff !important;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95) !important;
   font-weight: 900 !important;
 }
 
-.day-mode div:has(.cinema-ticket-glowing) span.text-zinc-400 {
+div:has(.cinema-ticket-glowing) span.text-zinc-400,
+div:has(.cinema-ticket-glowing) span.text-\[\#e4e4e7\] {
   color: #e4e4e7 !important;
   opacity: 0.9 !important;
   font-weight: 800 !important;
 }
 
-.day-mode div:has(.cinema-ticket-glowing) span.text-\[\#ef4444\] {
+div:has(.cinema-ticket-glowing) span.text-\[\#ef4444\],
+div:has(.cinema-ticket-glowing) span.text-\[\#f87171\] {
   color: #f87171 !important;
   opacity: 1 !important;
   font-weight: 800 !important;
 }
 
-/* Inactive Ticket Text Overlay in Day Mode */
+/* Inactive Ticket Text Overlay - DAY MODE (Permanently crisp & readable) */
 .day-mode button svg[viewBox="0 0 72 40"] + div span {
   color: #e4e4e7 !important;
   opacity: 0.85 !important;
@@ -955,13 +1001,20 @@
 
 .day-mode button svg[viewBox="0 0 72 40"] + div span.text-zinc-500 {
   color: #f4f4f5 !important;
-  opacity: 0.9 !important;
+  opacity: 0.95 !important;
   font-weight: 700 !important;
 }
 
 .day-mode button:hover svg[viewBox="0 0 72 40"] + div span {
   color: #ffffff !important;
   opacity: 1 !important;
+}
+
+/* Inactive Ticket Hover Text Overlay (Night Mode Hover) */
+button:hover svg[viewBox="0 0 72 40"] + div span {
+  color: #ffffff !important;
+  opacity: 1 !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9) !important;
 }
 
 /* Pagination Text Summary Below (Total Películas y Páginas) - DYNAMIC DARK/DAY MODE */
@@ -1087,10 +1140,30 @@
 .day-mode .category-section-view .aspect-\[2\/3\] + div div {
   color: #a1a1aa !important;
   font-weight: 500 !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6) !important;
 }
 
-.day-mode .category-section-view .aspect-\[2\/3\] + div div span.bg-zinc-500 {
+.day-mode .category-section-view .aspect-\[2\/3\] + div div span {
+  color: #a1a1aa !important;
+  font-weight: 500 !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6) !important;
+}
+
+.day-mode .category-section-view .aspect-\[2\/3\] + div div span:first-child {
+  color: #a1a1aa !important;
+  font-weight: 500 !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6) !important;
+}
+
+.day-mode .category-section-view .aspect-\[2\/3\] + div div span.truncate,
+.day-mode .category-section-view .aspect-\[2\/3\] + div div span:last-child {
+  color: #a1a1aa !important;
+  font-weight: 500 !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6) !important;
+}
+
+.day-mode .category-section-view .aspect-\[2\/3\] + div div span.bg-zinc-500,
+.day-mode .category-section-view .aspect-\[2\/3\] + div div span.bg-slate-400 {
   background-color: #71717a !important;
 }
 
@@ -1219,32 +1292,51 @@
   font-weight: 700 !important;
 }
 
-/* Option Button Containers (Solo/Duo/Grupo & Ritmo) */
-.day-mode .max-w-5xl .bg-\[\#09090b\]\/60 {
+/* Option Button Containers (Solo/Duo/Grupo & Ritmo & Contenido) */
+.day-mode .max-w-5xl .bg-\[\#09090b\]\/60,
+.day-mode .max-w-5xl .bg-\[\#09090b\]\/80 {
   background-color: #f1f5f9 !important;
   border-color: #cbd5e1 !important;
 }
 
 /* Option Buttons Inactive */
-.day-mode .max-w-5xl button.bg-neutral-900\/60 {
+.day-mode .max-w-5xl button.bg-neutral-900\/60,
+.day-mode .max-w-5xl button.bg-neutral-900\/40,
+.day-mode .max-w-5xl button.bg-white {
   background-color: #ffffff !important;
   border-color: #cbd5e1 !important;
-  color: #334155 !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
 }
 
-.day-mode .max-w-5xl button.bg-neutral-900\/60:hover {
+.day-mode .max-w-5xl button.bg-neutral-900\/60 span,
+.day-mode .max-w-5xl button.bg-neutral-900\/40 span,
+.day-mode .max-w-5xl button.bg-white span {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+.day-mode .max-w-5xl button.bg-neutral-900\/60:hover,
+.day-mode .max-w-5xl button.bg-neutral-900\/40:hover,
+.day-mode .max-w-5xl button.bg-white:hover {
   background-color: #f8fafc !important;
   border-color: #94a3b8 !important;
-  color: #0f172a !important;
+  color: #000000 !important;
 }
 
 /* Option Buttons Active */
-.day-mode .max-w-5xl button.bg-neutral-950.border-\[\#b41d1d\] {
+.day-mode .max-w-5xl button.bg-neutral-950.border-\[\#b41d1d\],
+.day-mode .max-w-5xl button.border-\[\#b41d1d\] {
   background-color: #0f172a !important;
   color: #ffffff !important;
   border-color: #b41d1d !important;
   box-shadow: 0 4px 12px rgba(180, 29, 29, 0.2) !important;
+}
+
+.day-mode .max-w-5xl button.bg-neutral-950.border-\[\#b41d1d\] span,
+.day-mode .max-w-5xl button.border-\[\#b41d1d\] span {
+  color: #ffffff !important;
+  font-weight: 800 !important;
 }
 
 /* Dropdown Buttons (Género & Época) */
