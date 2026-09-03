@@ -971,22 +971,22 @@ footer button.bg-zinc-900\/60:disabled svg {
   stroke: #71717a !important;
 }
 
-/* Active Ticket Text Overlay (Both Modes) */
-div:has(.cinema-ticket-glowing) span.text-white {
+/* Active Ticket Text Overlay (Both Modes) - Strictly scoped to immediate ticket parent */
+div:has(> svg.cinema-ticket-glowing) span.text-white {
   color: #ffffff !important;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95) !important;
   font-weight: 900 !important;
 }
 
-div:has(.cinema-ticket-glowing) span.text-zinc-400,
-div:has(.cinema-ticket-glowing) span.text-\[\#e4e4e7\] {
+div:has(> svg.cinema-ticket-glowing) span.text-zinc-400,
+div:has(> svg.cinema-ticket-glowing) span.text-\[\#e4e4e7\] {
   color: #e4e4e7 !important;
   opacity: 0.9 !important;
   font-weight: 800 !important;
 }
 
-div:has(.cinema-ticket-glowing) span.text-\[\#ef4444\],
-div:has(.cinema-ticket-glowing) span.text-\[\#f87171\] {
+div:has(> svg.cinema-ticket-glowing) span.text-\[\#ef4444\],
+div:has(> svg.cinema-ticket-glowing) span.text-\[\#f87171\] {
   color: #f87171 !important;
   opacity: 1 !important;
   font-weight: 800 !important;
@@ -1565,6 +1565,72 @@ button:hover svg[viewBox="0 0 72 40"] + div span {
 .day-mode #fav-of-month-section .border-white\/15 {
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
+
+/* ==========================================================================
+   COLOR TEXTO NUEVA ENTRADA Y ADMIN (MODO DÍA)
+   ========================================================================== */
+
+/* Selector 1: Texto de 'NUEVA ENTRADA' en Modo Día */
+.day-mode div#root:nth-of-type(1) > div:nth-of-type(1) > aside:nth-of-type(1) > div:nth-of-type(2) > button:nth-of-type(1) > span:nth-of-type(2) > span:nth-of-type(1),
+.day-mode aside button .btn-nueva-entrada-text,
+.day-mode aside div:nth-of-type(2) button:nth-of-type(1) span:nth-of-type(2) span:nth-of-type(1) {
+  color: #09090b !important;
+  font-weight: 900 !important;
+}
+
+.day-mode div#root:nth-of-type(1) > div:nth-of-type(1) > aside:nth-of-type(1) > div:nth-of-type(2) > button:nth-of-type(1):hover > span:nth-of-type(2) > span:nth-of-type(1),
+.day-mode aside button:hover .btn-nueva-entrada-text {
+  color: #b41d1d !important;
+}
+
+/* Selector 2: Perfil y Texto de 'Admin' / Rol en Modo Día */
+.day-mode div#root:nth-of-type(1) > div:nth-of-type(1) > aside:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1),
+.day-mode div#root:nth-of-type(1) > div:nth-of-type(1) > aside:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) span,
+.day-mode aside .admin-profile-name {
+  color: #09090b !important;
+  font-weight: 700 !important;
+}
+
+.day-mode div#root:nth-of-type(1) > div:nth-of-type(1) > aside:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) span:nth-of-type(2),
+.day-mode aside .admin-profile-role {
+  color: #27272a !important;
+  font-weight: 700 !important;
+}
+
+/* ==========================================================================
+   QUITAR SOMBREADO EN TEXTOS DE FICHA TÉCNICA Y BOTÓN DE REVISIÓN
+   ========================================================================== */
+
+/* Selectores 1 a 4: Dirección, Año, País, Clasificación */
+div#root:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(1) > span:nth-of-type(2),
+div#root:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(2) > span:nth-of-type(2),
+div#root:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(3) > span:nth-of-type(2),
+div#root:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(4) > span:nth-of-type(2),
+.fixed .group.bg-black\/60 span,
+.fixed .group.bg-black\/60 span.text-white,
+.fixed .group.bg-black\/60 span.text-zinc-400 {
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+/* Selector 5: Calificación / Rating */
+div#root:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(1),
+.fixed .bg-white\/\[0\.03\] span.font-bebas,
+.fixed .bg-white\/\[0\.03\] span {
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+/* Texto de Marcar revisión y Quitar revisión */
+.group\/btn-review,
+.group\/btn-review span,
+.group\/btn-review span span,
+.group\/btn-review svg {
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+
 
 
 

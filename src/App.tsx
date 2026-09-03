@@ -2125,21 +2125,21 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               <span className="absolute inset-[-400%] bg-[conic-gradient(from_0deg,#b41d1d_0deg,#0a0a0c_90deg,#27272a_180deg,#b41d1d_240deg,#0a0a0c_270deg,#b41d1d_360deg)] animate-[spin_3s_linear_infinite] z-0" />
               
               {/* Inner container to mask and display the premium label */}
-              <span className="absolute inset-[1.5px] bg-[#0c0c0e] rounded-[10px] group-hover:bg-[#121215] transition-colors duration-300 z-10 flex items-center justify-center gap-2 text-white font-black uppercase tracking-[0.2em] text-xs">
-                <Plus size={16} className="text-[#b41d1d] group-hover:text-white transition-colors duration-300" />
-                <span>{t("NUEVA ENTRADA")}</span>
+              <span className={`absolute inset-[1.5px] rounded-[10px] transition-colors duration-300 z-10 flex items-center justify-center gap-2 font-black uppercase tracking-[0.2em] text-xs ${isDayMode ? 'bg-white text-zinc-950 group-hover:bg-zinc-100 group-hover:text-red-700' : 'bg-[#0c0c0e] text-white group-hover:bg-[#121215]'}`}>
+                <Plus size={16} className={`transition-colors duration-300 ${isDayMode ? 'text-[#b41d1d] group-hover:text-red-700' : 'text-[#b41d1d] group-hover:text-white'}`} />
+                <span className={`btn-nueva-entrada-text ${isDayMode ? 'text-zinc-950 group-hover:text-red-700' : 'text-white'}`}>{t("NUEVA ENTRADA")}</span>
               </span>
             </button>
           )}
 
           {user ? (
-            <div className="flex items-center gap-4 pt-2 cursor-pointer hover:bg-white/5 p-2 rounded-xl transition-colors">
-              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}&background=random`} alt="Avatar" className="w-10 h-10 rounded-full border border-white/10" />
+            <div className={`flex items-center gap-4 pt-2 cursor-pointer p-2 rounded-xl transition-colors ${isDayMode ? 'hover:bg-zinc-100' : 'hover:bg-white/5'}`}>
+              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}&background=random`} alt="Avatar" className={`w-10 h-10 rounded-full border ${isDayMode ? 'border-zinc-200' : 'border-white/10'}`} />
               <div className="flex flex-col overflow-hidden">
-                 <span className="text-white font-bold text-xs truncate">{user.displayName || 'Curator Profile'}</span>
-                 <span className="text-zinc-500 text-[10px] truncate uppercase tracking-widest">{isAdmin ? `${t("Administrador")} / ${t("Editor")}` : 'Mediateca Viewer'}</span>
+                 <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`}>{user.displayName || 'Curator Profile'}</span>
+                 <span className={`admin-profile-role text-[10px] truncate uppercase tracking-widest ${isDayMode ? 'text-zinc-800 font-bold' : 'text-zinc-500'}`}>{isAdmin ? `${t("Administrador")} / ${t("Editor")}` : 'Mediateca Viewer'}</span>
               </div>
-              <button onClick={() => { setIsBypassActive(false); logout(); }} className="ml-auto text-zinc-600 hover:text-brand-light p-1"><LogOut size={14}/></button>
+              <button onClick={() => { setIsBypassActive(false); logout(); }} className={`ml-auto p-1 transition-colors ${isDayMode ? 'text-zinc-500 hover:text-red-600' : 'text-zinc-600 hover:text-brand-light'}`}><LogOut size={14}/></button>
             </div>
           ) : (
              <button onClick={async () => {
@@ -2156,7 +2156,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                  setUserRole('admin');
                  setIsAuthChecking(false);
                }
-             }} className="app-login-btn flex items-center justify-center gap-3 pt-2 cursor-pointer hover:bg-white/5 p-2 rounded-xl transition-colors text-white font-bold w-full">
+             }} className={`app-login-btn flex items-center justify-center gap-3 pt-2 cursor-pointer p-2 rounded-xl transition-colors font-bold w-full ${isDayMode ? 'hover:bg-zinc-100 text-zinc-950' : 'hover:bg-white/5 text-white'}`}>
                 <LogIn size={18} /> Acceso Editores
              </button>
           )}
@@ -2953,11 +2953,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <div className="flex flex-col items-center justify-center shrink-0 select-none bg-white/[0.03] border border-white/[0.05] p-2.5 px-4 rounded-xl min-w-[110px] text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <Star size={20} fill="#f59e0b" className="text-[#f59e0b]" />
-                        <span className="font-bebas text-3xl tracking-[0.02em] text-white leading-none">
+                        <span className="font-bebas text-3xl tracking-[0.02em] text-white leading-none [text-shadow:none]">
                           {Number(selectedMovie.rating || 0).toFixed(1)}
                         </span>
                       </div>
-                      <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-extrabold mt-1.5">Calificación</span>
+                      <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-extrabold mt-1.5 [text-shadow:none]">Calificación</span>
                     </div>
                   </div>
                   
@@ -2968,40 +2968,40 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <Clapperboard size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Dirección</span>
-                        <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">Dirección</span>
+                        <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words [text-shadow:none]" title={selectedMovie.director}>{selectedMovie.director}</span>
                       </div>
 
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <CalendarDays size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Año</span>
-                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">Año</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4 [text-shadow:none]">{selectedMovie.year}</span>
                       </div>
 
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <Globe size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">País</span>
-                        <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">País</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words [text-shadow:none]" title={selectedMovie.country}>{selectedMovie.country}</span>
                       </div>
 
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <Eye size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Clasificación</span>
-                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.ageRating || "No disponible"}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">Clasificación</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4 [text-shadow:none]">{selectedMovie.ageRating || "No disponible"}</span>
                       </div>
 
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans col-span-2 md:col-span-1">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           {selectedMovie.section === 'centauro' ? <Compass size={14} className="text-[#b41d1d]" /> : <Clapperboard size={14} />}
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Pestaña</span>
-                        <span className="text-white font-extrabold text-sm tracking-tight pr-4 capitalize flex items-center gap-1.5">
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">Pestaña</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4 capitalize flex items-center gap-1.5 [text-shadow:none]">
                           {selectedMovie.section === 'centauro' ? (
                             <span className="text-[#e23636] font-black">Centauro</span>
                           ) : selectedMovie.section === 'series' ? (
@@ -3018,32 +3018,32 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <Clapperboard size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Dirección</span>
-                        <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.director}>{selectedMovie.director}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">Dirección</span>
+                        <span translate="no" className="notranslate text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words [text-shadow:none]" title={selectedMovie.director}>{selectedMovie.director}</span>
                       </div>
 
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <CalendarDays size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Año</span>
-                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.year}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">Año</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4 [text-shadow:none]">{selectedMovie.year}</span>
                       </div>
 
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <Globe size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">País</span>
-                        <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words" title={selectedMovie.country}>{selectedMovie.country}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">País</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight leading-snug pr-2 break-words [text-shadow:none]" title={selectedMovie.country}>{selectedMovie.country}</span>
                       </div>
 
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-4 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
                           <Eye size={14} />
                         </div>
-                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold">Clasificación</span>
-                        <span className="text-white font-extrabold text-sm tracking-tight pr-4">{selectedMovie.ageRating || "No disponible"}</span>
+                        <span className="text-[9px] uppercase tracking-[0.25em] text-zinc-400 font-extrabold [text-shadow:none]">Clasificación</span>
+                        <span className="text-white font-extrabold text-sm tracking-tight pr-4 [text-shadow:none]">{selectedMovie.ageRating || "No disponible"}</span>
                       </div>
                     </div>
                   )}
@@ -3149,13 +3149,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       >
                         {/* Spin border only visible on hover */}
                         <span className="absolute inset-[-400%] bg-[conic-gradient(from_0deg,#b41d1d_0deg,#ffffff_120deg,#0a0a0c_180deg,#b41d1d_240deg,#ffffff_300deg,#b41d1d_360deg)] animate-[spin_4s_linear_infinite] z-0 opacity-0 group-hover/btn-review:opacity-100 transition-opacity duration-300" />
-                        <span className={`absolute inset-[1px] rounded-[11px] group-hover/btn-review:bg-[#121215] transition-all duration-300 z-10 flex items-center justify-center gap-2.5 text-white font-extrabold uppercase tracking-[0.2em] text-[10px] font-sans w-[calc(100%-2px)] h-[calc(100%-2px)] ${
+                        <span className={`absolute inset-[1px] rounded-[11px] group-hover/btn-review:bg-[#121215] transition-all duration-300 z-10 flex items-center justify-center gap-2.5 text-white font-extrabold uppercase tracking-[0.2em] text-[10px] font-sans w-[calc(100%-2px)] h-[calc(100%-2px)] [text-shadow:none] ${
                           selectedMovie.needsReview 
                             ? 'bg-[#b41d1d] group-hover/btn-review:text-white' 
                             : 'bg-[#0c0c0e] border border-white/5 group-hover/btn-review:border-transparent text-zinc-350'
                         }`}>
                           <AlertTriangle size={14} className={selectedMovie.needsReview ? 'text-white' : 'text-[#b41d1d]'} /> 
-                          <span>{selectedMovie.needsReview ? 'QUITAR REVISIÓN' : 'MARCAR REVISIÓN'}</span>
+                          <span className="[text-shadow:none]">{selectedMovie.needsReview ? 'QUITAR REVISIÓN' : 'MARCAR REVISIÓN'}</span>
                         </span>
                       </button>
 
