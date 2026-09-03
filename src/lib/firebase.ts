@@ -209,11 +209,38 @@ export const subscribeToMovies = (
   
   const unsubscribe = onSnapshot(
     q,
-    (snapshot) => {
-      const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if (movies.length > 0) {
-        setCachedMovies(movies);
-        callback(movies);
+    async (snapshot) => {
+      const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (incomingMovies.length === 0) return;
+
+      // Obtenemos la memoria local actual para evitar que una caché interna parcial reducida
+      // desvanezca el catálogo completo
+      const existing = await getCachedMovies() || [];
+
+      if (existing.length === 0 || incomingMovies.length >= existing.length) {
+        // Si no teníamos nada o el snapshot viene completo, actualizamos normal
+        await setCachedMovies(incomingMovies);
+        callback(incomingMovies);
+      } else {
+        // Fusión inteligente: Si el snapshot trae solo una parte (ej. las últimas editadas en este equipo),
+        // fusionamos por ID para preservar absolutamente todo el catálogo previo intacto.
+        const map = new Map<string, any>();
+        for (const m of existing) {
+          map.set(m.id, m);
+        }
+        for (const m of incomingMovies) {
+          map.set(m.id, m);
+        }
+
+        const merged = Array.from(map.values());
+        merged.sort((a, b) => {
+          const timeA = a.createdAt || a.updatedAt || "";
+          const timeB = b.createdAt || b.updatedAt || "";
+          return timeB.localeCompare(timeA);
+        });
+
+        await setCachedMovies(merged);
+        callback(merged);
       }
     },
     (err) => {
