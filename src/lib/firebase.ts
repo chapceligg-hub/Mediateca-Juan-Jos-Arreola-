@@ -109,197 +109,155 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
   }
 };
 
-let isDeltaSyncing = false;
-let lastDeltaSyncTime = 0;
-const DELTA_COOLDOWN_MS = 45000; // Mínimo 45 segundos entre consultas a Firestore
+let hasRunInitialDeltaSync = false;
 
-export const syncMoviesDelta = async (localMovies: any[], force = false): Promise<any[]> => {
-  if (isDeltaSyncing) {
-    return localMovies;
-  }
+export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) => {
+  if (hasRunInitialDeltaSync) return;
+  hasRunInitialDeltaSync = true;
 
-  const now = Date.now();
-  if (!force && localMovies && localMovies.length > 0 && (now - lastDeltaSyncTime) < DELTA_COOLDOWN_MS) {
-    return localMovies;
-  }
-
-  isDeltaSyncing = true;
   try {
-    if (!localMovies || localMovies.length === 0) {
-      console.log("[Delta Sync] Sin catálogo local. Descargando catálogo inicial de respaldo...");
+    const cached = await getCachedMovies();
+    if (!cached || cached.length === 0) {
+      console.log("[Smart Delta Sync] Sin catálogo local previo. Obteniendo catálogo inicial...");
       const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
-      const snapshot = await getDocsFromServer(q);
+      const snapshot = await getDocs(q);
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      lastDeltaSyncTime = Date.now();
-      await setCachedMovies(data, true);
-      notifyMovieSubscribers(data);
-      return data;
+      if (data.length > 0) {
+        await setCachedMovies(data, true);
+        if (callback) callback(data);
+      }
+      return;
     }
 
-    // Identificar la fecha ISO más reciente registrada en la memoria local
+    // Buscamos la fecha más reciente conocida en nuestra memoria local
     let maxTimestamp = "1970-01-01T00:00:00.000Z";
-    for (const m of localMovies) {
+    for (const m of cached) {
       const t = m.updatedAt || m.createdAt || "";
       if (t && t > maxTimestamp) {
         maxTimestamp = t;
       }
     }
 
-    // Margen de seguridad de 2 segundos para tolerar pequeñas variaciones de reloj entre equipos
     let safeQueryTime = maxTimestamp;
     try {
       const parsed = new Date(maxTimestamp).getTime();
-      if (!isNaN(parsed) && parsed > 5000) {
-        safeQueryTime = new Date(parsed - 2000).toISOString();
+      if (!isNaN(parsed) && parsed > 2000) {
+        // Margen de 1 segundo para tolerar pequeñas diferencias horarias
+        safeQueryTime = new Date(parsed - 1000).toISOString();
       }
     } catch (_) {}
 
-    // Única consulta ultra-económica:
-    // Trae únicamente documentos modificados o creados después de nuestra última fecha conocida
-    const q = query(
-      collection(db, 'movies'), 
+    console.log(`[Smart Delta Sync] Comprobando novedades posteriores a ${safeQueryTime} (ejecución única al iniciar)...`);
+    const qDelta = query(
+      collection(db, 'movies'),
       where('updatedAt', '>', safeQueryTime)
     );
-    const snapshot = await getDocsFromServer(q);
-    lastDeltaSyncTime = Date.now();
 
+    const snapshot = await getDocsFromServer(qDelta);
     if (snapshot.empty) {
-      return localMovies;
+      console.log("[Smart Delta Sync] Catálogo al día. 0 lecturas consumidas de datos nuevos.");
+      return;
     }
 
     const deltaMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    console.log(`[Delta Sync] Sincronizados ${deltaMovies.length} cambio(s) reciente(s) desde Firestore.`);
+    console.log(`[Smart Delta Sync] Se sincronizaron ${deltaMovies.length} película(s) nueva(s) o actualizada(s).`);
 
-    // Unir deltas con la lista local por ID
-    const mergedMap = new Map<string, any>();
-    for (const m of localMovies) {
-      mergedMap.set(m.id, m);
+    // Fusionar por ID con la lista en memoria local
+    const map = new Map<string, any>();
+    for (const m of cached) {
+      map.set(m.id, m);
     }
     for (const m of deltaMovies) {
-      mergedMap.set(m.id, m);
+      map.set(m.id, m);
     }
 
-    const mergedList = Array.from(mergedMap.values());
-    mergedList.sort((a, b) => {
+    const merged = Array.from(map.values());
+    merged.sort((a, b) => {
       const timeA = a.createdAt || a.updatedAt || "";
       const timeB = b.createdAt || b.updatedAt || "";
       return timeB.localeCompare(timeA);
     });
 
-    await setCachedMovies(mergedList, true);
-    notifyMovieSubscribers(mergedList);
-    return mergedList;
-  } catch (error) {
-    console.warn("[Delta Sync] Aviso en sincronización delta (usando copia local):", error);
-    return localMovies;
-  } finally {
-    isDeltaSyncing = false;
+    await setCachedMovies(merged, true);
+    if (callback) callback(merged);
+  } catch (err) {
+    console.warn("[Smart Delta Sync] Verificación delta finalizada (manteniendo copia local segura):", err);
   }
+};
+
+export const subscribeToMovies = (
+  callback: (movies: any[]) => void, 
+  onError?: (err: any) => void
+) => {
+  console.log("[Firebase] Conectando sincronización en tiempo real protegida...");
+
+  // 1. Cargar instantáneamente la copia en memoria local de IndexedDB (0 lecturas)
+  getCachedMovies().then(offlineData => {
+    if (offlineData && offlineData.length > 0) {
+      callback(offlineData);
+    }
+    // 2. Ejecutar la sincronización Delta inteligente ESTRICTAMENTE UNA SOLA VEZ al iniciar
+    runSmartDeltaSyncOnce(callback);
+  }).catch((e) => {
+    console.warn("Error leyendo respaldo inicial de IndexedDB:", e);
+    runSmartDeltaSyncOnce(callback);
+  });
+
+  // 3. Suscripción en tiempo real pasiva con onSnapshot respaldada por persistentLocalCache.
+  // Sin setInterval, sin listeners de foco en ventana, sin listeners de visibilidad.
+  const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
+  
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (movies.length > 0) {
+        setCachedMovies(movies);
+        callback(movies);
+      }
+    },
+    (err) => {
+      console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
+      if (onError) onError(err);
+    }
+  );
+
+  return unsubscribe;
 };
 
 export const fetchMoviesOptimized = async (forceServer = false) => {
-  // 1. Carga instantánea desde IndexedDB unificada (Lecturas = 0)
+  // 1. Carga instantánea desde IndexedDB (0 lecturas)
   const offlineData = await getCachedMovies();
-  let localMovies = offlineData || [];
-
-  if (!forceServer && localMovies.length > 0) {
-    console.log(`[Caché Estricta Local] ${localMovies.length} películas cargadas instantáneamente.`);
-    
-    // Disparar sincronización Delta de forma silenciosa e inteligente en segundo plano
-    setTimeout(async () => {
-      try {
-        await syncMoviesDelta(localMovies);
-      } catch (e) {
-        console.error("Error en sincronización Delta en segundo plano:", e);
-      }
-    }, 50);
-
-    return localMovies;
+  if (!forceServer && offlineData && offlineData.length > 0) {
+    return offlineData;
   }
 
-  // 2. Si no hay caché o se fuerza el servidor, hacemos una descarga completa
-  console.log("Firebase Cache-First: Descargando catálogo completo desde el servidor...");
   const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
-  const snapshot = await getDocsFromServer(q);
-  const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  await setCachedMovies(data, true);
-  return data;
-};
 
-const movieSubscribers = new Set<(movies: any[]) => void>();
-
-export const notifyMovieSubscribers = (movies: any[]) => {
-  movieSubscribers.forEach(cb => {
-    try { cb(movies); } catch (e) { console.error("Error in movie subscriber:", e); }
-  });
-};
-
-export const subscribeToMovies = (callback: (movies: any[]) => void, onError: (err: any) => void) => {
-  console.log("[Firebase] Iniciando suscripción con Sincronización Delta inteligente...");
-  movieSubscribers.add(callback);
-
-  const runDeltaCheck = async (force = false) => {
+  // 2. Si no se fuerza servidor, intentar desde la caché interna de Firestore (0 lecturas)
+  if (!forceServer) {
     try {
-      const cached = await getCachedMovies();
-      if (cached && cached.length > 0) {
-        const updatedList = await syncMoviesDelta(cached, force);
-        if (updatedList && updatedList.length > 0) {
-          callback(updatedList);
-        }
+      const cachedSnap = await getDocsFromCache(q);
+      if (!cachedSnap.empty) {
+        const data = cachedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        await setCachedMovies(data);
+        return data;
       }
-    } catch (deltaErr) {
-      console.warn("[Delta Sync] Verificación omitida:", deltaErr);
-    }
-  };
-
-  // 1. Cargar caché local global de inmediato para pintar la pantalla al instante (0 lecturas)
-  (async () => {
-    try {
-      const cached = await getCachedMovies();
-      if (cached && cached.length > 0) {
-        callback(cached);
-        await runDeltaCheck(false);
-      } else {
-        const initial = await syncMoviesDelta([], true);
-        if (initial && initial.length > 0) {
-          callback(initial);
-        }
-      }
-    } catch (e) {
-      console.warn("Error cargando caché inicial en suscripción:", e);
-    }
-  })();
-
-  // 2. Disparadores inteligentes entre dispositivos: al regresar a la app o cambiar de pestaña
-  const handleVisibilityChange = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      runDeltaCheck(false);
-    }
-  };
-  const handleWindowFocus = () => {
-    runDeltaCheck(false);
-  };
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('focus', handleWindowFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    } catch (e) {}
   }
 
-  // 3. Sondeo delta periódico silencioso (cada 2 minutos, solo si la pestaña está visible)
-  const deltaInterval = setInterval(() => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      runDeltaCheck(false);
+  // 3. Servidor únicamente si no hay caché en ningún lado o se fuerza explícitamente
+  try {
+    const snapshot = await getDocs(q);
+    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    await setCachedMovies(data, true);
+    return data;
+  } catch (err) {
+    if (offlineData && offlineData.length > 0) {
+      return offlineData;
     }
-  }, 120000);
-
-  return () => {
-    clearInterval(deltaInterval);
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('focus', handleWindowFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }
-    movieSubscribers.delete(callback);
-  };
+    throw err;
+  }
 };
 
 export const fetchAdminsOptimized = async (forceServer = false) => {
@@ -372,7 +330,6 @@ export const upsertMovie = async (movie: any) => {
       return timeB.localeCompare(timeA);
     });
     await setCachedMovies(list, true);
-    notifyMovieSubscribers(list);
   } catch (e) {
     console.error("Error actualizando la caché local tras upsertMovie:", e);
   }
@@ -407,7 +364,6 @@ export const updateMovie = async (id: string, updates: any) => {
           return timeB.localeCompare(timeA);
         });
         await setCachedMovies(list, true);
-        notifyMovieSubscribers(list);
       }
     }
   } catch (e) {}
@@ -427,7 +383,6 @@ export const deleteMovie = async (id: string) => {
     if (offlineData) {
       let list: any[] = offlineData.filter((m: any) => m.id !== id);
       await setCachedMovies(list, true);
-      notifyMovieSubscribers(list);
     }
   } catch (e) {}
 

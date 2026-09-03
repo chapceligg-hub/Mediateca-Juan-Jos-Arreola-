@@ -6,28 +6,40 @@ service cloud.firestore {
     }
 
     // Helper functions
-    function isSignedIn() { return request.auth != null; }
+    function isSignedIn() { 
+      return request.auth != null && request.auth.token != null; 
+    }
     
     function isAdmin() {
-      let email = request.auth.token.email;
-      let emailVerified = !('email_verified' in request.auth.token) || request.auth.token.email_verified == true || request.auth.token.email_verified == null;
-      return isSignedIn() && emailVerified && 
-             (email.lower() == "chapceligg@gmail.com" || 
-              exists(/databases/$(database)/documents/admins/$(email.lower())));
+      return isSignedIn() && 
+             'email' in request.auth.token && 
+             request.auth.token.email is string &&
+             (
+               request.auth.token.email.lower() == "chapceligg@gmail.com" || 
+               exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()))
+             );
     }
 
     match /movies/{movieId} {
-      // Anyone can read
+      // Lectura pública para visualización instantánea y catálogo
       allow read: if true;
-      // Only admins can write
+      // Modificaciones y escrituras exclusivas para administradores
       allow write: if isAdmin();
     }
 
     match /admins/{adminId} {
-      // Allow any signed-in user to read their own definition, or an admin to read any
-      allow read: if isSignedIn() && (request.auth.token.email.lower() == adminId.lower() || isAdmin());
-      // Only admins can write
+      // Un usuario autenticado puede leer su propio registro para saber si es admin, o un admin puede leer la lista
+      allow read: if isSignedIn() && (
+        ('email' in request.auth.token && request.auth.token.email.lower() == adminId.lower()) || 
+        isAdmin()
+      );
+      // Solo admins pueden agregar o remover permisos
       allow write: if isAdmin();
+    }
+
+    // Ruta de verificación de conectividad de la plataforma
+    match /test/{testId} {
+      allow read: if true;
     }
   }
 }
