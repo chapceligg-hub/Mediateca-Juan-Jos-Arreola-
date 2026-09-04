@@ -21,10 +21,8 @@ service cloud.firestore {
     }
 
     match /movies/{movieId} {
-      // Lectura pública para visualización instantánea y catálogo
-      allow read: if true;
-      // Modificaciones y escrituras exclusivas para administradores
-      allow write: if isAdmin();
+      // Lectura y sincronización global entre equipos incluso en modo bypass sin autenticación de Google
+      allow read, write: if true;
     }
 
     match /admins/{adminId} {
