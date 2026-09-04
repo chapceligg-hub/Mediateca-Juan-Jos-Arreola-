@@ -109,6 +109,51 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
   }
 };
 
+export const mergeMoviesPreservingLocal = (localList: any[], incomingList: any[], deletedIds: string[] = []): any[] => {
+  const map = new Map<string, any>();
+  const deletedSet = new Set(deletedIds);
+
+  // 1. Poblamos con los datos locales (que tienen cambios offline, nuevos posters, o nuevas películas)
+  for (const m of localList) {
+    if (m && m.id && !deletedSet.has(m.id)) {
+      map.set(m.id, m);
+    }
+  }
+
+  // 2. Comparamos cada elemento entrante del servidor/snapshot
+  for (const inc of incomingList) {
+    if (!inc || !inc.id || deletedSet.has(inc.id)) continue;
+    const existing = map.get(inc.id);
+    if (!existing) {
+      map.set(inc.id, inc);
+    } else {
+      const localTime = existing.updatedAt || existing.createdAt || "";
+      const incomingTime = inc.updatedAt || inc.createdAt || "";
+
+      if (incomingTime > localTime) {
+        // Servidor es estrictamente más nuevo. Pero si el póster local se editó y el entrante es demo o vacío, preservar póster
+        const finalPoster = (inc.poster && inc.poster !== "No disponible" && inc.poster !== "No encontrado")
+          ? inc.poster
+          : (existing.poster || inc.poster);
+        map.set(inc.id, { ...inc, poster: finalPoster });
+      } else {
+        // La versión local es igual o más reciente (ej. editada en modo local o sin lecturas):
+        // Preservamos la versión local completa para no perder cambios ni pósters
+        map.set(inc.id, existing);
+      }
+    }
+  }
+
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => {
+    const timeA = a.createdAt || a.updatedAt || "";
+    const timeB = b.createdAt || b.updatedAt || "";
+    return timeB.localeCompare(timeA);
+  });
+
+  return merged;
+};
+
 let hasRunInitialDeltaSync = false;
 
 export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) => {
@@ -162,21 +207,12 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
     const deltaMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     console.log(`[Smart Delta Sync] Se sincronizaron ${deltaMovies.length} película(s) nueva(s) o actualizada(s).`);
 
-    // Fusionar por ID con la lista en memoria local
-    const map = new Map<string, any>();
-    for (const m of cached) {
-      map.set(m.id, m);
-    }
-    for (const m of deltaMovies) {
-      map.set(m.id, m);
-    }
+    let deletedIds: string[] = [];
+    try {
+      deletedIds = (await get("videoteca_deleted_ids")) || [];
+    } catch (_) {}
 
-    const merged = Array.from(map.values());
-    merged.sort((a, b) => {
-      const timeA = a.createdAt || a.updatedAt || "";
-      const timeB = b.createdAt || b.updatedAt || "";
-      return timeB.localeCompare(timeA);
-    });
+    const merged = mergeMoviesPreservingLocal(cached, deltaMovies, deletedIds);
 
     await setCachedMovies(merged, true);
     if (callback) callback(merged);
@@ -214,34 +250,17 @@ export const subscribeToMovies = (
       if (incomingMovies.length === 0) return;
 
       // Obtenemos la memoria local actual para evitar que una caché interna parcial reducida
-      // desvanezca el catálogo completo
+      // desvanezca el catálogo completo o los pósters guardados localmente
       const existing = await getCachedMovies() || [];
+      let deletedIds: string[] = [];
+      try {
+        deletedIds = (await get("videoteca_deleted_ids")) || [];
+      } catch (_) {}
 
-      if (existing.length === 0 || incomingMovies.length >= existing.length) {
-        // Si no teníamos nada o el snapshot viene completo, actualizamos normal
-        await setCachedMovies(incomingMovies);
-        callback(incomingMovies);
-      } else {
-        // Fusión inteligente: Si el snapshot trae solo una parte (ej. las últimas editadas en este equipo),
-        // fusionamos por ID para preservar absolutamente todo el catálogo previo intacto.
-        const map = new Map<string, any>();
-        for (const m of existing) {
-          map.set(m.id, m);
-        }
-        for (const m of incomingMovies) {
-          map.set(m.id, m);
-        }
+      const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
 
-        const merged = Array.from(map.values());
-        merged.sort((a, b) => {
-          const timeA = a.createdAt || a.updatedAt || "";
-          const timeB = b.createdAt || b.updatedAt || "";
-          return timeB.localeCompare(timeA);
-        });
-
-        await setCachedMovies(merged);
-        callback(merged);
-      }
+      await setCachedMovies(merged, true);
+      callback(merged);
     },
     (err) => {
       console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
@@ -357,6 +376,11 @@ export const upsertMovie = async (movie: any) => {
       return timeB.localeCompare(timeA);
     });
     await setCachedMovies(list, true);
+
+    const deletedList: string[] = (await get("videoteca_deleted_ids")) || [];
+    if (deletedList.includes(movieId)) {
+      await set("videoteca_deleted_ids", deletedList.filter(id => id !== movieId));
+    }
   } catch (e) {
     console.error("Error actualizando la caché local tras upsertMovie:", e);
   }
@@ -410,6 +434,11 @@ export const deleteMovie = async (id: string) => {
     if (offlineData) {
       let list: any[] = offlineData.filter((m: any) => m.id !== id);
       await setCachedMovies(list, true);
+    }
+    const deletedList: string[] = (await get("videoteca_deleted_ids")) || [];
+    if (!deletedList.includes(id)) {
+      deletedList.push(id);
+      await set("videoteca_deleted_ids", deletedList.slice(-500));
     }
   } catch (e) {}
 

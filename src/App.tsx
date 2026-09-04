@@ -908,7 +908,7 @@ export default function App() {
         let width = img.width;
         let height = img.height;
         
-        const MAX_SIZE = 800;
+        const MAX_SIZE = 600;
         if (width > height) {
           if (width > MAX_SIZE) {
             height *= MAX_SIZE / width;
@@ -926,7 +926,7 @@ export default function App() {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const base64 = canvas.toDataURL('image/jpeg', 0.8);
+          const base64 = canvas.toDataURL('image/jpeg', 0.75);
           handleManualPosterUpdate(base64);
         }
       };
@@ -1171,7 +1171,22 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     }
   };
 
-  const [isBypassActive, setIsBypassActive] = useState(false);
+  const [isBypassActive, setIsBypassActive] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("videoteca_bypass_active") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (isBypassActive) {
+      setUser({ email: 'chapceligg@gmail.com', displayName: 'Admin Maestro (Bypass Dev)', photoURL: '' });
+      setIsAdmin(true);
+      setUserRole('admin');
+      setIsAuthChecking(false);
+    }
+  }, [isBypassActive]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(async (currentUser: any) => {
@@ -2139,7 +2154,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                  <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`}>{user.displayName || 'Curator Profile'}</span>
                  <span className={`admin-profile-role text-[10px] truncate uppercase tracking-widest ${isDayMode ? 'text-zinc-800 font-bold' : 'text-zinc-500'}`}>{isAdmin ? `${t("Administrador")} / ${t("Editor")}` : 'Mediateca Viewer'}</span>
               </div>
-              <button onClick={() => { setIsBypassActive(false); logout(); }} className={`ml-auto p-1 transition-colors ${isDayMode ? 'text-zinc-500 hover:text-red-600' : 'text-zinc-600 hover:text-brand-light'}`}><LogOut size={14}/></button>
+              <button onClick={() => { try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {} setIsBypassActive(false); logout(); }} className={`ml-auto p-1 transition-colors ${isDayMode ? 'text-zinc-500 hover:text-red-600' : 'text-zinc-600 hover:text-brand-light'}`}><LogOut size={14}/></button>
             </div>
           ) : (
              <button onClick={async () => {
@@ -2150,6 +2165,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                    alert("Error de inicio de sesión: " + err.message);
                  }
                } else {
+                 try { localStorage.setItem("videoteca_bypass_active", "true"); } catch (_) {}
                  setIsBypassActive(true);
                  setUser({ email: 'chapceligg@gmail.com', displayName: 'Admin Maestro (Bypass Dev)', photoURL: '' });
                  setIsAdmin(true);
