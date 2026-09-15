@@ -4478,68 +4478,58 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         >
           <div className="bg-[#09090b] border border-white/10 rounded-2xl w-full max-w-xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] relative flex flex-col font-sans">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/5 bg-gradient-to-r from-red-950/20 via-transparent to-transparent">
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
-                  <FileSpreadsheet size={20} />
+            <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-[#0e0e11]">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white shrink-0">
+                  <FileSpreadsheet size={18} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black uppercase tracking-wider text-white">Exportar Catálogo Organizado</h3>
-                  <p className="text-xs text-zinc-400">Documento estructurado por pestañas y secciones independientes</p>
+                  <h3 className="text-base font-black uppercase tracking-wider text-white">Exportar Catálogo</h3>
+                  <p className="text-xs text-zinc-400">Documento organizado por pestañas y secciones independientes</p>
                 </div>
               </div>
               <button 
                 id="btn-close-export-modal"
                 onClick={() => setShowExportModal(false)} 
-                className="text-zinc-400 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors"
+                className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
                 title="Cerrar"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 flex flex-col gap-5">
-              {/* Resumen de pestañas que contendrá el libro */}
-              <div>
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-2.5 block">
-                  📑 Pestañas que se generarán en el documento:
+            <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+              {/* Distribución por pestañas */}
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 block">
+                  Estructura de pestañas en el documento
                 </span>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      🎬 Películas
-                    </span>
-                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.peliculas} títulos</span>
+                <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 grid grid-cols-5 divide-x divide-white/5 text-center">
+                  <div className="px-1.5">
+                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Películas</span>
+                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.peliculas}</span>
                   </div>
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      📺 Series
-                    </span>
-                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.series} títulos</span>
+                  <div className="px-1.5">
+                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Series</span>
+                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.series}</span>
                   </div>
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      🏛️ Centauro
-                    </span>
-                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.centauro} títulos</span>
+                  <div className="px-1.5">
+                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Centauro</span>
+                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.centauro}</span>
                   </div>
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
-                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                      ⚠️ Para Revisión
-                    </span>
-                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.revision} pendientes</span>
+                  <div className="px-1.5">
+                    <span className="text-[10px] text-amber-500 uppercase tracking-widest block font-bold">Revisión</span>
+                    <span className="text-amber-400 font-extrabold text-sm mt-0.5 block">{exportSummary.revision}</span>
                   </div>
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col col-span-2 sm:col-span-2">
-                    <span className="text-xs font-bold text-red-400 flex items-center gap-1.5">
-                      📚 Catálogo Completo (Todo)
-                    </span>
-                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.total} fichas consolidadas</span>
+                  <div className="px-1.5">
+                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Total</span>
+                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.total}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Botones de acción */}
-              <div className="flex flex-col gap-3 pt-2">
+              {/* Opciones de descarga */}
+              <div className="flex flex-col gap-2.5 pt-1">
                 {/* Opción 1: Excel con pestañas */}
                 <button
                   type="button"
@@ -4548,31 +4538,28 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     const success = exportToExcelWithTabs(movies, filteredMovies);
                     if (success) setShowExportModal(false);
                   }}
-                  className="w-full text-left bg-gradient-to-r from-emerald-950/40 via-emerald-900/20 to-transparent hover:from-emerald-950/60 hover:via-emerald-900/30 border border-emerald-500/30 hover:border-emerald-500/60 rounded-xl p-4 transition-all duration-300 group flex items-center justify-between shadow-[0_4px_20px_rgba(16,185,129,0.1)] hover:shadow-[0_4px_25px_rgba(16,185,129,0.2)] cursor-pointer"
+                  className="w-full bg-[#b41d1d] hover:bg-[#991818] active:bg-[#7f1313] text-white border border-[#b41d1d] rounded-xl p-4 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform shrink-0">
-                      <FileSpreadsheet size={22} />
+                    <div className="w-9 h-9 rounded-lg bg-black/25 border border-white/10 flex items-center justify-center text-white shrink-0">
+                      <FileSpreadsheet size={19} />
                     </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-black uppercase tracking-wider text-white group-hover:text-emerald-300 transition-colors">
-                          Descargar Excel con Pestañas (.xlsx)
-                        </span>
-                        <span className="bg-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/30">
-                          Recomendado
-                        </span>
-                      </div>
-                      <span className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                        Incluye pestañas individuales abajo (Películas, Series, Centauro, etc.) con columnas autoajustadas y texto ordenado.
+                    <div className="text-left">
+                      <span className="text-xs font-black uppercase tracking-[0.16em] text-white block">
+                        Descargar Libro Excel (.xlsx)
+                      </span>
+                      <span className="text-[11px] text-red-100/80 font-medium block mt-0.5">
+                        Hojas individuales: Películas, Series, Centauro, Revisión y Catálogo Completo
                       </span>
                     </div>
                   </div>
-                  <Download size={20} className="text-emerald-400 shrink-0 ml-3 group-hover:translate-y-0.5 transition-transform" />
+                  <div className="w-8 h-8 rounded-lg bg-white/10 group-hover:bg-white/15 flex items-center justify-center text-white shrink-0 ml-3 transition-colors">
+                    <Download size={16} />
+                  </div>
                 </button>
 
                 {/* Opción 2: CSV Plano */}
-                <div className="flex flex-col sm:flex-row gap-2.5">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <button
                     type="button"
                     id="btn-download-csv-all"
@@ -4580,18 +4567,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       const success = exportToCleanCSV(movies, "catalogo_completo");
                       if (success) setShowExportModal(false);
                     }}
-                    className="flex-1 bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-white/20 rounded-xl p-3.5 transition-all text-left flex items-center justify-between group cursor-pointer"
+                    className="flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left"
                   >
                     <div className="flex items-center gap-2.5">
-                      <Table size={18} className="text-zinc-400 group-hover:text-white shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-white group-hover:text-red-400 transition-colors">
-                          CSV Catálogo Completo (.csv)
+                      <Table size={16} className="text-zinc-400 group-hover:text-white shrink-0" />
+                      <div>
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-200 group-hover:text-white block">
+                          CSV Completo (.csv)
                         </span>
-                        <span className="text-[10px] text-zinc-500">Con columna de sección y UTF-8 BOM</span>
+                        <span className="text-[10px] text-zinc-400 block">Texto plano UTF-8 BOM</span>
                       </div>
                     </div>
-                    <Download size={16} className="text-zinc-500 group-hover:text-white shrink-0 ml-2" />
+                    <Download size={15} className="text-zinc-400 group-hover:text-white shrink-0 ml-2" />
                   </button>
 
                   {filteredMovies.length > 0 && filteredMovies.length !== movies.length && (
@@ -4602,21 +4589,30 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         const success = exportToCleanCSV(filteredMovies, "catalogo_filtrado");
                         if (success) setShowExportModal(false);
                       }}
-                      className="flex-1 bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-white/20 rounded-xl p-3.5 transition-all text-left flex items-center justify-between group cursor-pointer"
+                      className="flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left"
                     >
                       <div className="flex items-center gap-2.5">
-                        <Download size={18} className="text-amber-400 shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                        <Download size={16} className="text-amber-400 shrink-0" />
+                        <div>
+                          <span className="text-xs font-bold uppercase tracking-wider text-zinc-200 group-hover:text-amber-300 block">
                             CSV Vista Filtrada ({filteredMovies.length})
                           </span>
-                          <span className="text-[10px] text-zinc-500">Solo elementos del filtro actual</span>
+                          <span className="text-[10px] text-zinc-400 block">Solo registros filtrados</span>
                         </div>
                       </div>
-                      <Download size={16} className="text-zinc-500 group-hover:text-white shrink-0 ml-2" />
+                      <Download size={15} className="text-zinc-400 group-hover:text-white shrink-0 ml-2" />
                     </button>
                   )}
                 </div>
+
+                <button
+                  type="button"
+                  id="btn-cancel-export-modal"
+                  onClick={() => setShowExportModal(false)}
+                  className="w-full mt-1 py-2.5 text-zinc-400 hover:text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-colors hover:bg-white/5 cursor-pointer text-center"
+                >
+                  Cerrar
+                </button>
               </div>
             </div>
           </div>

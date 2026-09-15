@@ -199,7 +199,20 @@ export const exportToExcelWithTabs = (movies: Movie[], filteredMovies?: Movie[])
     }
 
     const dateStr = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(wb, `Videoteca_Catalogo_Pestanas_${dateStr}.xlsx`);
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `Videoteca_Catalogo_Pestanas_${dateStr}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+      URL.revokeObjectURL(url);
+    }, 250);
     return true;
   } catch (err: any) {
     console.error("Error al exportar libro Excel con pestañas:", err);
@@ -240,8 +253,12 @@ export const exportToCleanCSV = (movies: Movie[], filenameSuffix = "catalogo"): 
     link.setAttribute("download", `Videoteca_${filenameSuffix}_${dateStr}.csv`);
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+      URL.revokeObjectURL(url);
+    }, 250);
     return true;
   } catch (err: any) {
     console.error("Error al exportar CSV:", err);
