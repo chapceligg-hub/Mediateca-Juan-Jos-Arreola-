@@ -1576,8 +1576,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setSyncInput("");
       setSyncError("");
       setSyncStatus("¡Guardado exitoso!");
-      setActiveExploreTab(targetSection);
-      clearFiltersAndSearch(true);
+      if (isAddingNew) {
+        setActiveExploreTab(targetSection);
+        clearFiltersAndSearch(true);
+      }
 
       await upsertMovie(payload);
     } catch (e: any) {
