@@ -757,6 +757,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [animateCategory, setAnimateCategory] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const prevGenreRef = useRef(selectedGenre);
 
   const exportSummary = useMemo(() => getExportSummary(movies), [movies]);
@@ -4534,11 +4535,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <button
                   type="button"
                   id="btn-download-excel-tabs"
-                  onClick={() => {
-                    const success = exportToExcelWithTabs(movies, filteredMovies);
-                    if (success) setShowExportModal(false);
+                  disabled={isExporting}
+                  onClick={async () => {
+                    if (isExporting) return;
+                    setIsExporting(true);
+                    try {
+                      const success = await exportToExcelWithTabs(movies, filteredMovies);
+                      if (success) setShowExportModal(false);
+                    } finally {
+                      setIsExporting(false);
+                    }
                   }}
-                  className="w-full bg-[#b41d1d] hover:bg-[#991818] active:bg-[#7f1313] text-white border border-[#b41d1d] rounded-xl p-4 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group"
+                  className={`w-full bg-[#b41d1d] hover:bg-[#991818] active:bg-[#7f1313] text-white border border-[#b41d1d] rounded-xl p-4 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
                 >
                   <div className="flex items-center gap-3.5">
                     <div className="w-9 h-9 rounded-lg bg-black/25 border border-white/10 flex items-center justify-center text-white shrink-0">
@@ -4546,15 +4554,19 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     </div>
                     <div className="text-left">
                       <span className="text-xs font-black uppercase tracking-[0.16em] text-white block">
-                        Descargar Libro Excel (.xlsx)
+                        {isExporting ? "Generando Libro Excel..." : "Descargar Libro Excel (.xlsx)"}
                       </span>
                       <span className="text-[11px] text-red-100/80 font-medium block mt-0.5">
-                        Hojas individuales: Películas, Series, Centauro, Revisión y Catálogo Completo
+                        {isExporting ? "Consolidando todos los registros subidos y construyendo pestañas..." : "Hojas individuales: Películas, Series, Centauro, Revisión y Catálogo Completo"}
                       </span>
                     </div>
                   </div>
                   <div className="w-8 h-8 rounded-lg bg-white/10 group-hover:bg-white/15 flex items-center justify-center text-white shrink-0 ml-3 transition-colors">
-                    <Download size={16} />
+                    {isExporting ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Download size={16} />
+                    )}
                   </div>
                 </button>
 
@@ -4563,11 +4575,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   <button
                     type="button"
                     id="btn-download-csv-all"
-                    onClick={() => {
-                      const success = exportToCleanCSV(movies, "catalogo_completo");
-                      if (success) setShowExportModal(false);
+                    disabled={isExporting}
+                    onClick={async () => {
+                      if (isExporting) return;
+                      setIsExporting(true);
+                      try {
+                        const success = await exportToCleanCSV(movies, "catalogo_completo");
+                        if (success) setShowExportModal(false);
+                      } finally {
+                        setIsExporting(false);
+                      }
                     }}
-                    className="flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left"
+                    className={`flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
                   >
                     <div className="flex items-center gap-2.5">
                       <Table size={16} className="text-zinc-400 group-hover:text-white shrink-0" />
@@ -4585,11 +4604,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <button
                       type="button"
                       id="btn-download-csv-filtered"
-                      onClick={() => {
-                        const success = exportToCleanCSV(filteredMovies, "catalogo_filtrado");
-                        if (success) setShowExportModal(false);
+                      disabled={isExporting}
+                      onClick={async () => {
+                        if (isExporting) return;
+                        setIsExporting(true);
+                        try {
+                          const success = await exportToCleanCSV(filteredMovies, "catalogo_filtrado");
+                          if (success) setShowExportModal(false);
+                        } finally {
+                          setIsExporting(false);
+                        }
                       }}
-                      className="flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left"
+                      className={`flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
                     >
                       <div className="flex items-center gap-2.5">
                         <Download size={16} className="text-amber-400 shrink-0" />
