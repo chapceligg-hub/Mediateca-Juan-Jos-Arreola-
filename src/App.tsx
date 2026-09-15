@@ -7,13 +7,14 @@ import {
   DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload, Download,
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
-  Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain
+  Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table
 } from 'lucide-react';
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, getCachedMovies
 } from './lib/firebase';
+import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
 import { ALPHABET, YEAR_RANGES, DEMO_POSTER } from './constants';
 import { catalogMovieAI, fetchIconicQuote } from './lib/aiService';
@@ -755,7 +756,10 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const [copied, setCopied] = useState(false);
   const [animateCategory, setAnimateCategory] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const prevGenreRef = useRef(selectedGenre);
+
+  const exportSummary = useMemo(() => getExportSummary(movies), [movies]);
 
   const [isEnglish, setIsEnglish] = useState(false);
 
@@ -1461,64 +1465,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   }, [filteredMovies, currentPage, totalPages]);
 
   const exportToCSV = () => {
-    if (filteredMovies.length === 0) {
-      alert("No hay películas en el listado actual para exportar.");
-      return;
-    }
-
-    const headers = [
-      "ID", "Título Español", "Título Original", "Año", "Rating Global", "Duración", 
-      "País", "Dirección", "Género", "Clasificación", "Formato", "Póster", 
-      "Argumento/Sinopsis", "Elenco", "Guion", "Banda Sonora", "Fotografía", 
-      "Estudio/Compañías", "Reseñas", "Premios", "Estante", "Última Actualización"
-    ];
-
-    const csvRows = [headers.join(",")];
-
-    for (const m of filteredMovies) {
-      const castStr = Array.isArray(m.cast) ? m.cast.join(" / ") : (m.cast || "");
-      const row = [
-        m.id || "",
-        m.title || "",
-        m.originalTitle || "",
-        m.year || "",
-        m.rating || "",
-        m.duration || "",
-        m.country || "",
-        m.director || "",
-        m.genre || "",
-        m.ageRating || "",
-        m.format || "",
-        m.poster || "",
-        m.synopsis || "",
-        castStr,
-        m.script || "",
-        m.music || "",
-        m.photography || "",
-        m.companies || "",
-        m.reviews || "",
-        m.awards || "",
-        m.estante || "",
-        m.updatedAt || m.createdAt || ""
-      ];
-
-      const escapedRow = row.map(val => {
-        const stringVal = String(val).replace(/"/g, '""');
-        return `"${stringVal}"`;
-      });
-
-      csvRows.push(escapedRow.join(","));
-    }
-
-    const csvContent = "\uFEFF" + csvRows.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `catalogo_videoteca_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setShowExportModal(true);
   };
 
   const persistMovieData = async (dataToUse?: any) => {
@@ -2116,11 +2063,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                            <span>{t("PARA REVISIÓN")}</span>
                          </button>
                          <button 
+                           id="btn-export-csv"
                            onClick={exportToCSV} 
                            className={getSidebarItemClass(false)}
+                           title="Exportar videoteca organizada por pestañas"
                          >
-                           <Download className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                           <span>{t("EXPORTAR CSV")}</span>
+                           <FileSpreadsheet className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
+                           <span>{t("EXPORTAR CSV / EXCEL")}</span>
                          </button>
 
                       </div>
@@ -4514,6 +4463,162 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2 mb-2"><Users className="text-brand-light" size={24} /> Gestionar Admins</h3>
             <p className="text-xs text-zinc-400 mb-6 font-medium leading-relaxed">Agrega administradores para que puedan editar el catálogo. Sus correos deben coincidir con la cuenta de Google con la que inicien sesión.</p>
             <AdminManager currentUser={user} userRole={userRole} />
+          </div>
+        </div>
+      )}
+
+      {/* EXPORT MODAL WITH TABS */}
+      {showExportModal && (
+        <div 
+          id="modal-export-catalog"
+          className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowExportModal(false);
+          }}
+        >
+          <div className="bg-[#09090b] border border-white/10 rounded-2xl w-full max-w-xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] relative flex flex-col font-sans">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-white/5 bg-gradient-to-r from-red-950/20 via-transparent to-transparent">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                  <FileSpreadsheet size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-wider text-white">Exportar Catálogo Organizado</h3>
+                  <p className="text-xs text-zinc-400">Documento estructurado por pestañas y secciones independientes</p>
+                </div>
+              </div>
+              <button 
+                id="btn-close-export-modal"
+                onClick={() => setShowExportModal(false)} 
+                className="text-zinc-400 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors"
+                title="Cerrar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 flex flex-col gap-5">
+              {/* Resumen de pestañas que contendrá el libro */}
+              <div>
+                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-2.5 block">
+                  📑 Pestañas que se generarán en el documento:
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      🎬 Películas
+                    </span>
+                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.peliculas} títulos</span>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      📺 Series
+                    </span>
+                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.series} títulos</span>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      🏛️ Centauro
+                    </span>
+                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.centauro} títulos</span>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col">
+                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                      ⚠️ Para Revisión
+                    </span>
+                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.revision} pendientes</span>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 flex flex-col col-span-2 sm:col-span-2">
+                    <span className="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                      📚 Catálogo Completo (Todo)
+                    </span>
+                    <span className="text-[11px] text-zinc-400 mt-1 font-semibold">{exportSummary.total} fichas consolidadas</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de acción */}
+              <div className="flex flex-col gap-3 pt-2">
+                {/* Opción 1: Excel con pestañas */}
+                <button
+                  type="button"
+                  id="btn-download-excel-tabs"
+                  onClick={() => {
+                    const success = exportToExcelWithTabs(movies, filteredMovies);
+                    if (success) setShowExportModal(false);
+                  }}
+                  className="w-full text-left bg-gradient-to-r from-emerald-950/40 via-emerald-900/20 to-transparent hover:from-emerald-950/60 hover:via-emerald-900/30 border border-emerald-500/30 hover:border-emerald-500/60 rounded-xl p-4 transition-all duration-300 group flex items-center justify-between shadow-[0_4px_20px_rgba(16,185,129,0.1)] hover:shadow-[0_4px_25px_rgba(16,185,129,0.2)] cursor-pointer"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform shrink-0">
+                      <FileSpreadsheet size={22} />
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black uppercase tracking-wider text-white group-hover:text-emerald-300 transition-colors">
+                          Descargar Excel con Pestañas (.xlsx)
+                        </span>
+                        <span className="bg-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/30">
+                          Recomendado
+                        </span>
+                      </div>
+                      <span className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                        Incluye pestañas individuales abajo (Películas, Series, Centauro, etc.) con columnas autoajustadas y texto ordenado.
+                      </span>
+                    </div>
+                  </div>
+                  <Download size={20} className="text-emerald-400 shrink-0 ml-3 group-hover:translate-y-0.5 transition-transform" />
+                </button>
+
+                {/* Opción 2: CSV Plano */}
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    type="button"
+                    id="btn-download-csv-all"
+                    onClick={() => {
+                      const success = exportToCleanCSV(movies, "catalogo_completo");
+                      if (success) setShowExportModal(false);
+                    }}
+                    className="flex-1 bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-white/20 rounded-xl p-3.5 transition-all text-left flex items-center justify-between group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Table size={18} className="text-zinc-400 group-hover:text-white shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-white group-hover:text-red-400 transition-colors">
+                          CSV Catálogo Completo (.csv)
+                        </span>
+                        <span className="text-[10px] text-zinc-500">Con columna de sección y UTF-8 BOM</span>
+                      </div>
+                    </div>
+                    <Download size={16} className="text-zinc-500 group-hover:text-white shrink-0 ml-2" />
+                  </button>
+
+                  {filteredMovies.length > 0 && filteredMovies.length !== movies.length && (
+                    <button
+                      type="button"
+                      id="btn-download-csv-filtered"
+                      onClick={() => {
+                        const success = exportToCleanCSV(filteredMovies, "catalogo_filtrado");
+                        if (success) setShowExportModal(false);
+                      }}
+                      className="flex-1 bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-white/20 rounded-xl p-3.5 transition-all text-left flex items-center justify-between group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Download size={18} className="text-amber-400 shrink-0" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                            CSV Vista Filtrada ({filteredMovies.length})
+                          </span>
+                          <span className="text-[10px] text-zinc-500">Solo elementos del filtro actual</span>
+                        </div>
+                      </div>
+                      <Download size={16} className="text-zinc-500 group-hover:text-white shrink-0 ml-2" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
