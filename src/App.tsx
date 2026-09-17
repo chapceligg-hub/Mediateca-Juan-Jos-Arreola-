@@ -718,31 +718,78 @@ export default function App() {
 
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   
-  // Click History State
-  const [clickedMovieIds, setClickedMovieIds] = useState<string[]>(() => {
+  // Clave y función para el Historial Diario (se reinicia automáticamente cada día en memoria caché/localStorage)
+  const DAILY_HISTORY_KEY = "videoteca_historial_diario";
+
+  const getTodayKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+
+  // Historial Diario de fichas consultadas en caché local
+  const [dailyHistoryIds, setDailyHistoryIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem("clicked_movies_history");
-      return saved ? JSON.parse(saved) : [];
+      const raw = localStorage.getItem(DAILY_HISTORY_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      const today = getTodayKey();
+      if (parsed && parsed.date === today && Array.isArray(parsed.ids)) {
+        return parsed.ids;
+      }
+      localStorage.removeItem(DAILY_HISTORY_KEY);
+      return [];
     } catch {
       return [];
     }
   });
 
-  // Record clicked movie to history
+  // Registrar la última visualización de la ficha en la que el usuario dio clic (la más reciente al inicio)
   useEffect(() => {
     if (selectedMovie && selectedMovie.id) {
-      setClickedMovieIds(prev => {
+      const today = getTodayKey();
+      setDailyHistoryIds(prev => {
         const filtered = prev.filter(id => id !== selectedMovie.id);
-        const next = [selectedMovie.id, ...filtered];
+        const updated = [selectedMovie.id, ...filtered];
         try {
-          localStorage.setItem("clicked_movies_history", JSON.stringify(next));
+          localStorage.setItem(DAILY_HISTORY_KEY, JSON.stringify({
+            date: today,
+            ids: updated
+          }));
         } catch (e) {
-          console.error("Failed to save click history", e);
+          console.warn("No se pudo guardar el historial diario en caché local:", e);
         }
-        return next;
+        return updated;
       });
     }
   }, [selectedMovie]);
+
+  // Vigilante que reinicia automáticamente el historial si la aplicación continúa abierta al cambiar de día
+  useEffect(() => {
+    const verifyDailyReset = () => {
+      try {
+        const raw = localStorage.getItem(DAILY_HISTORY_KEY);
+        if (!raw) {
+          setDailyHistoryIds(prev => prev.length > 0 ? [] : prev);
+          return;
+        }
+        const parsed = JSON.parse(raw);
+        const today = getTodayKey();
+        if (parsed?.date !== today) {
+          localStorage.removeItem(DAILY_HISTORY_KEY);
+          setDailyHistoryIds([]);
+        }
+      } catch {
+        // ignorar
+      }
+    };
+
+    const intervalId = setInterval(verifyDailyReset, 60000);
+    window.addEventListener("focus", verifyDailyReset);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener("focus", verifyDailyReset);
+    };
+  }, []);
   const [isEditing, setIsEditing] = useState(false);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -1296,7 +1343,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly]);
+  }, [searchTerm, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly]);
 
   const dynamicGenres = useMemo(() => {
     // 21 categorías + Todos + Clásico + Mexicanas como se solicita
@@ -1356,7 +1403,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
       const movieSec = String(m.section || 'peliculas').toLowerCase().trim();
       const isSearching = searchTerm.trim() !== "";
-      const matchTab = isSearching
+      const matchTab = (isSearching || showHistoryOnly)
         ? true
         : activeExploreTab === 'centauro'
         ? movieSec === 'centauro'
@@ -1364,7 +1411,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         ? movieSec === 'series'
         : (movieSec === 'peliculas' || movieSec === '');
 
-      return matchSearch && matchGenre && matchLetter && matchYear && matchReview && matchTab;
+      const matchHistory = showHistoryOnly ? dailyHistoryIds.includes(m.id) : true;
+
+      return matchSearch && matchGenre && matchLetter && matchYear && matchReview && matchTab && matchHistory;
     }).sort((a, b) => {
       if (searchTerm.trim() !== "") {
         const normSearch = normalizeText(searchTerm);
@@ -1430,10 +1479,12 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       }
 
       if (showHistoryOnly) {
-        // En modo Historial, ordenamos por última modificación (updatedAt), cayendo de regreso en fecha de alta (createdAt)
-        const timeA = a.updatedAt || a.createdAt || "";
-        const timeB = b.updatedAt || b.createdAt || "";
-        return timeB.localeCompare(timeA);
+        // En modo Historial, la última visualización de la ficha en la que el usuario dio clic aparece primero
+        const indexA = dailyHistoryIds.indexOf(a.id);
+        const indexB = dailyHistoryIds.indexOf(b.id);
+        const orderA = indexA === -1 ? 999999 : indexA;
+        const orderB = indexB === -1 ? 999999 : indexB;
+        return orderA - orderB;
       } else {
         // En modo Archivo, mantenemos el orden inalterado por fecha de alta (createdAt)
         const timeA = a.createdAt || a.updatedAt || "";
@@ -1441,7 +1492,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         return timeB.localeCompare(timeA);
       }
     });
-  }, [searchTerm, movies, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly, activeExploreTab]);
+  }, [searchTerm, movies, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly, activeExploreTab, dailyHistoryIds]);
 
   console.log('RENDER', { movies: movies.length, filtered: filteredMovies.length });
 
@@ -2023,10 +2074,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <span className="text-[10px] uppercase tracking-[0.12em] text-white/[0.28] font-bold px-5 mb-1 mt-5 select-none block">Actividad</span>
                 <div className="flex flex-col gap-1">
                    <button 
+                     id="btn-sidebar-historial"
                      onClick={activeHistory} 
                      className={getHistorySidebarClass(showHistoryOnly)}
                    >
-                     <HistoryIcon className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
+                     <HistoryIcon className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500 shrink-0" /> 
                      <span>{t("HISTORIAL")}</span>
                    </button>
                 </div>
@@ -2437,6 +2489,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           <>
             {/* ENCABEZADO DE SECCIÓN CENTAURO */}
             {/* Removido según solicitud de usuario */}
+
         {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
         {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
           <div id="category-header-section" key={selectedGenre} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
@@ -2568,17 +2621,23 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </div>
 
             <h2 className="text-lg font-bold text-white tracking-tight leading-snug">
-              {searchTerm ? `No se encontraron películas para "${searchTerm}"` : "No se encontraron películas"}
+              {showHistoryOnly
+                ? "Historial del día vacío"
+                : searchTerm
+                ? `No se encontraron películas para "${searchTerm}"`
+                : "No se encontraron películas"}
             </h2>
-            <p className="text-xs text-zinc-500 leading-relaxed max-w-xs -mt-2">
-              Prueba un término más general, verifica la ortografía o cambia los filtros de Épocas y Categorías seleccionados.
+            <p className="text-xs text-zinc-500 leading-relaxed max-w-sm -mt-2">
+              {showHistoryOnly
+                ? "Aún no has consultado fichas hoy. Las películas o series que visualices se recopilarán aquí por orden de consulta y se reiniciarán automáticamente al finalizar la jornada."
+                : "Prueba un término más general, verifica la ortografía o cambia los filtros de Épocas y Categorías seleccionados."}
             </p>
-            {(searchTerm || selectedGenre !== "Todos" || selectedLetter || selectedYearRange || showReviewOnly) && (
+            {(searchTerm || selectedGenre !== "Todos" || selectedLetter || selectedYearRange || showReviewOnly || showHistoryOnly) && (
               <button 
                 onClick={clearFiltersAndSearch}
-                className="mt-2 px-5 py-2.5 bg-white text-black hover:bg-brand-main hover:text-white rounded-xl text-xs font-bold transition-all active:scale-95"
+                className="mt-2 px-5 py-2.5 bg-white text-black hover:bg-brand-main hover:text-white rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer"
               >
-                Limpiar Filtros y Búsqueda
+                {showHistoryOnly ? "Volver al Catálogo" : "Limpiar Filtros y Búsqueda"}
               </button>
             )}
           </div>
@@ -2930,7 +2989,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   </div>
                   
                   {/* Info bar: Premium, cine-themed containers with sleek glassmorphic card design */}
-                  {((searchTerm && searchTerm.trim() !== "") || (searchQuery && searchQuery.trim() !== "")) ? (
+                  {((searchTerm && searchTerm.trim() !== "") || (searchQuery && searchQuery.trim() !== "") || showHistoryOnly) ? (
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 py-2">
                       <div className="group bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col gap-1 hover:border-[#b41d1d] hover:bg-black/85 hover:shadow-[0_0_12px_rgba(180,29,29,0.5)] transition-all duration-300 relative overflow-hidden font-sans">
                         <div className="absolute top-2 right-2 text-zinc-500 group-hover:text-[#b41d1d] transition-colors duration-300">
