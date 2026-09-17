@@ -890,6 +890,7 @@ export default function App() {
     onCancel?: (() => void) | null;
   }>({ open: false, title: "", year: 0, onConfirm: null, onCancel: null });
   const [authDenied, setAuthDenied] = useState(false);
+  const [authDeniedEmail, setAuthDeniedEmail] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const [pasteLimit, setPasteLimit] = useState<5 | 10>(5);
@@ -1265,23 +1266,23 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
               setIsAdmin(true);
               setUserRole(admin.role || 'editor');
             } else {
+              setAuthDeniedEmail(userEmail);
+              setAuthDenied(true);
               await logout();
               if (!isBypassActive) {
                 setUser(null);
                 setIsAdmin(false);
                 setUserRole(null);
-                setAuthDenied(true);
-                setTimeout(() => setAuthDenied(false), 8000);
               }
             }
           } catch (e) {
+            setAuthDeniedEmail(userEmail);
+            setAuthDenied(true);
             await logout();
             if (!isBypassActive) {
               setUser(null);
               setIsAdmin(false);
               setUserRole(null);
-              setAuthDenied(true);
-              setTimeout(() => setAuthDenied(false), 8000);
             }
           }
         }
@@ -2182,7 +2183,21 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                  try {
                    try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {}
                    setIsBypassActive(false);
-                   await signInWithGoogle();
+                   const loggedUser = await signInWithGoogle();
+                   if (loggedUser) {
+                     const email = (loggedUser.email || '').toLowerCase().trim();
+                     if (email !== 'chapceligg@gmail.com') {
+                       const admin = await getAdminByEmail(email);
+                       if (!admin) {
+                         setAuthDeniedEmail(email);
+                         setAuthDenied(true);
+                         await logout();
+                         setUser(null);
+                         setIsAdmin(false);
+                         setUserRole(null);
+                       }
+                     }
+                   }
                  } catch (err: any) {
                    if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
                      alert("Error al iniciar sesión con Google: " + (err.message || err));
@@ -2265,20 +2280,47 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           <CinematicBackground selectedGenre={selectedGenre} />
         )}
       
-      {/* Auth Denied Alert */}
+      {/* Modal: Apartado Solo para Editores */}
       {authDenied && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] max-w-sm w-full px-4 animate-in slide-in-from-bottom-5 fade-in duration-500">
-          <div className="bg-white text-black p-4 rounded-xl shadow-2xl flex items-start gap-4">
-            <div className="flex flex-col gap-1 w-full pr-4">
-               <span className="font-bold text-[13px] tracking-tight flex items-center gap-2">
-                 <AlertTriangle size={14} className="text-brand-main" /> Área Privada
-               </span>
-               <p className="text-xs font-medium text-zinc-600 leading-relaxed">
-                 Acceso exclusivo para equipo. Puedes seguir usando el catálogo.
-               </p>
+        <div 
+          id="modal-auth-denied"
+          className="fixed inset-0 bg-black/85 backdrop-blur-md z-[400] flex items-center justify-center p-4 animate-in fade-in duration-300"
+          onClick={() => { setAuthDenied(false); setAuthDeniedEmail(null); }}
+        >
+          <div 
+            className="bg-[#0c0c0e] border border-red-500/40 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.95),0_0_40px_rgba(180,29,29,0.25)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 mb-4 shadow-[0_0_25px_rgba(239,68,68,0.25)]">
+              <ShieldAlert size={28} />
             </div>
-            <button onClick={() => setAuthDenied(false)} className="text-zinc-400 hover:text-black shrink-0 relative top-0.5">
-              <X size={14} />
+
+            <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
+              Apartado Solo para Editores
+            </h3>
+
+            <p className="text-sm text-zinc-300 font-medium leading-relaxed mb-4">
+              Este apartado es exclusivo para editores y administradores. Tu cuenta de correo no se encuentra registrada por el superadministrador en la lista de editores autorizados.
+            </p>
+
+            {authDeniedEmail && (
+              <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 mb-5 flex items-center justify-center gap-2 text-xs font-mono text-zinc-400">
+                <span className="text-zinc-500">Cuenta:</span>
+                <span className="text-white font-semibold truncate">{authDeniedEmail}</span>
+              </div>
+            )}
+
+            <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+              Puedes continuar explorando, filtrando y buscando en todo el catálogo de la videoteca de forma libre.
+            </p>
+
+            <button
+              type="button"
+              id="btn-close-auth-denied"
+              onClick={() => { setAuthDenied(false); setAuthDeniedEmail(null); }}
+              className="w-full py-3.5 px-6 rounded-xl bg-[#b41d1d] hover:bg-[#cf2424] text-white font-black text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_25px_rgba(180,29,29,0.5)] active:scale-[0.98] cursor-pointer"
+            >
+              Entendido, volver al catálogo
             </button>
           </div>
         </div>
