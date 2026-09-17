@@ -5237,7 +5237,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           id="btn-add-admin"
           disabled={loading || !newEmail.trim()} 
           type="submit" 
-          className="bg-red-600 hover:bg-red-500 text-white px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-md shadow-red-900/30 active:scale-95"
+          className="bg-white hover:bg-zinc-200 text-black px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-md active:scale-95"
         >
           <Plus size={18} />
         </button>
