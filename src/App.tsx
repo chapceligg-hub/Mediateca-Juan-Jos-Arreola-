@@ -2384,8 +2384,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             className="bg-[#0c0c0e] border border-red-500/40 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.95),0_0_40px_rgba(180,29,29,0.25)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 mb-4 shadow-[0_0_25px_rgba(239,68,68,0.25)]">
-              <Shield size={28} strokeWidth={2} className="text-red-500" />
+            <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white mb-4 shadow-lg">
+              <Shield size={26} className="text-[#b41d1d]" />
             </div>
 
             <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
@@ -2465,7 +2465,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   value={loginEmailInput}
                   onChange={(e) => setLoginEmailInput(e.target.value)}
                   placeholder="ejemplo@gmail.com"
-                  className="w-full px-4 py-3 bg-zinc-900 border-2 border-zinc-500 hover:border-zinc-400 focus:border-white focus:bg-black focus:ring-2 focus:ring-red-500/50 rounded-xl text-white font-semibold text-sm placeholder:text-zinc-400 outline-none transition-all shadow-md caret-red-400 selection:bg-red-600 selection:text-white"
+                  className="w-full px-4 py-3 bg-black/60 border border-white/15 focus:border-[#b41d1d] focus:ring-1 focus:ring-[#b41d1d] rounded-xl text-white text-sm placeholder:text-zinc-600 outline-none transition-all"
                   autoFocus
                 />
               </div>
