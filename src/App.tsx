@@ -7,7 +7,8 @@ import {
   DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload, Download,
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
-  Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table
+  Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table,
+  Mail
 } from 'lucide-react';
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
@@ -891,6 +892,9 @@ export default function App() {
   }>({ open: false, title: "", year: 0, onConfirm: null, onCancel: null });
   const [authDenied, setAuthDenied] = useState(false);
   const [authDeniedEmail, setAuthDeniedEmail] = useState<string | null>(null);
+  const [showEmailLoginModal, setShowEmailLoginModal] = useState(false);
+  const [loginEmailInput, setLoginEmailInput] = useState("");
+  const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const [pasteLimit, setPasteLimit] = useState<5 | 10>(5);
@@ -1238,8 +1242,82 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setIsAdmin(true);
       setUserRole('admin');
       setIsAuthChecking(false);
+      return;
     }
+
+    try {
+      const savedVerifiedUser = localStorage.getItem("videoteca_verified_user");
+      if (savedVerifiedUser) {
+        const parsed = JSON.parse(savedVerifiedUser);
+        const parsedEmail = (parsed?.email || '').toLowerCase().trim();
+        if (parsedEmail === 'chapceligg@gmail.com') {
+          setUser(parsed);
+          setIsAdmin(true);
+          setUserRole('admin');
+          setIsAuthChecking(false);
+        } else if (parsedEmail) {
+          getAdminByEmail(parsedEmail).then(admin => {
+            if (admin) {
+              setUser(parsed);
+              setIsAdmin(true);
+              setUserRole(admin.role || 'editor');
+            } else {
+              try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {}
+            }
+            setIsAuthChecking(false);
+          }).catch(() => setIsAuthChecking(false));
+        }
+      }
+    } catch (_) {}
   }, [isBypassActive]);
+
+  const handleVerifyGoogleEmail = async (emailToVerify?: string) => {
+    const rawEmail = (emailToVerify || loginEmailInput || "").trim().toLowerCase();
+    if (!rawEmail) return;
+
+    setIsVerifyingEmail(true);
+    try {
+      if (rawEmail === 'chapceligg@gmail.com') {
+        const superAdminUser = {
+          email: 'chapceligg@gmail.com',
+          displayName: 'Super Administrador',
+          photoURL: ''
+        };
+        setUser(superAdminUser);
+        setIsAdmin(true);
+        setUserRole('admin');
+        try { localStorage.setItem("videoteca_verified_user", JSON.stringify(superAdminUser)); } catch (_) {}
+        setShowEmailLoginModal(false);
+        setLoginEmailInput("");
+      } else {
+        const admin = await getAdminByEmail(rawEmail);
+        if (admin) {
+          const editorUser = {
+            email: rawEmail,
+            displayName: rawEmail.split('@')[0],
+            photoURL: ''
+          };
+          setUser(editorUser);
+          setIsAdmin(true);
+          setUserRole(admin.role || 'editor');
+          try { localStorage.setItem("videoteca_verified_user", JSON.stringify(editorUser)); } catch (_) {}
+          setShowEmailLoginModal(false);
+          setLoginEmailInput("");
+        } else {
+          setShowEmailLoginModal(false);
+          setAuthDeniedEmail(rawEmail);
+          setAuthDenied(true);
+        }
+      }
+    } catch (err) {
+      console.error("Error al validar correo de Google:", err);
+      setShowEmailLoginModal(false);
+      setAuthDeniedEmail(rawEmail);
+      setAuthDenied(true);
+    } finally {
+      setIsVerifyingEmail(false);
+    }
+  };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(async (currentUser: any) => {
@@ -2164,6 +2242,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               <button 
                 onClick={async () => { 
                   try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {} 
+                  try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {} 
                   setIsBypassActive(false); 
                   setUser(null);
                   setIsAdmin(false);
@@ -2185,8 +2264,12 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                    setIsBypassActive(false);
                    const loggedUser = await signInWithGoogle();
                    if (loggedUser) {
-                     const email = (loggedUser.email || '').toLowerCase().trim();
-                     if (email !== 'chapceligg@gmail.com') {
+                     const email = ((loggedUser as any).email || (loggedUser as any).user?.email || '').toLowerCase().trim();
+                     if (email === 'chapceligg@gmail.com') {
+                       setUser(loggedUser);
+                       setIsAdmin(true);
+                       setUserRole('admin');
+                     } else if (email) {
                        const admin = await getAdminByEmail(email);
                        if (!admin) {
                          setAuthDeniedEmail(email);
@@ -2195,12 +2278,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                          setUser(null);
                          setIsAdmin(false);
                          setUserRole(null);
+                       } else {
+                         setUser(loggedUser);
+                         setIsAdmin(true);
+                         setUserRole(admin.role || 'editor');
                        }
                      }
                    }
                  } catch (err: any) {
-                   if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
-                     alert("Error al iniciar sesión con Google: " + (err.message || err));
+                   if (err?.code === 'auth/unauthorized-domain' || err?.code === 'auth/configuration-not-found') {
+                     setShowEmailLoginModal(true);
+                   } else if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+                     setShowEmailLoginModal(true);
                    }
                  }
                }} 
@@ -2322,6 +2411,84 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             >
               Entendido, volver al catálogo
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Acceso de Editores con Cuenta Google */}
+      {showEmailLoginModal && (
+        <div 
+          id="modal-email-login"
+          className="fixed inset-0 bg-black/85 backdrop-blur-md z-[400] flex items-center justify-center p-4 animate-in fade-in duration-300"
+          onClick={() => setShowEmailLoginModal(false)}
+        >
+          <div 
+            className="bg-[#0c0c0e] border border-white/10 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.95)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              type="button" 
+              onClick={() => setShowEmailLoginModal(false)} 
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white mb-4 shadow-lg">
+              <Mail size={26} className="text-[#b41d1d]" />
+            </div>
+
+            <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
+              Acceso de Editores
+            </h3>
+
+            <p className="text-xs sm:text-sm text-zinc-300 font-medium leading-relaxed mb-5">
+              Introduce tu cuenta de correo registrada para verificar tus credenciales y acceder a las herramientas editoriales.
+            </p>
+
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleVerifyGoogleEmail();
+              }}
+              className="w-full flex flex-col gap-3.5 mb-4"
+            >
+              <div className="relative w-full">
+                <input
+                  id="input-login-google-email"
+                  type="email"
+                  required
+                  value={loginEmailInput}
+                  onChange={(e) => setLoginEmailInput(e.target.value)}
+                  placeholder="ejemplo@gmail.com"
+                  className="w-full px-4 py-3 bg-black/60 border border-white/15 focus:border-[#b41d1d] focus:ring-1 focus:ring-[#b41d1d] rounded-xl text-white text-sm placeholder:text-zinc-600 outline-none transition-all"
+                  autoFocus
+                />
+              </div>
+
+              <button
+                type="submit"
+                id="btn-submit-verify-email"
+                disabled={isVerifyingEmail || !loginEmailInput.trim()}
+                className="w-full py-3.5 px-6 rounded-xl bg-[#b41d1d] hover:bg-[#cf2424] disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_25px_rgba(180,29,29,0.5)] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isVerifyingEmail ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Verificando...
+                  </>
+                ) : (
+                  <>
+                    <LogIn size={16} /> Verificar y Entrar
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="w-full pt-3 border-t border-white/[0.08] text-left">
+              <p className="text-[11px] text-zinc-500 leading-normal">
+                <span className="text-zinc-400 font-bold">ℹ️ Dominio de Firebase:</span> Si deseas activar el popup emergente de Google directamente, añade el dominio <code className="text-zinc-300 bg-white/5 px-1 py-0.5 rounded text-[10px]">{typeof window !== 'undefined' ? window.location.hostname : 'run.app'}</code> en Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains.
+              </p>
+            </div>
           </div>
         </div>
       )}

@@ -22,7 +22,7 @@ provider.setCustomParameters({ prompt: 'select_account' });
 
 export const signInWithGoogle = async () => {
   const result = await signInWithPopup(auth, provider);
-  return result;
+  return result.user || result;
 };
 
 export const logout = async () => {
