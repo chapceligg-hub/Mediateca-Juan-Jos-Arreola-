@@ -1367,9 +1367,16 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         }
       } else {
         if (!isBypassActive) {
-          setUser(null);
-          setIsAdmin(false);
-          setUserRole(null);
+          let hasLocalVerified = false;
+          try {
+            hasLocalVerified = !!localStorage.getItem("videoteca_verified_user");
+          } catch (_) {}
+
+          if (!hasLocalVerified) {
+            setUser(null);
+            setIsAdmin(false);
+            setUserRole(null);
+          }
         }
       }
       setIsAuthChecking(false);
