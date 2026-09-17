@@ -2465,7 +2465,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   value={loginEmailInput}
                   onChange={(e) => setLoginEmailInput(e.target.value)}
                   placeholder="ejemplo@gmail.com"
-                  className="w-full px-4 py-3 bg-zinc-900/90 border-2 border-zinc-600 hover:border-zinc-400 focus:border-[#b41d1d] focus:ring-2 focus:ring-[#b41d1d]/30 rounded-xl text-white text-sm placeholder:text-zinc-400 outline-none transition-all shadow-inner"
+                  className="w-full px-4 py-3 bg-zinc-900 border-2 border-zinc-500 hover:border-zinc-400 focus:border-white focus:bg-black focus:ring-2 focus:ring-red-500/50 rounded-xl text-white font-semibold text-sm placeholder:text-zinc-400 outline-none transition-all shadow-md caret-red-400 selection:bg-red-600 selection:text-white"
                   autoFocus
                 />
               </div>
