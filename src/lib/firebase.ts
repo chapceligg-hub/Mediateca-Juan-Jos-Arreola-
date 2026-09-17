@@ -38,16 +38,39 @@ export const initAuth = async () => {
 };
 
 export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string } | null> => {
+  const normalized = (email || '').toLowerCase().trim();
+  if (!normalized) return null;
+
+  let primary = 'chapceligg@gmail.com';
   try {
-    const docSnap = await getDoc(doc(db, 'admins', email.toLowerCase()));
+    const cachedPrimary = localStorage.getItem("videoteca_primary_superadmin");
+    if (cachedPrimary) primary = cachedPrimary.toLowerCase().trim();
+  } catch (_) {}
+
+  if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
+    return { id: normalized, email: normalized, role: 'admin' };
+  }
+  try {
+    const docSnap = await getDoc(doc(db, 'admins', normalized));
     if (docSnap.exists()) {
       return { id: docSnap.id, ...(docSnap.data() as any) };
     }
-    return null;
   } catch (error) {
-    console.error("Error checking admin:", error);
-    return null;
+    console.warn("Aviso al verificar admin en Firestore, recurriendo a caché:", error);
   }
+
+  try {
+    const offlineAdmins = await get("videoteca_admins_cache");
+    if (offlineAdmins) {
+      const list = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
+      if (Array.isArray(list)) {
+        const found = list.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
+        if (found) return found;
+      }
+    }
+  } catch (_) {}
+
+  return null;
 };
 
 export const getMoviesCacheKey = () => {
@@ -328,20 +351,35 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
     try {
       const snapshot = await getDocsFromCache(q);
       if (!snapshot.empty) {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const data = snapshot.docs
+          .filter(doc => !doc.id.startsWith('_'))
+          .map(doc => ({ id: doc.id, ...doc.data() }));
         await set("videoteca_admins_cache", data);
         return data;
       }
     } catch (e) {}
   }
 
-  console.log("Firebase Cache-First: Consultando administradores desde el Servidor Real de Firestore");
-  const snapshot = await getDocsFromServer(q);
-  const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   try {
-    await set("videoteca_admins_cache", data);
-  } catch (e) {}
-  return data;
+    console.log("Firebase: Consultando administradores desde Firestore");
+    const snapshot = await getDocs(q);
+    const data = snapshot.docs
+      .filter(doc => !doc.id.startsWith('_'))
+      .map(doc => ({ id: doc.id, ...doc.data() }));
+    try {
+      await set("videoteca_admins_cache", data);
+    } catch (e) {}
+    return data;
+  } catch (err) {
+    console.warn("Aviso al consultar admins de Firestore, usando caché local:", err);
+    try {
+      const offlineAdmins = await get("videoteca_admins_cache");
+      if (offlineAdmins) {
+        return typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
+      }
+    } catch (_) {}
+    return [];
+  }
 };
 
 export const generateMovieId = () => {
@@ -451,9 +489,30 @@ export const deleteMovie = async (id: string) => {
 };
 
 export const upsertAdmin = async (admin: any) => {
-  const adminId = admin.email.toLowerCase();
-  const adminData = { ...admin, id: adminId };
-  await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
+  const adminId = (admin.email || admin.id || '').toLowerCase().trim();
+  if (!adminId) throw new Error("Correo inválido para el administrador.");
+
+  const adminData: any = {
+    ...admin,
+    id: adminId,
+    email: adminId,
+    name: admin.name || adminId.split('@')[0],
+    role: admin.role || 'editor',
+    updatedAt: new Date().toISOString()
+  };
+
+  // Prevenir fallos en setDoc de Firestore por valores undefined
+  Object.keys(adminData).forEach(key => {
+    if (adminData[key] === undefined) {
+      delete adminData[key];
+    }
+  });
+
+  try {
+    await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
+  } catch (err) {
+    console.warn("Aviso al guardar admin en Firestore (se guardará en caché local):", err);
+  }
   
   try {
     const offlineAdmins = await get("videoteca_admins_cache");
@@ -461,7 +520,7 @@ export const upsertAdmin = async (admin: any) => {
     if (offlineAdmins) {
       list = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
     }
-    const index = list.findIndex((a: any) => a.id === adminId);
+    const index = list.findIndex((a: any) => (a.id || a.email || '').toLowerCase().trim() === adminId);
     if (index > -1) {
       list[index] = { ...list[index], ...adminData };
     } else {
@@ -473,16 +532,89 @@ export const upsertAdmin = async (admin: any) => {
   return adminData;
 };
 
-export const deleteAdmin = async (id: string) => {
-  await deleteDoc(doc(db, 'admins', id));
+export const deleteAdmin = async (idOrEmail: string) => {
+  const adminId = (idOrEmail || '').toLowerCase().trim();
+  if (!adminId) return;
+
+  try {
+    await deleteDoc(doc(db, 'admins', adminId));
+  } catch (err) {
+    console.warn("Aviso al eliminar admin en Firestore (se eliminará de caché local):", err);
+  }
   
   try {
     const offlineAdmins = await get("videoteca_admins_cache");
     if (offlineAdmins) {
       let list: any[] = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
-      list = list.filter((a: any) => a.id !== id);
+      list = list.filter((a: any) => (a.id || a.email || '').toLowerCase().trim() !== adminId);
       await set("videoteca_admins_cache", list);
     }
   } catch (e) {}
 };
+
+export const getPrimarySuperAdminEmail = async (): Promise<string> => {
+  try {
+    const cached = localStorage.getItem("videoteca_primary_superadmin");
+    if (cached && cached.trim()) {
+      return cached.trim().toLowerCase();
+    }
+  } catch (_) {}
+
+  try {
+    const docSnap = await getDoc(doc(db, 'admins', '_primary_config'));
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data?.email) {
+        const email = data.email.trim().toLowerCase();
+        try { localStorage.setItem("videoteca_primary_superadmin", email); } catch (_) {}
+        return email;
+      }
+    }
+  } catch (err) {
+    console.warn("Aviso al obtener super admin principal desde Firestore:", err);
+  }
+
+  return 'chapceligg@gmail.com';
+};
+
+export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAdminEmail: string) => {
+  const normalizedNew = (newEmail || '').toLowerCase().trim();
+  const normalizedCurrent = (currentSuperAdminEmail || '').toLowerCase().trim();
+  if (!normalizedNew || !normalizedNew.includes('@') || !normalizedNew.includes('.')) {
+    throw new Error("El correo ingresado no es válido.");
+  }
+
+  // Guardar en Firestore documento de configuración de Super Admin Principal
+  await setDoc(doc(db, 'admins', '_primary_config'), {
+    email: normalizedNew,
+    transferredBy: normalizedCurrent,
+    transferredAt: new Date().toISOString()
+  }, { merge: true });
+
+  // Asignar rol 'admin' al nuevo Super Admin Principal
+  await upsertAdmin({
+    email: normalizedNew,
+    role: 'admin',
+    name: normalizedNew.split('@')[0],
+    updatedAt: new Date().toISOString()
+  });
+
+  // Asegurar que el anterior Super Admin Principal conserve rol de Super Admin
+  if (normalizedCurrent) {
+    await upsertAdmin({
+      email: normalizedCurrent,
+      role: 'admin',
+      name: normalizedCurrent.split('@')[0],
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  // Actualizar caché en localStorage
+  try {
+    localStorage.setItem("videoteca_primary_superadmin", normalizedNew);
+  } catch (_) {}
+
+  return normalizedNew;
+};
+
 

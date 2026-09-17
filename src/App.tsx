@@ -8,12 +8,13 @@ import {
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
   Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table,
-  Mail
+  Mail, RotateCcw, Crown
 } from 'lucide-react';
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
-  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, getCachedMovies
+  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, getCachedMovies,
+  getPrimarySuperAdminEmail, transferPrimarySuperAdmin
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -2182,13 +2183,16 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                            <ClipboardList className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
                            <span>{t("MULTI PEGADO")}</span>
                          </button>
-                         <button 
-                           onClick={() => setShowAdminsModal(true)} 
-                           className={getSidebarItemClass(false)}
-                         >
-                           <Users className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                           <span>{t("GESTIONAR ADMINS")}</span>
-                         </button>
+                         {userRole === 'admin' && (
+                           <button 
+                             id="btn-gestionar-admins"
+                             onClick={() => setShowAdminsModal(true)} 
+                             className={getSidebarItemClass(false)}
+                           >
+                             <Users className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
+                             <span>{t("GESTIONAR ADMINS")}</span>
+                           </button>
+                         )}
                          <button 
                            onClick={() => { const newVal = !showReviewOnly; setShowReviewOnly(newVal); if (newVal) setShowHistoryOnly(false); }} 
                            className={getReviewSidebarClass(showReviewOnly)}
@@ -5021,44 +5025,71 @@ const TechItem = ({ label, value, className = "", icon = null }: any) => (
 
 const AdminManager = ({ currentUser, userRole }: any) => {
   const [admins, setAdmins] = useState<any[]>([]);
+  const [primarySuperAdmin, setPrimarySuperAdmin] = useState<string>("chapceligg@gmail.com");
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState("editor");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
-  const isSuper = userRole === 'admin';
+  // Estados para traspaso de Super Admin Principal
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [targetTransferEmail, setTargetTransferEmail] = useState("");
+  const [confirmPhrase, setConfirmPhrase] = useState("");
+  const [transferError, setTransferError] = useState("");
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferSuccess, setTransferSuccess] = useState("");
+
+  const currentEmail = (currentUser?.email || '').toLowerCase().trim();
+  const isCurrentPrimary = currentEmail === primarySuperAdmin.toLowerCase().trim();
+  const isSuper = userRole === 'admin' || isCurrentPrimary;
+
+  const loadAdmins = async (forceServer = false) => {
+    setLoading(true);
+    setError("");
+    try {
+      const [serverOrCachedAdmins, primaryEmail] = await Promise.all([
+        fetchAdminsOptimized(forceServer),
+        getPrimarySuperAdminEmail()
+      ]);
+      setAdmins(serverOrCachedAdmins || []);
+      if (primaryEmail) {
+        setPrimarySuperAdmin(primaryEmail);
+      }
+    } catch (err: any) {
+      console.error("Error al cargar admins:", err);
+      setError("No se pudieron cargar los administradores.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Estrategia Cache-First Obligatoria: Solo una carga inicial única
-    const loadAdmins = async () => {
-      try {
-        const cachedAdmins = await fetchAdminsOptimized(false);
-        if (cachedAdmins && cachedAdmins.length > 0) {
-          setAdmins(cachedAdmins);
-        } else {
-          const serverAdmins = await fetchAdminsOptimized(true);
-          setAdmins(serverAdmins || []);
-        }
-      } catch (err) {
-        console.error("Error al cargar admins:", err);
-      }
-    };
-
-    loadAdmins();
+    loadAdmins(false);
   }, []);
 
   const handleAdd = async (e: any) => {
     e.preventDefault();
-    if (!newEmail.trim() || !currentUser || !isSuper) return;
+    const email = newEmail.trim().toLowerCase();
+    if (!email || !isSuper) return;
+
+    if (!email.includes('@') || !email.includes('.')) {
+      setError("Por favor introduce un correo electrónico válido.");
+      return;
+    }
+
+    if (email === primarySuperAdmin.toLowerCase().trim()) {
+      setError(`${primarySuperAdmin} ya es el Super Admin Principal.`);
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      const email = newEmail.trim().toLowerCase();
       const payload = {
         email,
         createdAt: new Date().toISOString(),
-        addedBy: currentUser.id,
+        addedBy: currentUser?.email || currentUser?.uid || 'admin',
         name: email.split('@')[0],
         photoURL: "",
         role: newRole,
@@ -5066,45 +5097,44 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       };
       
       await upsertAdmin(payload);
-      // Actualización optimista de administradores locales (Lecturas = 0)
       setAdmins(prev => {
-        const index = prev.findIndex(a => a.id === payload.id);
-        if (index > -1) {
-          const updated = [...prev];
-          updated[index] = payload;
-          return updated;
-        } else {
-          return [...prev, payload];
-        }
+        const filtered = prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== email);
+        return [...filtered, payload];
       });
       setNewEmail("");
       setNewRole("editor");
     } catch (err: any) {
-      setError(err.message || "Error al agregar.");
+      setError(err?.message || "Error al registrar el administrador.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRemove = async (email: string) => {
+  const handleRemove = (emailOrId: string) => {
     if (!isSuper) return;
-    if (email === currentUser.email) {
-      setError("No puedes eliminarte a ti mismo.");
+    const target = emailOrId.toLowerCase().trim();
+    if (target === currentEmail) {
+      setError("No puedes revocar tu propio acceso.");
       return;
     }
-    setUserToDelete(email);
+    if (target === primarySuperAdmin.toLowerCase().trim()) {
+      setError("No se puede eliminar la cuenta de Super Admin Principal.");
+      return;
+    }
+    setError("");
+    setUserToDelete(target);
   };
 
   const confirmDelete = async () => {
     if (!userToDelete) return;
     setLoading(true);
+    setError("");
     try {
       await deleteAdmin(userToDelete);
-      // Actualización optimista (Lecturas = 0)
-      setAdmins(prev => prev.filter(a => a.email !== userToDelete));
+      setAdmins(prev => prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== userToDelete));
       setUserToDelete(null);
     } catch (err: any) {
-      setError(err.message || "Error al eliminar.");
+      setError(err?.message || "Error al eliminar acceso.");
     } finally {
       setLoading(false);
     }
@@ -5112,97 +5142,337 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
   const handleRoleChange = async (email: string, role: string) => {
     if (!isSuper) return;
-    if (email === currentUser.email) {
-       setError("No puedes cambiarte el rol a ti mismo.");
+    const target = email.toLowerCase().trim();
+    if (target === currentEmail) {
+       setError("No puedes cambiar tu propio rol.");
+       return;
+    }
+    if (target === primarySuperAdmin.toLowerCase().trim()) {
+       setError("No se puede cambiar el rol del Super Admin Principal.");
        return;
     }
     setLoading(true);
+    setError("");
     try {
-       await upsertAdmin({ email, role });
-       // Actualización optimista (Lecturas = 0)
-       setAdmins(prev => prev.map(a => a.email === email ? { ...a, role } : a));
+       await upsertAdmin({ email: target, role });
+       setAdmins(prev => prev.map(a => ((a.email || a.id || '').toLowerCase().trim() === target ? { ...a, role } : a)));
     } catch (err: any) {
-       setError(err.message || "Error al actualizar rol.");
+       setError(err?.message || "Error al actualizar rol.");
     } finally {
        setLoading(false);
     }
   };
 
+  const handleConfirmTransfer = async () => {
+    const newEmail = targetTransferEmail.trim().toLowerCase();
+    if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
+      setTransferError("Por favor ingresa un correo de Google válido.");
+      return;
+    }
+    if (newEmail === primarySuperAdmin.toLowerCase().trim()) {
+      setTransferError("Este correo ya es el Super Admin Principal actual.");
+      return;
+    }
+    if (confirmPhrase.trim().toUpperCase() !== "TRANSFERIR") {
+      setTransferError('Debes escribir "TRANSFERIR" para confirmar el traspaso.');
+      return;
+    }
+    setTransferLoading(true);
+    setTransferError("");
+    try {
+      await transferPrimarySuperAdmin(newEmail, primarySuperAdmin);
+      setPrimarySuperAdmin(newEmail);
+      setTransferSuccess(`Puesto de Super Admin Principal transferido exitosamente a ${newEmail}`);
+      const updatedAdmins = await fetchAdminsOptimized(true);
+      setAdmins(updatedAdmins || []);
+      setShowTransferModal(false);
+      setTargetTransferEmail("");
+      setConfirmPhrase("");
+      setTimeout(() => setTransferSuccess(""), 4500);
+    } catch (err: any) {
+      setTransferError(err?.message || "Error al transferir la titularidad.");
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
+  if (!isSuper) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 text-center gap-3">
+        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400">
+          <ShieldAlert size={32} />
+        </div>
+        <p className="text-sm font-bold text-white">Acceso Exclusivo para Super Admins</p>
+        <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
+          Tu cuenta tiene rol de Editor. Solo los Super Admins pueden gestionar los administradores y roles de la videoteca.
+        </p>
+      </div>
+    );
+  }
+
+  const additionalAdmins = admins.filter(a => (a.email || a.id || '').toLowerCase().trim() !== primarySuperAdmin.toLowerCase().trim());
+
   return (
-    <div className="flex flex-col gap-4 w-full">
-      {isSuper && (
-        <form onSubmit={handleAdd} className="flex gap-2 w-full">
-          <input 
-            type="email" 
-            placeholder="nuevo.admin@gmail.com" 
-            value={newEmail} 
-            onChange={(e) => setNewEmail(e.target.value)}
-            required
-            className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-brand-main outline-none text-white min-w-0"
-          />
-          <select
-            value={newRole}
-            onChange={(e) => setNewRole(e.target.value)}
-            className="bg-zinc-900 border border-white/10 rounded-xl px-2 py-2.5 text-sm focus:border-brand-main outline-none text-white"
-          >
-            <option value="editor">Editor</option>
-            <option value="admin">Super Admin</option>
-          </select>
-          <button disabled={loading} type="submit" className="bg-white text-black px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-200 disabled:opacity-50 transition-all flex items-center justify-center shrink-0">
-            <Plus size={18} />
-          </button>
-        </form>
+    <div className="flex flex-col gap-4 w-full font-sans">
+      <form id="form-add-admin" onSubmit={handleAdd} className="flex gap-2 w-full">
+        <input 
+          id="input-new-admin-email"
+          type="email" 
+          placeholder="editor@gmail.com" 
+          value={newEmail} 
+          onChange={(e) => setNewEmail(e.target.value)}
+          required
+          className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-red-500 outline-none text-white min-w-0"
+        />
+        <select
+          id="select-new-admin-role"
+          value={newRole}
+          onChange={(e) => setNewRole(e.target.value)}
+          className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-bold uppercase tracking-wider focus:border-red-500 outline-none text-white cursor-pointer"
+        >
+          <option value="editor">Editor</option>
+          <option value="admin">Super Admin</option>
+        </select>
+        <button 
+          id="btn-add-admin"
+          disabled={loading || !newEmail.trim()} 
+          type="submit" 
+          className="bg-red-600 hover:bg-red-500 text-white px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-md shadow-red-900/30 active:scale-95"
+        >
+          <Plus size={18} />
+        </button>
+      </form>
+      
+      {error && (
+        <div className="text-red-400 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0 text-red-400" />
+          <span>{error}</span>
+        </div>
       )}
+
+      {transferSuccess && (
+        <div className="text-emerald-400 text-xs font-semibold bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl flex items-center gap-2">
+          <Check size={14} className="shrink-0 text-emerald-400" />
+          <span>{transferSuccess}</span>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-1">
+        <span className="text-[11px] font-black uppercase tracking-widest text-zinc-400">
+          Cuentas Registradas ({additionalAdmins.length + 1})
+        </span>
+        <button
+          id="btn-refresh-admins"
+          type="button"
+          onClick={() => loadAdmins(true)}
+          disabled={loading}
+          title="Recargar lista desde Firestore"
+          className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+        >
+          <RotateCcw size={12} className={loading ? "animate-spin text-red-500" : ""} />
+          <span>Sincronizar</span>
+        </button>
+      </div>
       
-      {error && <p className="text-brand-light text-xs font-bold bg-red-500/10 p-2 rounded-lg">{error}</p>}
-      
-      <div className="flex flex-col gap-2 mt-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-        <div className="flex items-center justify-between bg-white/5 p-3 rounded-lg border border-brand-main/20">
-          <div className="flex flex-col">
-            <span className="text-sm font-bold text-white max-w-[200px] truncate">chapceligg@gmail.com</span>
-            <span className="text-[10px] text-zinc-500 uppercase font-black">Fundador / Owner</span>
+      <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1.5 custom-scrollbar">
+        {/* Super Admin Principal Card */}
+        <div className="flex items-center justify-between bg-zinc-900/80 p-3 rounded-xl border border-white/10 shadow-sm gap-2">
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="text-sm font-bold text-white truncate" title={primarySuperAdmin}>{primarySuperAdmin}</span>
+            <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider mt-0.5">
+              Super Admin Principal
+            </span>
           </div>
+          {isCurrentPrimary && (
+            <button
+              type="button"
+              onClick={() => { setTargetTransferEmail(""); setTransferError(""); setShowTransferModal(true); }}
+              className="text-xs bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0"
+              title="Ceder el puesto de Super Admin Principal a otro correo"
+            >
+              <Crown size={14} className="text-zinc-400" />
+              <span>Traspasar puesto</span>
+            </button>
+          )}
         </div>
         
-        {admins.map(a => (
-          <div key={a.id} className="flex flex-col bg-white/5 rounded-lg border border-white/5 gap-2 w-full overflow-hidden">
-            <div className="flex items-center justify-between p-3 gap-2">
-              <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-sm font-bold text-white truncate" title={a.email}>{a.email}</span>
-                {isSuper && a.email !== currentUser.email ? (
-                  <select 
-                    value={a.role || 'editor'}
-                    onChange={(e) => handleRoleChange(a.email, e.target.value)}
-                    disabled={loading}
-                    className="mt-1 text-[10px] font-black uppercase tracking-widest bg-transparent text-zinc-400 border border-white/10 rounded px-1 py-0.5 outline-none focus:border-white/30 cursor-pointer w-fit"
-                  >
-                    <option value="editor">EDITOR INVITADO</option>
-                    <option value="admin">SUPER ADMIN</option>
-                  </select>
-                ) : (
-                  <span className="text-[10px] text-zinc-500 uppercase font-black">{a.role === 'admin' ? 'Super Admin' : 'Editor Invitado'}</span>
+        {additionalAdmins.map(a => {
+          const aEmail = (a.email || a.id || '').toLowerCase().trim();
+          const isDeletingThis = userToDelete === aEmail;
+          return (
+            <div key={aEmail} className="flex flex-col bg-zinc-900/80 rounded-xl border border-white/10 gap-2 w-full overflow-hidden transition-colors hover:border-white/20">
+              <div className="flex items-center justify-between p-3 gap-2">
+                <div className="flex flex-col flex-1 min-w-0">
+                  <span className="text-sm font-bold text-white truncate" title={aEmail}>{aEmail}</span>
+                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider mt-0.5">
+                    {a.role === 'admin' ? 'Super Admin' : 'Editor'}
+                  </span>
+                </div>
+                {aEmail !== currentEmail && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isCurrentPrimary && (
+                      <button 
+                        onClick={() => { setTargetTransferEmail(aEmail); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
+                        disabled={loading} 
+                        className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
+                        title={`Traspasar puesto de Super Admin Principal a ${aEmail}`}
+                      >
+                        <Crown size={15} />
+                      </button>
+                    )}
+                    <select 
+                      value={a.role || 'editor'}
+                      onChange={(e) => handleRoleChange(aEmail, e.target.value)}
+                      disabled={loading}
+                      className="text-[10px] font-black uppercase tracking-widest bg-black/50 text-zinc-300 border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer"
+                    >
+                      <option value="editor">Editor</option>
+                      <option value="admin">Super Admin</option>
+                    </select>
+                    <button 
+                      onClick={() => handleRemove(aEmail)} 
+                      disabled={loading} 
+                      className="text-zinc-500 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
+                      title="Eliminar permiso"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 )}
               </div>
-              {isSuper && (
-                <button onClick={() => handleRemove(a.id)} disabled={loading} className="text-zinc-500 hover:text-brand-light transition-colors p-2 disabled:opacity-50 shrink-0">
-                  <Trash2 size={16} />
-                </button>
+              
+              {isDeletingThis && (
+                <div className="bg-red-950/40 border-t border-red-500/30 p-3 flex flex-col gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <p className="text-xs text-red-300 font-bold">¿Revocar acceso editorial a {aEmail}?</p>
+                  <div className="flex gap-2">
+                     <button 
+                       onClick={confirmDelete} 
+                       disabled={loading} 
+                       className="flex-1 bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-1.5 rounded-lg disabled:opacity-50 transition-colors cursor-pointer"
+                     >
+                       Confirmar revocación
+                     </button>
+                     <button 
+                       onClick={() => setUserToDelete(null)} 
+                       disabled={loading} 
+                       className="flex-1 bg-white/10 hover:bg-white/20 text-white text-xs font-bold py-1.5 rounded-lg disabled:opacity-50 transition-colors cursor-pointer"
+                     >
+                       Cancelar
+                     </button>
+                  </div>
+                </div>
               )}
             </div>
-            
-            {userToDelete === a.id && (
-              <div className="bg-red-500/10 border-t border-brand-main/20 p-3 flex flex-col gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                <p className="text-xs text-red-400 font-bold">¿Eliminar acceso de {a.email}?</p>
-                <div className="flex gap-2">
-                   <button onClick={confirmDelete} disabled={loading} className="flex-1 bg-[#b91c1c] hover:bg-[#dc2626] text-white text-xs font-bold py-1.5 rounded disabled:opacity-50 transition-colors">Confirmar</button>
-                   <button onClick={() => setUserToDelete(null)} disabled={loading} className="flex-1 bg-white/10 hover:bg-white/20 text-white text-xs font-bold py-1.5 rounded disabled:opacity-50 transition-colors">Cancelar</button>
+          );
+        })}
+        {additionalAdmins.length === 0 && (
+          <p className="text-zinc-500 text-xs italic text-center py-5">
+            No hay editores adicionales registrados aún. Añade correos de Google arriba para habilitar su acceso.
+          </p>
+        )}
+      </div>
+
+      {/* MODAL TRASPASAR SUPER ADMIN PRINCIPAL */}
+      {showTransferModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0e0e0e] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative">
+            <button 
+              onClick={() => { setShowTransferModal(false); setTransferError(""); setConfirmPhrase(""); }}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 text-zinc-300">
+                <Crown size={20} />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-white">Traspasar Super Admin Principal</h4>
+                <p className="text-[11px] text-zinc-400">Cede la titularidad principal de la videoteca</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Como <strong className="text-white">Super Admin Principal</strong> actual ({primarySuperAdmin}), puedes ceder tu puesto a otro correo. Tu cuenta conservará el rol de <strong className="text-white">Super Admin</strong> y el nuevo correo asumirá la titularidad principal.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-zinc-300">Correo del nuevo Super Admin Principal:</label>
+              <input 
+                type="email"
+                placeholder="nuevo.superadmin@gmail.com"
+                value={targetTransferEmail}
+                onChange={(e) => setTargetTransferEmail(e.target.value)}
+                className="bg-zinc-900 border border-white/15 rounded-xl px-4 py-2.5 text-sm focus:border-white/40 outline-none text-white w-full"
+              />
+              {additionalAdmins.length > 0 && (
+                <div className="flex flex-col gap-1 mt-1">
+                  <span className="text-[10px] text-zinc-500">O elige entre las cuentas registradas:</span>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                    {additionalAdmins.map(adm => {
+                      const emailStr = (adm.email || adm.id || '').toLowerCase().trim();
+                      const isSelected = targetTransferEmail.toLowerCase().trim() === emailStr;
+                      return (
+                        <button
+                          key={emailStr}
+                          type="button"
+                          onClick={() => setTargetTransferEmail(emailStr)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${isSelected ? 'bg-white/15 border-white/30 text-white font-bold' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'}`}
+                        >
+                          {emailStr}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+              )}
+            </div>
+
+            <div className="bg-zinc-900 border border-white/10 p-3.5 rounded-xl flex flex-col gap-2.5">
+              <p className="text-[11px] text-zinc-300 leading-tight">
+                ⚠️ <strong>Confirmación de seguridad requerida:</strong> Esta acción es irreversible. El nuevo titular será la única persona autorizada para gestionar la titularidad principal en el futuro.
+              </p>
+              <div className="flex flex-col gap-1.5 pt-1.5 border-t border-white/5">
+                <label className="text-[11px] font-medium text-zinc-400">
+                  Escribe <span className="text-white font-black tracking-widest font-mono">TRANSFERIR</span> para desbloquear la confirmación:
+                </label>
+                <input 
+                  type="text"
+                  placeholder="TRANSFERIR"
+                  value={confirmPhrase}
+                  onChange={(e) => setConfirmPhrase(e.target.value)}
+                  className="bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono tracking-wider focus:border-white/40 outline-none text-white w-full uppercase"
+                />
+              </div>
+            </div>
+
+            {transferError && (
+              <div className="text-red-400 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                <AlertTriangle size={14} className="shrink-0 text-red-400" />
+                <span>{transferError}</span>
               </div>
             )}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleConfirmTransfer}
+                disabled={transferLoading || !targetTransferEmail.trim() || confirmPhrase.trim().toUpperCase() !== 'TRANSFERIR'}
+                className="flex-1 bg-white hover:bg-zinc-200 text-black text-xs font-bold py-2.5 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg"
+              >
+                {transferLoading ? <RotateCcw size={14} className="animate-spin" /> : <Crown size={14} />}
+                <span>Confirmar Traspaso</span>
+              </button>
+              <button
+                onClick={() => { setShowTransferModal(false); setTransferError(""); setConfirmPhrase(""); }}
+                disabled={transferLoading}
+                className="flex-1 bg-white/10 hover:bg-white/20 text-white text-xs font-bold py-2.5 rounded-xl disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
-        ))}
-        {admins.length === 0 && <p className="text-zinc-500 text-xs italic text-center py-4">No hay editores adicionales.</p>}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
