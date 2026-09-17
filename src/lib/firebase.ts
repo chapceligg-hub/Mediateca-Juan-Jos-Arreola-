@@ -50,15 +50,8 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
   if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
     return { id: normalized, email: normalized, role: 'admin' };
   }
-  try {
-    const docSnap = await getDoc(doc(db, 'admins', normalized));
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...(docSnap.data() as any) };
-    }
-  } catch (error) {
-    console.warn("Aviso al verificar admin en Firestore, recurriendo a caché:", error);
-  }
 
+  // 1. Verificación instantánea en memoria local IndexedDB (0 lecturas, alta velocidad)
   try {
     const offlineAdmins = await get("videoteca_admins_cache");
     if (offlineAdmins) {
@@ -69,6 +62,51 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
       }
     }
   } catch (_) {}
+
+  // 2. Verificación en el backend del servidor (soporte multi-dispositivo garantizado sin límite de cuota)
+  try {
+    const res = await fetch(`/api/admins/check/${encodeURIComponent(normalized)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.isAdmin) {
+        const adminObj = { id: normalized, email: normalized, role: data.role || 'editor' };
+        try {
+          const offlineAdmins = (await get("videoteca_admins_cache")) || [];
+          let list = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
+          if (!Array.isArray(list)) list = [];
+          if (!list.some((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized)) {
+            list.push(adminObj);
+            await set("videoteca_admins_cache", list);
+          }
+        } catch (_) {}
+        return adminObj;
+      }
+    }
+  } catch (err) {
+    console.warn("Aviso al consultar /api/admins/check:", err);
+  }
+
+  // 3. Verificación en Firestore directo por ID
+  try {
+    const docSnap = await getDoc(doc(db, 'admins', normalized));
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...(docSnap.data() as any) };
+    }
+  } catch (error) {
+    console.warn("Aviso al verificar admin en Firestore, recurriendo a consulta secundaria:", error);
+  }
+
+  // 4. Verificación en Firestore por campo email (por si se creó con auto-ID en la consola)
+  try {
+    const qEmail = query(collection(db, 'admins'), where('email', '==', normalized));
+    const qSnap = await getDocs(qEmail);
+    if (!qSnap.empty) {
+      const firstDoc = qSnap.docs[0];
+      return { id: firstDoc.id, ...(firstDoc.data() as any) };
+    }
+  } catch (err) {
+    console.warn("Aviso al consultar email en Firestore:", err);
+  }
 
   return null;
 };
@@ -343,6 +381,12 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
         }
         if (Array.isArray(parsed) && parsed.length > 0) {
           console.log(`[Caché Estricta Local] Admins cargados instantáneamente desde IndexedDB (Lecturas Firebase = 0). Cantidad: ${parsed.length}`);
+          // Sincronizar en segundo plano con el backend
+          fetch('/api/admins/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(parsed)
+          }).catch(() => {});
           return parsed;
         }
       }
@@ -360,6 +404,21 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
     } catch (e) {}
   }
 
+  // 1. Consultar el registro central en backend (inmune al límite de cuota de Firestore)
+  try {
+    const res = await fetch('/api/admins');
+    if (res.ok) {
+      const serverAdmins = await res.json();
+      if (Array.isArray(serverAdmins) && serverAdmins.length > 0) {
+        await set("videoteca_admins_cache", serverAdmins);
+        return serverAdmins;
+      }
+    }
+  } catch (err) {
+    console.warn("Aviso al consultar /api/admins:", err);
+  }
+
+  // 2. Consultar Firestore como respaldo
   try {
     console.log("Firebase: Consultando administradores desde Firestore");
     const snapshot = await getDocs(q);
@@ -368,6 +427,11 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
       .map(doc => ({ id: doc.id, ...doc.data() }));
     try {
       await set("videoteca_admins_cache", data);
+      fetch('/api/admins/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).catch(() => {});
     } catch (e) {}
     return data;
   } catch (err) {
@@ -508,12 +572,25 @@ export const upsertAdmin = async (admin: any) => {
     }
   });
 
+  // 1. Guardar en el backend del servidor (persistencia multi-dispositivo garantizada)
+  try {
+    await fetch('/api/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminData)
+    });
+  } catch (err) {
+    console.warn("Aviso al guardar admin en backend:", err);
+  }
+
+  // 2. Guardar en Firestore
   try {
     await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
   } catch (err) {
-    console.warn("Aviso al guardar admin en Firestore (se guardará en caché local):", err);
+    console.warn("Aviso al guardar admin en Firestore (se guardará en backend y caché local):", err);
   }
   
+  // 3. Guardar en caché IndexedDB
   try {
     const offlineAdmins = await get("videoteca_admins_cache");
     let list: any[] = [];
@@ -535,6 +612,12 @@ export const upsertAdmin = async (admin: any) => {
 export const deleteAdmin = async (idOrEmail: string) => {
   const adminId = (idOrEmail || '').toLowerCase().trim();
   if (!adminId) return;
+
+  try {
+    await fetch(`/api/admins/${encodeURIComponent(adminId)}`, { method: 'DELETE' });
+  } catch (err) {
+    console.warn("Aviso al eliminar admin en backend:", err);
+  }
 
   try {
     await deleteDoc(doc(db, 'admins', adminId));

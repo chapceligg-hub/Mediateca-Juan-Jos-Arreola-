@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 
@@ -175,6 +176,123 @@ export const app = express();
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// --- GESTIÓN DE ADMINISTRADORES Y EDITORES EN SERVIDOR (Garantiza acceso multi-dispositivo sin bloqueos por cuota) ---
+const ADMINS_FILE = path.join(process.cwd(), "admins-registry.json");
+
+function loadServerAdmins(): any[] {
+  try {
+    if (fs.existsSync(ADMINS_FILE)) {
+      const raw = fs.readFileSync(ADMINS_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Error leyendo admins-registry.json:", e);
+  }
+  return [
+    {
+      id: "chapceligg@gmail.com",
+      email: "chapceligg@gmail.com",
+      role: "admin",
+      name: "Super Administrador",
+      createdAt: new Date().toISOString()
+    }
+  ];
+}
+
+function saveServerAdmins(admins: any[]) {
+  try {
+    fs.writeFileSync(ADMINS_FILE, JSON.stringify(admins, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Error guardando admins-registry.json:", e);
+  }
+}
+
+app.get("/api/admins", (req, res) => {
+  const admins = loadServerAdmins();
+  res.json(admins);
+});
+
+app.get("/api/admins/check/:email", (req, res) => {
+  const email = (req.params.email || "").trim().toLowerCase();
+  if (!email) {
+    return res.json({ isAdmin: false });
+  }
+  if (email === "chapceligg@gmail.com") {
+    return res.json({ isAdmin: true, role: "admin" });
+  }
+  const admins = loadServerAdmins();
+  const match = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
+  if (match) {
+    return res.json({ isAdmin: true, role: match.role || "editor" });
+  }
+  return res.json({ isAdmin: false });
+});
+
+app.post("/api/admins", (req, res) => {
+  const adminData = req.body;
+  if (!adminData || (!adminData.email && !adminData.id)) {
+    return res.status(400).json({ error: "Datos de administrador incompletos" });
+  }
+  const email = (adminData.email || adminData.id).trim().toLowerCase();
+  const admins = loadServerAdmins();
+  const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
+  const updatedEntry = {
+    ...adminData,
+    id: email,
+    email: email,
+    role: adminData.role || "editor",
+    updatedAt: new Date().toISOString()
+  };
+  if (idx > -1) {
+    admins[idx] = { ...admins[idx], ...updatedEntry };
+  } else {
+    admins.push(updatedEntry);
+  }
+  saveServerAdmins(admins);
+  res.json({ success: true, admin: updatedEntry });
+});
+
+app.post("/api/admins/sync", (req, res) => {
+  const list = req.body;
+  if (!Array.isArray(list)) {
+    return res.status(400).json({ error: "Se esperaba un array de administradores" });
+  }
+  const current = loadServerAdmins();
+  const map = new Map<string, any>();
+  for (const a of current) {
+    const key = (a.email || a.id || "").trim().toLowerCase();
+    if (key) map.set(key, a);
+  }
+  for (const item of list) {
+    const key = (item.email || item.id || "").trim().toLowerCase();
+    if (key) {
+      map.set(key, { ...map.get(key), ...item, id: key, email: key });
+    }
+  }
+  if (!map.has("chapceligg@gmail.com")) {
+    map.set("chapceligg@gmail.com", {
+      id: "chapceligg@gmail.com",
+      email: "chapceligg@gmail.com",
+      role: "admin",
+      name: "Super Administrador"
+    });
+  }
+  const merged = Array.from(map.values());
+  saveServerAdmins(merged);
+  res.json({ success: true, count: merged.length });
+});
+
+app.delete("/api/admins/:email", (req, res) => {
+  const email = (req.params.email || "").trim().toLowerCase();
+  if (email === "chapceligg@gmail.com") {
+    return res.status(403).json({ error: "No se puede eliminar el Super Admin Principal" });
+  }
+  const admins = loadServerAdmins().filter(a => (a.email || a.id || "").trim().toLowerCase() !== email);
+  saveServerAdmins(admins);
+  res.json({ success: true });
+});
 
    app.post("/api/catalog", async (req, res) => {
     try {
