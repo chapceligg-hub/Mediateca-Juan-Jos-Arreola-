@@ -2487,12 +2487,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 )}
               </button>
             </form>
-
-            <div className="w-full pt-3 border-t border-white/[0.08] text-left">
-              <p className="text-[11px] text-zinc-500 leading-normal">
-                <span className="text-zinc-400 font-bold">ℹ️ Dominio de Firebase:</span> Si deseas activar el popup emergente de Google directamente, añade el dominio <code className="text-zinc-300 bg-white/5 px-1 py-0.5 rounded text-[10px]">{typeof window !== 'undefined' ? window.location.hostname : 'run.app'}</code> en Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains.
-              </p>
-            </div>
           </div>
         </div>
       )}
