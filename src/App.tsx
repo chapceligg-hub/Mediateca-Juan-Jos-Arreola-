@@ -1247,17 +1247,19 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       if (currentUser) {
         const normalizedUser = {
           ...currentUser,
-          displayName: currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || '',
-          photoURL: currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || '',
+          displayName: currentUser.displayName || currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || (currentUser.email ? currentUser.email.split('@')[0] : 'Curator'),
+          photoURL: currentUser.photoURL || currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || '',
         };
 
-        if (normalizedUser.email === 'chapceligg@gmail.com') {
+        const userEmail = (normalizedUser.email || '').toLowerCase().trim();
+
+        if (userEmail === 'chapceligg@gmail.com') {
           setUser(normalizedUser);
           setIsAdmin(true);
           setUserRole('admin');
         } else {
           try {
-            const admin = await getAdminByEmail(normalizedUser.email || '');
+            const admin = await getAdminByEmail(userEmail);
             if (admin) {
               setUser(normalizedUser);
               setIsAdmin(true);
@@ -2158,25 +2160,38 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                  <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`}>{user.displayName || 'Curator Profile'}</span>
                  <span className={`admin-profile-role text-[10px] truncate uppercase tracking-widest ${isDayMode ? 'text-zinc-800 font-bold' : 'text-zinc-500'}`}>{isAdmin ? `${t("Administrador")} / ${t("Editor")}` : 'Mediateca Viewer'}</span>
               </div>
-              <button onClick={() => { try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {} setIsBypassActive(false); logout(); }} className={`ml-auto p-1 transition-colors ${isDayMode ? 'text-zinc-500 hover:text-red-600' : 'text-zinc-600 hover:text-brand-light'}`}><LogOut size={14}/></button>
+              <button 
+                onClick={async () => { 
+                  try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {} 
+                  setIsBypassActive(false); 
+                  setUser(null);
+                  setIsAdmin(false);
+                  setUserRole(null);
+                  await logout(); 
+                }} 
+                className={`ml-auto p-1 transition-colors ${isDayMode ? 'text-zinc-500 hover:text-red-600' : 'text-zinc-600 hover:text-brand-light'}`}
+                title="Cerrar sesión"
+              >
+                <LogOut size={14}/>
+              </button>
             </div>
           ) : (
-             <button onClick={async () => {
-               if (window.confirm("¿Deseas iniciar sesión oficialmente con Google OAuth?\n\n(Haz clic en 'Cancelar' si estás en modo Dev y prefieres hacer un BYPASS LOCAL para usar las herramientas de administrador).")) {
+             <button 
+               id="btn-login-google"
+               onClick={async () => {
                  try {
+                   try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {}
+                   setIsBypassActive(false);
                    await signInWithGoogle();
                  } catch (err: any) {
-                   alert("Error de inicio de sesión: " + err.message);
+                   if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+                     alert("Error al iniciar sesión con Google: " + (err.message || err));
+                   }
                  }
-               } else {
-                 try { localStorage.setItem("videoteca_bypass_active", "true"); } catch (_) {}
-                 setIsBypassActive(true);
-                 setUser({ email: 'chapceligg@gmail.com', displayName: 'Admin Maestro (Bypass Dev)', photoURL: '' });
-                 setIsAdmin(true);
-                 setUserRole('admin');
-                 setIsAuthChecking(false);
-               }
-             }} className={`app-login-btn flex items-center justify-center gap-3 pt-2 cursor-pointer p-2 rounded-xl transition-colors font-bold w-full ${isDayMode ? 'hover:bg-zinc-100 text-zinc-950' : 'hover:bg-white/5 text-white'}`}>
+               }} 
+               className={`app-login-btn flex items-center justify-center gap-3 pt-2 cursor-pointer p-2 rounded-xl transition-colors font-bold w-full ${isDayMode ? 'hover:bg-zinc-100 text-zinc-950' : 'hover:bg-white/5 text-white'}`}
+               title="Iniciar sesión con cuenta de Google"
+             >
                 <LogIn size={18} /> Acceso Editores
              </button>
           )}

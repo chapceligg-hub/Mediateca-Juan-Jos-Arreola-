@@ -18,6 +18,7 @@ export const db = initializeFirestore(app, {
 }, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: 'select_account' });
 
 export const signInWithGoogle = async () => {
   const result = await signInWithPopup(auth, provider);
