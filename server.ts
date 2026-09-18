@@ -219,13 +219,14 @@ app.get("/api/admins/check/:email", (req, res) => {
   if (!email) {
     return res.json({ isAdmin: false });
   }
-  if (email === "chapceligg@gmail.com") {
-    return res.json({ isAdmin: true, role: "admin" });
-  }
   const admins = loadServerAdmins();
+  if (email === "chapceligg@gmail.com") {
+    const primaryMatch = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === "chapceligg@gmail.com");
+    return res.json({ isAdmin: true, role: "admin", name: primaryMatch?.name || "", photoURL: primaryMatch?.photoURL || "" });
+  }
   const match = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
   if (match) {
-    return res.json({ isAdmin: true, role: match.role || "editor" });
+    return res.json({ isAdmin: true, role: match.role || "editor", name: match.name || "", photoURL: match.photoURL || "" });
   }
   return res.json({ isAdmin: false });
 });

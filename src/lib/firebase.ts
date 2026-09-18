@@ -37,7 +37,7 @@ export const initAuth = async () => {
   return true;
 };
 
-export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string } | null> => {
+export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string, photoURL?: string } | null> => {
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) return null;
 
@@ -46,10 +46,6 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     const cachedPrimary = localStorage.getItem("videoteca_primary_superadmin");
     if (cachedPrimary) primary = cachedPrimary.toLowerCase().trim();
   } catch (_) {}
-
-  if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
-    return { id: normalized, email: normalized, role: 'admin' };
-  }
 
   // 1. Verificación instantánea en memoria local IndexedDB (0 lecturas, alta velocidad)
   try {
@@ -69,7 +65,13 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     if (res.ok) {
       const data = await res.json();
       if (data && data.isAdmin) {
-        const adminObj = { id: normalized, email: normalized, role: data.role || 'editor' };
+        const adminObj = { 
+          id: normalized, 
+          email: normalized, 
+          role: data.role || (normalized === 'chapceligg@gmail.com' ? 'admin' : 'editor'),
+          name: data.name || '',
+          photoURL: data.photoURL || ''
+        };
         try {
           const offlineAdmins = (await get("videoteca_admins_cache")) || [];
           let list = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
@@ -84,6 +86,10 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     }
   } catch (err) {
     console.warn("Aviso al consultar /api/admins/check:", err);
+  }
+
+  if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
+    return { id: normalized, email: normalized, role: 'admin' };
   }
 
   // 3. Verificación en Firestore directo por ID

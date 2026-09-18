@@ -1259,7 +1259,12 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         } else if (parsedEmail) {
           getAdminByEmail(parsedEmail).then(admin => {
             if (admin) {
-              setUser(parsed);
+              const updatedUser = {
+                ...parsed,
+                displayName: (admin.name && admin.name.trim()) || parsed.displayName || parsedEmail,
+                photoURL: admin.photoURL || parsed.photoURL || ''
+              };
+              setUser(updatedUser);
               setIsAdmin(true);
               setUserRole(admin.role || 'editor');
             } else {
@@ -1278,37 +1283,25 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
     setIsVerifyingEmail(true);
     try {
-      if (rawEmail === 'chapceligg@gmail.com') {
-        const superAdminUser = {
-          email: 'chapceligg@gmail.com',
-          displayName: 'Super Administrador',
-          photoURL: ''
+      const admin = await getAdminByEmail(rawEmail);
+      if (rawEmail === 'chapceligg@gmail.com' || (admin && (admin.role === 'admin' || admin.role === 'editor'))) {
+        const resolvedName = (admin?.name || "").trim() || (rawEmail === 'chapceligg@gmail.com' ? 'Super Administrador' : rawEmail);
+        const resolvedRole = (rawEmail === 'chapceligg@gmail.com' || admin?.role === 'admin') ? 'admin' : 'editor';
+        const editorUser = {
+          email: rawEmail,
+          displayName: resolvedName,
+          photoURL: admin?.photoURL || ''
         };
-        setUser(superAdminUser);
+        setUser(editorUser);
         setIsAdmin(true);
-        setUserRole('admin');
-        try { localStorage.setItem("videoteca_verified_user", JSON.stringify(superAdminUser)); } catch (_) {}
+        setUserRole(resolvedRole);
+        try { localStorage.setItem("videoteca_verified_user", JSON.stringify(editorUser)); } catch (_) {}
         setShowEmailLoginModal(false);
         setLoginEmailInput("");
       } else {
-        const admin = await getAdminByEmail(rawEmail);
-        if (admin) {
-          const editorUser = {
-            email: rawEmail,
-            displayName: rawEmail.split('@')[0],
-            photoURL: ''
-          };
-          setUser(editorUser);
-          setIsAdmin(true);
-          setUserRole(admin.role || 'editor');
-          try { localStorage.setItem("videoteca_verified_user", JSON.stringify(editorUser)); } catch (_) {}
-          setShowEmailLoginModal(false);
-          setLoginEmailInput("");
-        } else {
-          setShowEmailLoginModal(false);
-          setAuthDeniedEmail(rawEmail);
-          setAuthDenied(true);
-        }
+        setShowEmailLoginModal(false);
+        setAuthDeniedEmail(rawEmail);
+        setAuthDenied(true);
       }
     } catch (err) {
       console.error("Error al validar correo de Google:", err);
@@ -1325,13 +1318,21 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       if (isBypassActive) return; // Prevent overwriting bypass session
       
       if (currentUser) {
+        const userEmail = (currentUser.email || '').toLowerCase().trim();
+        let adminInfo: any = null;
+        try {
+          adminInfo = await getAdminByEmail(userEmail);
+        } catch (_) {}
+
+        const googleName = (currentUser.displayName || currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || "").trim();
+        const registeredName = (adminInfo?.name || "").trim();
+        const finalDisplayName = googleName || registeredName || userEmail;
+
         const normalizedUser = {
           ...currentUser,
-          displayName: currentUser.displayName || currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || (currentUser.email ? currentUser.email.split('@')[0] : 'Curator'),
-          photoURL: currentUser.photoURL || currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || '',
+          displayName: finalDisplayName,
+          photoURL: currentUser.photoURL || currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || adminInfo?.photoURL || '',
         };
-
-        const userEmail = (normalizedUser.email || '').toLowerCase().trim();
 
         if (userEmail === 'chapceligg@gmail.com') {
           setUser(normalizedUser);
@@ -1339,7 +1340,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
           setUserRole('admin');
         } else {
           try {
-            const admin = await getAdminByEmail(userEmail);
+            const admin = adminInfo || await getAdminByEmail(userEmail);
             if (admin) {
               setUser(normalizedUser);
               setIsAdmin(true);
@@ -2294,7 +2295,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             <div className={`flex items-center gap-4 pt-2 cursor-pointer p-2 rounded-xl transition-colors ${isDayMode ? 'hover:bg-zinc-100' : 'hover:bg-white/5'}`}>
               <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}&background=random`} alt="Avatar" className={`w-10 h-10 rounded-full border ${isDayMode ? 'border-zinc-200' : 'border-white/10'}`} />
               <div className="flex flex-col overflow-hidden">
-                 <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`}>{user.displayName || 'Curator Profile'}</span>
+                 <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`}>{user.displayName || user.email || 'Usuario'}</span>
                  <span className={`admin-profile-role text-[10px] truncate uppercase tracking-widest ${isDayMode ? 'text-zinc-800 font-bold' : 'text-zinc-500'}`}>{isAdmin ? `${t("Administrador")} / ${t("Editor")}` : 'Mediateca Viewer'}</span>
               </div>
               <button 
@@ -5083,6 +5084,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   const [admins, setAdmins] = useState<any[]>([]);
   const [primarySuperAdmin, setPrimarySuperAdmin] = useState<string>("chapceligg@gmail.com");
   const [newEmail, setNewEmail] = useState("");
+  const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("editor");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -5146,7 +5148,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         email,
         createdAt: new Date().toISOString(),
         addedBy: currentUser?.email || currentUser?.uid || 'admin',
-        name: email.split('@')[0],
+        name: newName.trim() || email,
         photoURL: "",
         role: newRole,
         id: email
@@ -5158,6 +5160,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         return [...filtered, payload];
       });
       setNewEmail("");
+      setNewName("");
       setNewRole("editor");
     } catch (err: any) {
       setError(err?.message || "Error al registrar el administrador.");
@@ -5270,7 +5273,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
   return (
     <div className="flex flex-col gap-4 w-full font-sans">
-      <form id="form-add-admin" onSubmit={handleAdd} className="flex gap-2 w-full">
+      <form id="form-add-admin" onSubmit={handleAdd} className="flex flex-col sm:flex-row gap-2 w-full">
         <input 
           id="input-new-admin-email"
           type="email" 
@@ -5279,6 +5282,14 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           onChange={(e) => setNewEmail(e.target.value)}
           required
           className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-red-500 outline-none text-white min-w-0"
+        />
+        <input 
+          id="input-new-admin-name"
+          type="text" 
+          placeholder="Nombre (opcional)" 
+          value={newName} 
+          onChange={(e) => setNewName(e.target.value)}
+          className="w-full sm:w-44 bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-red-500 outline-none text-white min-w-0"
         />
         <select
           id="select-new-admin-role"
@@ -5294,6 +5305,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           disabled={loading || !newEmail.trim()} 
           type="submit" 
           className="bg-white hover:bg-zinc-200 text-black px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-md active:scale-95"
+          title="Agregar administrador"
         >
           <Plus size={18} />
         </button>
@@ -5359,10 +5371,19 @@ const AdminManager = ({ currentUser, userRole }: any) => {
             <div key={aEmail} className="flex flex-col bg-zinc-900/80 rounded-xl border border-white/10 gap-2 w-full overflow-hidden transition-colors hover:border-white/20">
               <div className="flex items-center justify-between p-3 gap-2">
                 <div className="flex flex-col flex-1 min-w-0">
-                  <span className="text-sm font-bold text-white truncate" title={aEmail}>{aEmail}</span>
-                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider mt-0.5">
-                    {a.role === 'admin' ? 'Super Admin' : 'Editor'}
+                  <span className="text-sm font-bold text-white truncate" title={a.name ? `${a.name} (${aEmail})` : aEmail}>
+                    {a.name && a.name.trim() !== aEmail ? a.name : aEmail}
                   </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
+                      {a.role === 'admin' ? 'Super Admin' : 'Editor'}
+                    </span>
+                    {a.name && a.name.trim() !== aEmail && (
+                      <span className="text-[10px] text-zinc-500 truncate" title={aEmail}>
+                        {aEmail}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {aEmail !== currentEmail && (
                   <div className="flex items-center gap-2 shrink-0">
