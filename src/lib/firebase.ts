@@ -216,6 +216,31 @@ export const mergeMoviesPreservingLocal = (localList: any[], incomingList: any[]
   return merged;
 };
 
+export const syncDeletedMovieIds = async (): Promise<string[]> => {
+  let localDeleted: string[] = [];
+  try {
+    const raw = await get("videoteca_deleted_ids");
+    if (raw) {
+      localDeleted = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!Array.isArray(localDeleted)) localDeleted = [];
+    }
+  } catch (_) {}
+
+  try {
+    const res = await fetch('/api/movies/deleted');
+    if (res.ok) {
+      const serverDeleted = await res.json();
+      if (Array.isArray(serverDeleted) && serverDeleted.length > 0) {
+        const combined = Array.from(new Set([...localDeleted, ...serverDeleted])).slice(-1000);
+        await set("videoteca_deleted_ids", combined);
+        return combined;
+      }
+    }
+  } catch (_) {}
+
+  return localDeleted;
+};
+
 let hasRunInitialDeltaSync = false;
 
 export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) => {
@@ -223,12 +248,17 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
   hasRunInitialDeltaSync = true;
 
   try {
+    const deletedIds = await syncDeletedMovieIds();
+    const deletedSet = new Set(deletedIds);
+
     const cached = await getCachedMovies();
     if (!cached || cached.length === 0) {
       console.log("[Smart Delta Sync] Sin catálogo local previo. Obteniendo catálogo inicial...");
       const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(m => m && m.id && !deletedSet.has(m.id));
       if (data.length > 0) {
         await setCachedMovies(data, true);
         if (callback) callback(data);
@@ -236,9 +266,16 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
       return;
     }
 
+    // Depurar de la memoria local cualquier película eliminada en otro dispositivo
+    const cleanCached = cached.filter(m => m && m.id && !deletedSet.has(m.id));
+    if (cleanCached.length !== cached.length) {
+      await setCachedMovies(cleanCached, true);
+      if (callback) callback(cleanCached);
+    }
+
     // Buscamos la fecha más reciente conocida en nuestra memoria local
     let maxTimestamp = "1970-01-01T00:00:00.000Z";
-    for (const m of cached) {
+    for (const m of cleanCached) {
       const t = m.updatedAt || m.createdAt || "";
       if (t && t > maxTimestamp) {
         maxTimestamp = t;
@@ -266,18 +303,16 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
       return;
     }
 
-    const deltaMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const deltaMovies = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(m => m && m.id && !deletedSet.has(m.id));
     console.log(`[Smart Delta Sync] Se sincronizaron ${deltaMovies.length} película(s) nueva(s) o actualizada(s).`);
 
-    let deletedIds: string[] = [];
-    try {
-      deletedIds = (await get("videoteca_deleted_ids")) || [];
-    } catch (_) {}
+    const merged = mergeMoviesPreservingLocal(cleanCached, deltaMovies, deletedIds);
+    const cleanMerged = merged.filter(m => m && m.id && !deletedSet.has(m.id));
 
-    const merged = mergeMoviesPreservingLocal(cached, deltaMovies, deletedIds);
-
-    await setCachedMovies(merged, true);
-    if (callback) callback(merged);
+    await setCachedMovies(cleanMerged, true);
+    if (callback) callback(cleanMerged);
   } catch (err) {
     console.warn("[Smart Delta Sync] Verificación delta finalizada (manteniendo copia local segura):", err);
   }
@@ -289,40 +324,59 @@ export const subscribeToMovies = (
 ) => {
   console.log("[Firebase] Conectando sincronización en tiempo real protegida...");
 
-  // 1. Cargar instantáneamente la copia en memoria local de IndexedDB (0 lecturas)
-  getCachedMovies().then(offlineData => {
+  // 1. Sincronizar IDs eliminados y cargar instantáneamente la copia en memoria local de IndexedDB
+  syncDeletedMovieIds().then(async (deletedIds) => {
+    const offlineData = await getCachedMovies();
     if (offlineData && offlineData.length > 0) {
-      callback(offlineData);
+      const deletedSet = new Set(deletedIds);
+      const cleaned = offlineData.filter(m => m && m.id && !deletedSet.has(m.id));
+      callback(cleaned);
+      if (cleaned.length !== offlineData.length) {
+        await setCachedMovies(cleaned, true);
+      }
     }
-    // 2. Ejecutar la sincronización Delta inteligente ESTRICTAMENTE UNA SOLA VEZ al iniciar
     runSmartDeltaSyncOnce(callback);
   }).catch((e) => {
     console.warn("Error leyendo respaldo inicial de IndexedDB:", e);
     runSmartDeltaSyncOnce(callback);
   });
 
-  // 3. Suscripción en tiempo real pasiva con onSnapshot respaldada por persistentLocalCache.
-  // Sin setInterval, sin listeners de foco en ventana, sin listeners de visibilidad.
+  // 2. Suscripción en tiempo real pasiva con onSnapshot respaldada por persistentLocalCache
   const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
   
   const unsubscribe = onSnapshot(
     q,
     async (snapshot) => {
-      const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if (incomingMovies.length === 0) return;
+      // Detectar y propagar documentos eliminados en Firestore en tiempo real entre dispositivos
+      const removedIds: string[] = [];
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'removed' && change.doc && change.doc.id) {
+          removedIds.push(change.doc.id);
+        }
+      });
 
-      // Obtenemos la memoria local actual para evitar que una caché interna parcial reducida
-      // desvanezca el catálogo completo o los pósters guardados localmente
+      if (removedIds.length > 0) {
+        fetch('/api/movies/deleted', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: removedIds })
+        }).catch(() => {});
+      }
+
+      let deletedIds = await syncDeletedMovieIds();
+      if (removedIds.length > 0) {
+        deletedIds = Array.from(new Set([...deletedIds, ...removedIds]));
+      }
+
+      const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const existing = await getCachedMovies() || [];
-      let deletedIds: string[] = [];
-      try {
-        deletedIds = (await get("videoteca_deleted_ids")) || [];
-      } catch (_) {}
 
       const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
+      const deletedSet = new Set(deletedIds);
+      const cleanMerged = merged.filter(m => m && m.id && !deletedSet.has(m.id));
 
-      await setCachedMovies(merged, true);
-      callback(merged);
+      await setCachedMovies(cleanMerged, true);
+      callback(cleanMerged);
     },
     (err) => {
       console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
@@ -368,82 +422,88 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   }
 };
 
+export const mergeAdmins = (...lists: any[][]): any[] => {
+  const map = new Map<string, any>();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (!item) continue;
+      const email = (item.email || item.id || '').trim().toLowerCase();
+      if (!email) continue;
+      const existing = map.get(email);
+      if (!existing) {
+        map.set(email, { ...item, id: email, email });
+      } else {
+        map.set(email, { ...existing, ...item, id: email, email });
+      }
+    }
+  }
+  return Array.from(map.values());
+};
+
 export const fetchAdminsOptimized = async (forceServer = false) => {
   const q = collection(db, 'admins');
-  
-  if (!forceServer) {
-    try {
-      const offlineAdmins = await get("videoteca_admins_cache");
-      if (offlineAdmins) {
-        let parsed = offlineAdmins;
-        if (typeof offlineAdmins === 'string') {
-          parsed = JSON.parse(offlineAdmins);
-        }
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`[Caché Estricta Local] Admins cargados instantáneamente desde IndexedDB (Lecturas Firebase = 0). Cantidad: ${parsed.length}`);
-          // Sincronizar en segundo plano con el backend
-          fetch('/api/admins/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(parsed)
-          }).catch(() => {});
-          return parsed;
-        }
-      }
-    } catch (e) {}
+  let localAdmins: any[] = [];
 
-    try {
-      const snapshot = await getDocsFromCache(q);
-      if (!snapshot.empty) {
-        const data = snapshot.docs
-          .filter(doc => !doc.id.startsWith('_'))
-          .map(doc => ({ id: doc.id, ...doc.data() }));
-        await set("videoteca_admins_cache", data);
-        return data;
-      }
-    } catch (e) {}
-  }
+  try {
+    const offlineAdmins = await get("videoteca_admins_cache");
+    if (offlineAdmins) {
+      const parsed = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
+      if (Array.isArray(parsed)) localAdmins = parsed;
+    }
+  } catch (e) {}
 
-  // 1. Consultar el registro central en backend (inmune al límite de cuota de Firestore)
+  // 1. Siempre sincronizar con el registro central del servidor (0 lecturas Firestore, multi-dispositivo)
+  let serverAdmins: any[] = [];
   try {
     const res = await fetch('/api/admins');
     if (res.ok) {
-      const serverAdmins = await res.json();
-      if (Array.isArray(serverAdmins) && serverAdmins.length > 0) {
-        await set("videoteca_admins_cache", serverAdmins);
-        return serverAdmins;
-      }
+      const data = await res.json();
+      if (Array.isArray(data)) serverAdmins = data;
     }
   } catch (err) {
     console.warn("Aviso al consultar /api/admins:", err);
   }
 
-  // 2. Consultar Firestore como respaldo
-  try {
-    console.log("Firebase: Consultando administradores desde Firestore");
-    const snapshot = await getDocs(q);
-    const data = snapshot.docs
-      .filter(doc => !doc.id.startsWith('_'))
-      .map(doc => ({ id: doc.id, ...doc.data() }));
+  // 2. Si se solicita sincronización forzada (botón Sincronizar) o si no tenemos datos, consultar Firestore
+  let firestoreAdmins: any[] = [];
+  if (forceServer || (localAdmins.length === 0 && serverAdmins.length === 0)) {
     try {
-      await set("videoteca_admins_cache", data);
-      fetch('/api/admins/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      }).catch(() => {});
-    } catch (e) {}
-    return data;
-  } catch (err) {
-    console.warn("Aviso al consultar admins de Firestore, usando caché local:", err);
+      console.log("Firebase: Sincronizando administradores con Firestore");
+      const snapshot = await getDocs(q);
+      firestoreAdmins = snapshot.docs
+        .filter(doc => !doc.id.startsWith('_'))
+        .map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (err) {
+      console.warn("Aviso al consultar admins de Firestore (usando servidor/caché):", err);
+    }
+  } else {
+    // Si no es forzado, intentar leer de la caché interna de Firestore (0 lecturas)
     try {
-      const offlineAdmins = await get("videoteca_admins_cache");
-      if (offlineAdmins) {
-        return typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
+      const cachedSnap = await getDocsFromCache(q);
+      if (!cachedSnap.empty) {
+        firestoreAdmins = cachedSnap.docs
+          .filter(doc => !doc.id.startsWith('_'))
+          .map(doc => ({ id: doc.id, ...doc.data() }));
       }
     } catch (_) {}
-    return [];
   }
+
+  // Combinamos de forma unificada: Servidor + Local + Firestore
+  const unified = mergeAdmins(serverAdmins, localAdmins, firestoreAdmins);
+
+  if (unified.length > 0) {
+    await set("videoteca_admins_cache", unified);
+    // Asegurar que el backend central tenga la lista consolidada de todas las fuentes
+    fetch('/api/admins/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(unified)
+    }).catch(() => {});
+    return unified;
+  }
+
+  return localAdmins;
 };
 
 export const generateMovieId = () => {
@@ -541,14 +601,26 @@ export const deleteMovie = async (id: string) => {
     const deletedList: string[] = (await get("videoteca_deleted_ids")) || [];
     if (!deletedList.includes(id)) {
       deletedList.push(id);
-      await set("videoteca_deleted_ids", deletedList.slice(-500));
+      await set("videoteca_deleted_ids", deletedList.slice(-1000));
     }
   } catch (e) {}
 
+  // 1. Notificar al servidor central (sincronización multi-dispositivo con 0 costo de Firestore)
+  try {
+    await fetch('/api/movies/deleted', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+  } catch (err) {
+    console.warn("Aviso al notificar película eliminada en servidor:", err);
+  }
+
+  // 2. Eliminar en Firestore
   try {
     await deleteDoc(doc(db, 'movies', id));
   } catch (err) {
-    console.warn("Aviso al eliminar en Firestore (eliminado en caché local):", err);
+    console.warn("Aviso al eliminar en Firestore (eliminado en caché local y servidor):", err);
   }
 };
 

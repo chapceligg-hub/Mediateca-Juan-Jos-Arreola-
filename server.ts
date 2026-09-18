@@ -294,6 +294,50 @@ app.delete("/api/admins/:email", (req, res) => {
   res.json({ success: true });
 });
 
+// --- REGISTRO DE PELÍCULAS ELIMINADAS (Sincronización multi-dispositivo sin lecturas Firestore) ---
+const DELETED_MOVIES_FILE = path.join(process.cwd(), "deleted-movies.json");
+
+function loadDeletedMovieIds(): string[] {
+  try {
+    if (fs.existsSync(DELETED_MOVIES_FILE)) {
+      const raw = fs.readFileSync(DELETED_MOVIES_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn("Error leyendo deleted-movies.json:", e);
+  }
+  return [];
+}
+
+function saveDeletedMovieIds(ids: string[]) {
+  try {
+    fs.writeFileSync(DELETED_MOVIES_FILE, JSON.stringify(ids, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Error guardando deleted-movies.json:", e);
+  }
+}
+
+app.get("/api/movies/deleted", (req, res) => {
+  const ids = loadDeletedMovieIds();
+  res.json(ids);
+});
+
+app.post("/api/movies/deleted", (req, res) => {
+  const { id, ids } = req.body || {};
+  const current = loadDeletedMovieIds();
+  const setIds = new Set(current);
+  if (id && typeof id === "string") setIds.add(id);
+  if (Array.isArray(ids)) {
+    for (const item of ids) {
+      if (item && typeof item === "string") setIds.add(item);
+    }
+  }
+  const updated = Array.from(setIds).slice(-1000);
+  saveDeletedMovieIds(updated);
+  res.json({ success: true, count: updated.length, deleted: updated });
+});
+
    app.post("/api/catalog", async (req, res) => {
     try {
       const { query, searchYear } = req.body;

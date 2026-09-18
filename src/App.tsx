@@ -2471,7 +2471,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </h3>
 
             <p className="text-xs sm:text-sm text-zinc-300 font-medium leading-relaxed mb-5">
-              Introduce tu cuenta de correo registrada para verificar tus credenciales y acceder a las herramientas editoriales.
+              Accede a las herramientas de edición y catalogación mediante tu cuenta de Google o con tu correo registrado sin ventanas emergentes.
             </p>
 
             <form 
@@ -2479,8 +2479,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 e.preventDefault();
                 handleVerifyGoogleEmail();
               }}
-              className="w-full flex flex-col gap-3.5 mb-4"
+              className="w-full flex flex-col gap-3 mb-4"
             >
+              <div className="w-full flex items-center justify-between px-0.5 text-left">
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Inicio de sesión</span>
+                <span className="text-[10px] text-zinc-500 font-medium">Correo registrado</span>
+              </div>
+
               <div className="relative w-full">
                 <input
                   id="input-login-google-email"
@@ -2498,7 +2503,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 type="submit"
                 id="btn-submit-verify-email"
                 disabled={isVerifyingEmail || !loginEmailInput.trim()}
-                className="w-full py-3.5 px-6 rounded-xl bg-[#b41d1d] hover:bg-[#cf2424] disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_25px_rgba(180,29,29,0.5)] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 px-6 rounded-xl bg-[#b41d1d] hover:bg-[#cf2424] disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_25px_rgba(180,29,29,0.5)] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
               >
                 {isVerifyingEmail ? (
                   <>
@@ -2514,7 +2519,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
             <div className="w-full flex items-center gap-3 my-1">
               <div className="flex-1 h-px bg-white/10" />
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">O si lo prefieres</span>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">O</span>
               <div className="flex-1 h-px bg-white/10" />
             </div>
 
@@ -2542,7 +2547,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
               </svg>
-              Iniciar con Ventana Google
+              Accede con Google
             </button>
           </div>
         </div>
