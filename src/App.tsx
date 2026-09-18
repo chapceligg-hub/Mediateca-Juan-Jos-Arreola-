@@ -4803,8 +4803,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       {/* ADMINS MODAL */}
       {showAdminsModal && (
         <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
-            <button onClick={() => setShowAdminsModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 sm:p-7 w-full max-w-xl shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <button onClick={() => setShowAdminsModal(false)} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"><X size={20}/></button>
             <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2 mb-2"><Users className="text-brand-light" size={24} /> Gestionar Admins</h3>
             <p className="text-xs text-zinc-400 mb-6 font-medium leading-relaxed">Agrega administradores para que puedan editar el catálogo. Sus correos deben coincidir con la cuenta de Google con la que inicien sesión.</p>
             <AdminManager currentUser={user} userRole={userRole} />
@@ -5273,42 +5273,68 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
   return (
     <div className="flex flex-col gap-4 w-full font-sans">
-      <form id="form-add-admin" onSubmit={handleAdd} className="flex flex-col sm:flex-row gap-2 w-full">
-        <input 
-          id="input-new-admin-email"
-          type="email" 
-          placeholder="editor@gmail.com" 
-          value={newEmail} 
-          onChange={(e) => setNewEmail(e.target.value)}
-          required
-          className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-red-500 outline-none text-white min-w-0"
-        />
-        <input 
-          id="input-new-admin-name"
-          type="text" 
-          placeholder="Nombre (opcional)" 
-          value={newName} 
-          onChange={(e) => setNewName(e.target.value)}
-          className="w-full sm:w-44 bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-red-500 outline-none text-white min-w-0"
-        />
-        <select
-          id="select-new-admin-role"
-          value={newRole}
-          onChange={(e) => setNewRole(e.target.value)}
-          className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-bold uppercase tracking-wider focus:border-red-500 outline-none text-white cursor-pointer"
-        >
-          <option value="editor">Editor</option>
-          <option value="admin">Super Admin</option>
-        </select>
-        <button 
-          id="btn-add-admin"
-          disabled={loading || !newEmail.trim()} 
-          type="submit" 
-          className="bg-white hover:bg-zinc-200 text-black px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-md active:scale-95"
-          title="Agregar administrador"
-        >
-          <Plus size={18} />
-        </button>
+      <form id="form-add-admin" onSubmit={handleAdd} className="flex flex-col gap-3.5 w-full bg-white/[0.02] border border-white/5 p-4 rounded-2xl">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+          <div className="flex flex-col min-w-0">
+            <label htmlFor="input-new-admin-email" className="text-[11px] font-bold text-zinc-300 mb-1.5 flex items-center gap-1.5">
+              <Mail size={12} className="text-zinc-400" />
+              <span>Correo electrónico (Google u otro)</span>
+              <span className="text-red-400">*</span>
+            </label>
+            <input 
+              id="input-new-admin-email"
+              type="email" 
+              placeholder="ejemplo@gmail.com" 
+              value={newEmail} 
+              onChange={(e) => setNewEmail(e.target.value)}
+              required
+              className="w-full bg-zinc-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500/20 outline-none text-white placeholder:text-zinc-500 min-w-0 transition-all font-sans"
+            />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <label htmlFor="input-new-admin-name" className="text-[11px] font-bold text-zinc-300 mb-1.5 flex items-center gap-1.5">
+              <User size={12} className="text-zinc-400" />
+              <span>Nombre completo</span>
+            </label>
+            <input 
+              id="input-new-admin-name"
+              type="text" 
+              placeholder="Nombre del editor (opcional)" 
+              value={newName} 
+              onChange={(e) => setNewName(e.target.value)}
+              className="w-full bg-zinc-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500/20 outline-none text-white placeholder:text-zinc-500 min-w-0 transition-all font-sans"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-3 w-full pt-1">
+          <div className="flex-1 max-w-xs flex flex-col min-w-0">
+            <label htmlFor="select-new-admin-role" className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5 flex items-center gap-1.5">
+              <Shield size={11} className="text-zinc-400" />
+              <span>Rol asignado</span>
+            </label>
+            <select
+              id="select-new-admin-role"
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              className="w-full bg-zinc-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider focus:border-red-500 outline-none text-white cursor-pointer h-10 transition-colors"
+            >
+              <option value="editor">Editor (Acceso de edición)</option>
+              <option value="admin">Super Admin (Control total)</option>
+            </select>
+          </div>
+
+          <button 
+            id="btn-add-admin"
+            disabled={loading || !newEmail.trim()} 
+            type="submit" 
+            className="bg-white hover:bg-zinc-200 text-black px-5 py-2 rounded-xl font-black text-xs uppercase tracking-wider disabled:opacity-40 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-md active:scale-95 h-10 self-end sm:self-auto w-full sm:w-auto"
+            title="Agregar administrador"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            <span>Añadir</span>
+          </button>
+        </div>
       </form>
       
       {error && (
@@ -5366,23 +5392,23 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         
         {additionalAdmins.map(a => {
           const aEmail = (a.email || a.id || '').toLowerCase().trim();
+          const displayName = a.name && a.name.trim() !== aEmail ? a.name.trim() : (aEmail.split('@')[0] || aEmail);
           const isDeletingThis = userToDelete === aEmail;
           return (
             <div key={aEmail} className="flex flex-col bg-zinc-900/80 rounded-xl border border-white/10 gap-2 w-full overflow-hidden transition-colors hover:border-white/20">
               <div className="flex items-center justify-between p-3 gap-2">
                 <div className="flex flex-col flex-1 min-w-0">
-                  <span className="text-sm font-bold text-white truncate" title={a.name ? `${a.name} (${aEmail})` : aEmail}>
-                    {a.name && a.name.trim() !== aEmail ? a.name : aEmail}
+                  <span className="text-sm font-bold text-white truncate" title={displayName}>
+                    {displayName}
                   </span>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
+                  <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                    <span className="text-xs text-zinc-400 font-normal truncate" title={aEmail}>
+                      {aEmail}
+                    </span>
+                    <span className="text-[10px] text-zinc-500">•</span>
+                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider shrink-0">
                       {a.role === 'admin' ? 'Super Admin' : 'Editor'}
                     </span>
-                    {a.name && a.name.trim() !== aEmail && (
-                      <span className="text-[10px] text-zinc-500 truncate" title={aEmail}>
-                        {aEmail}
-                      </span>
-                    )}
                   </div>
                 </div>
                 {aEmail !== currentEmail && (
@@ -5420,7 +5446,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               
               {isDeletingThis && (
                 <div className="bg-red-950/40 border-t border-red-500/30 p-3 flex flex-col gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <p className="text-xs text-red-300 font-bold">¿Revocar acceso editorial a {aEmail}?</p>
+                  <p className="text-xs text-red-300 font-bold">¿Revocar acceso y eliminar a {displayName} ({aEmail})?</p>
                   <div className="flex gap-2">
                      <button 
                        onClick={confirmDelete} 

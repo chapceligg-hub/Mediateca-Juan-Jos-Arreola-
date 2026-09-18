@@ -179,6 +179,28 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // --- GESTIÓN DE ADMINISTRADORES Y EDITORES EN SERVIDOR (Garantiza acceso multi-dispositivo sin bloqueos por cuota) ---
 const ADMINS_FILE = path.join(process.cwd(), "admins-registry.json");
+const DELETED_ADMINS_FILE = path.join(process.cwd(), "deleted-admins.json");
+
+function loadDeletedAdminIds(): string[] {
+  try {
+    if (fs.existsSync(DELETED_ADMINS_FILE)) {
+      const raw = fs.readFileSync(DELETED_ADMINS_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn("Error leyendo deleted-admins.json:", e);
+  }
+  return [];
+}
+
+function saveDeletedAdminIds(ids: string[]) {
+  try {
+    fs.writeFileSync(DELETED_ADMINS_FILE, JSON.stringify(ids, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Error guardando deleted-admins.json:", e);
+  }
+}
 
 function loadServerAdmins(): any[] {
   try {
@@ -211,7 +233,14 @@ function saveServerAdmins(admins: any[]) {
 
 app.get("/api/admins", (req, res) => {
   const admins = loadServerAdmins();
-  res.json(admins);
+  const deleted = new Set(loadDeletedAdminIds());
+  const active = admins.filter(a => !deleted.has((a.email || a.id || "").trim().toLowerCase()));
+  res.json(active);
+});
+
+app.get("/api/admins/deleted", (req, res) => {
+  const ids = loadDeletedAdminIds();
+  res.json(ids);
 });
 
 app.get("/api/admins/check/:email", (req, res) => {
@@ -237,6 +266,11 @@ app.post("/api/admins", (req, res) => {
     return res.status(400).json({ error: "Datos de administrador incompletos" });
   }
   const email = (adminData.email || adminData.id).trim().toLowerCase();
+  
+  // Si se vuelve a agregar, quitar de la lista de eliminados
+  const deletedIds = loadDeletedAdminIds().filter(id => id !== email);
+  saveDeletedAdminIds(deletedIds);
+
   const admins = loadServerAdmins();
   const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
   const updatedEntry = {
@@ -260,15 +294,16 @@ app.post("/api/admins/sync", (req, res) => {
   if (!Array.isArray(list)) {
     return res.status(400).json({ error: "Se esperaba un array de administradores" });
   }
+  const deletedSet = new Set(loadDeletedAdminIds());
   const current = loadServerAdmins();
   const map = new Map<string, any>();
   for (const a of current) {
     const key = (a.email || a.id || "").trim().toLowerCase();
-    if (key) map.set(key, a);
+    if (key && !deletedSet.has(key)) map.set(key, a);
   }
   for (const item of list) {
     const key = (item.email || item.id || "").trim().toLowerCase();
-    if (key) {
+    if (key && !deletedSet.has(key)) {
       map.set(key, { ...map.get(key), ...item, id: key, email: key });
     }
   }
@@ -290,6 +325,13 @@ app.delete("/api/admins/:email", (req, res) => {
   if (email === "chapceligg@gmail.com") {
     return res.status(403).json({ error: "No se puede eliminar el Super Admin Principal" });
   }
+  // Registrar en lista de eliminados para propagar a otros dispositivos
+  const deletedIds = loadDeletedAdminIds();
+  if (!deletedIds.includes(email)) {
+    deletedIds.push(email);
+    saveDeletedAdminIds(deletedIds.slice(-500));
+  }
+
   const admins = loadServerAdmins().filter(a => (a.email || a.id || "").trim().toLowerCase() !== email);
   saveServerAdmins(admins);
   res.json({ success: true });

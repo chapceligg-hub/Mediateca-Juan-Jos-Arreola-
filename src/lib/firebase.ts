@@ -461,11 +461,22 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
 
   // 1. Siempre sincronizar con el registro central del servidor (0 lecturas Firestore, multi-dispositivo)
   let serverAdmins: any[] = [];
+  let deletedSet = new Set<string>();
+
   try {
-    const res = await fetch('/api/admins');
-    if (res.ok) {
-      const data = await res.json();
+    const [resAdmins, resDeleted] = await Promise.all([
+      fetch('/api/admins'),
+      fetch('/api/admins/deleted')
+    ]);
+    if (resAdmins.ok) {
+      const data = await resAdmins.json();
       if (Array.isArray(data)) serverAdmins = data;
+    }
+    if (resDeleted.ok) {
+      const delData = await resDeleted.json();
+      if (Array.isArray(delData)) {
+        deletedSet = new Set(delData.map((d: string) => (d || '').trim().toLowerCase()));
+      }
     }
   } catch (err) {
     console.warn("Aviso al consultar /api/admins:", err);
@@ -495,8 +506,11 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
     } catch (_) {}
   }
 
-  // Combinamos de forma unificada: Servidor + Local + Firestore
-  const unified = mergeAdmins(serverAdmins, localAdmins, firestoreAdmins);
+  // Combinamos de forma unificada: Servidor + Local + Firestore, excluyendo eliminados
+  let unified = mergeAdmins(serverAdmins, localAdmins, firestoreAdmins);
+  if (deletedSet.size > 0) {
+    unified = unified.filter(a => !deletedSet.has((a.email || a.id || '').trim().toLowerCase()));
+  }
 
   if (unified.length > 0) {
     await set("videoteca_admins_cache", unified);
@@ -509,7 +523,7 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
     return unified;
   }
 
-  return localAdmins;
+  return localAdmins.filter(a => !deletedSet.has((a.email || a.id || '').trim().toLowerCase()));
 };
 
 export const generateMovieId = () => {
