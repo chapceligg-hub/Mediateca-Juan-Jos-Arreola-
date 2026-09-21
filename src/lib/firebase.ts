@@ -863,7 +863,7 @@ export const getPrimarySuperAdminEmail = async (): Promise<string> => {
     }
   } catch (err: any) {
     if (!err?.message?.includes('Quota')) {
-      console.warn("Aviso al obtener super admin principal desde Firestore:", err);
+      console.warn("Aviso al obtener administrador principal desde Firestore:", err);
     }
   }
 
@@ -877,14 +877,14 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
     throw new Error("El correo ingresado no es válido.");
   }
 
-  // Guardar en Firestore documento de configuración de Super Admin Principal
+  // Guardar en Firestore documento de configuración de Administrador Principal
   await setDoc(doc(db, 'admins', '_primary_config'), {
     email: normalizedNew,
     transferredBy: normalizedCurrent,
     transferredAt: new Date().toISOString()
   }, { merge: true });
 
-  // Asignar rol 'admin' al nuevo Super Admin Principal
+  // Asignar rol 'admin' al nuevo Administrador Principal
   await upsertAdmin({
     email: normalizedNew,
     role: 'admin',

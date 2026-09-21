@@ -1285,7 +1285,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     try {
       const admin = await getAdminByEmail(rawEmail);
       if (rawEmail === 'chapceligg@gmail.com' || (admin && (admin.role === 'admin' || admin.role === 'editor'))) {
-        const resolvedName = (admin?.name || "").trim() || (rawEmail === 'chapceligg@gmail.com' ? 'Super Administrador' : rawEmail);
+        const resolvedName = (admin?.name || "").trim() || (rawEmail === 'chapceligg@gmail.com' ? 'Administrador Principal' : rawEmail);
         const resolvedRole = (rawEmail === 'chapceligg@gmail.com' || admin?.role === 'admin') ? 'admin' : 'editor';
         const editorUser = {
           email: rawEmail,
@@ -2245,7 +2245,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                              className={getSidebarItemClass(false)}
                            >
                              <Users className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                             <span>{t("GESTIONAR ADMINS")}</span>
+                             <span>{t("GESTIONAR ADMINISTRADORES")}</span>
                            </button>
                          )}
                          <button 
@@ -2402,7 +2402,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           <CinematicBackground selectedGenre={selectedGenre} />
         )}
       
-      {/* Modal: Apartado Solo para Editores */}
+      {/* Modal: Apartado Solo para Editores Autorizados */}
       {authDenied && (
         <div 
           id="modal-auth-denied"
@@ -2413,27 +2413,27 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             className="bg-[#0c0c0e] border border-red-500/40 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.95),0_0_40px_rgba(180,29,29,0.25)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white mb-4 shadow-lg">
-              <Shield size={26} className="text-[#b41d1d]" />
+            <div className="w-14 h-14 rounded-2xl bg-white/5 border border-red-500/30 flex items-center justify-center text-white mb-4 shadow-lg">
+              <Shield size={28} className="text-[#b41d1d]" />
             </div>
 
             <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
-              Apartado Solo para Editores
+              Acceso Reservado a Editores
             </h3>
 
             <p className="text-sm text-zinc-300 font-medium leading-relaxed mb-4">
-              Este apartado es exclusivo para editores y administradores. Tu cuenta de correo no se encuentra registrada por el superadministrador en la lista de editores autorizados.
+              Esta sección es exclusiva para editores autorizados. Tu correo de Google no se encuentra registrado en la lista de editores gestionada por el Administrador Principal.
             </p>
 
             {authDeniedEmail && (
-              <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 mb-5 flex items-center justify-center gap-2 text-xs font-mono text-zinc-400">
-                <span className="text-zinc-500">Cuenta:</span>
+              <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 mb-4 flex items-center justify-center gap-2 text-xs font-mono text-zinc-400">
+                <span className="text-zinc-500">Cuenta ingresada:</span>
                 <span className="text-white font-semibold truncate">{authDeniedEmail}</span>
               </div>
             )}
 
-            <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
-              Puedes continuar explorando, filtrando y buscando en todo el catálogo de la videoteca de forma libre.
+            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
+              Si necesitas permisos para agregar o modificar películas, solicita al Administrador Principal que registre tu correo. Mientras tanto, puedes explorar y consultar libremente todo el catálogo de la videoteca.
             </p>
 
             <button
@@ -2472,11 +2472,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </div>
 
             <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
-              Acceso a editores
+              Acceso a Editores
             </h3>
 
             <p className="text-xs sm:text-sm text-zinc-300 font-medium leading-relaxed mb-6">
-              Inicia sesión con tu cuenta de Google autorizada por la administración para editar el catálogo.
+              Inicia sesión con tu cuenta de Google autorizada por el Administrador Principal para acceder a las herramientas de edición del catálogo.
             </p>
 
             <button
@@ -4774,8 +4774,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 sm:p-7 w-full max-w-xl shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button onClick={() => setShowAdminsModal(false)} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"><X size={20}/></button>
-            <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2 mb-2"><Users className="text-brand-light" size={24} /> Gestionar Admins</h3>
-            <p className="text-xs text-zinc-400 mb-6 font-medium leading-relaxed">Agrega administradores para que puedan editar el catálogo. Sus correos deben coincidir con la cuenta de Google con la que inicien sesión.</p>
+            <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2 mb-2"><Users className="text-brand-light" size={24} /> Gestionar Administradores</h3>
+            <p className="text-xs text-zinc-400 mb-6 font-medium leading-relaxed">Agrega administradores o editores autorizados para colaborar en la videoteca. Sus correos deben coincidir con la cuenta de Google con la que inicien sesión.</p>
             <AdminManager currentUser={user} userRole={userRole} />
           </div>
         </div>
@@ -5111,7 +5111,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
     }
 
     if (email === primarySuperAdmin.toLowerCase().trim()) {
-      setError(`${primarySuperAdmin} ya es el Super Admin Principal.`);
+      setError(`${primarySuperAdmin} ya es el Administrador Principal.`);
       return;
     }
 
@@ -5150,7 +5150,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       return;
     }
     if (target === primarySuperAdmin.toLowerCase().trim()) {
-      setError("No se puede eliminar la cuenta de Super Admin Principal.");
+      setError("No se puede eliminar la cuenta de Administrador Principal.");
       return;
     }
     setError("");
@@ -5180,7 +5180,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
        return;
     }
     if (target === primarySuperAdmin.toLowerCase().trim()) {
-       setError("No se puede cambiar el rol del Super Admin Principal.");
+       setError("No se puede cambiar el rol del Administrador Principal.");
        return;
     }
     setLoading(true);
@@ -5196,13 +5196,17 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   };
 
   const handleConfirmTransfer = async () => {
+    if (!isCurrentPrimary) {
+      setTransferError("Solo el Administrador Principal actual puede traspasar este puesto.");
+      return;
+    }
     const newEmail = targetTransferEmail.trim().toLowerCase();
     if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
       setTransferError("Por favor ingresa un correo de Google válido.");
       return;
     }
     if (newEmail === primarySuperAdmin.toLowerCase().trim()) {
-      setTransferError("Este correo ya es el Super Admin Principal actual.");
+      setTransferError("Este correo ya es el Administrador Principal actual.");
       return;
     }
     if (confirmPhrase.trim().toUpperCase() !== "TRANSFERIR") {
@@ -5214,7 +5218,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
     try {
       await transferPrimarySuperAdmin(newEmail, primarySuperAdmin);
       setPrimarySuperAdmin(newEmail);
-      setTransferSuccess(`Puesto de Super Admin Principal transferido exitosamente a ${newEmail}`);
+      setTransferSuccess(`Puesto de Administrador Principal transferido exitosamente a ${newEmail}`);
       const updatedAdmins = await fetchAdminsOptimized(true);
       setAdmins(updatedAdmins || []);
       setShowTransferModal(false);
@@ -5234,9 +5238,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300 shadow-sm">
           <Shield size={24} strokeWidth={1.75} className="text-zinc-300" />
         </div>
-        <p className="text-sm font-bold text-white">Acceso Exclusivo para Super Admins</p>
+        <p className="text-sm font-bold text-white">Acceso Exclusivo para Administradores</p>
         <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
-          Tu cuenta tiene rol de Editor. Solo los Super Admins pueden gestionar los administradores y roles de la videoteca.
+          Tu cuenta tiene rol de Editor. Solo los Administradores pueden gestionar los roles y permisos de la videoteca.
         </p>
       </div>
     );
@@ -5281,7 +5285,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
             className="w-full bg-zinc-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider focus:border-red-500 outline-none text-white cursor-pointer h-10 transition-colors"
           >
             <option value="editor">Editor</option>
-            <option value="admin">Super Admin</option>
+            <option value="admin">Administrador</option>
           </select>
         </div>
 
@@ -5329,12 +5333,12 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       </div>
       
       <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1.5 custom-scrollbar">
-        {/* Super Admin Principal Card */}
+        {/* Administrador Principal Card */}
         <div className="flex items-center justify-between bg-zinc-900/80 p-3 rounded-xl border border-white/10 shadow-sm gap-2">
           <div className="flex flex-col min-w-0 flex-1">
             <span className="text-sm font-bold text-white truncate" title={primarySuperAdmin}>{primarySuperAdmin}</span>
             <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider mt-0.5">
-              Super Admin Principal
+              Administrador Principal
             </span>
           </div>
           {isCurrentPrimary && (
@@ -5342,7 +5346,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               type="button"
               onClick={() => { setTargetTransferEmail(""); setTransferError(""); setShowTransferModal(true); }}
               className="text-xs bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0"
-              title="Ceder el puesto de Super Admin Principal a otro correo"
+              title="Ceder el puesto de Administrador Principal a otro correo"
             >
               <Crown size={14} className="text-zinc-400" />
               <span>Traspasar puesto</span>
@@ -5367,7 +5371,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                     </span>
                     <span className="text-[10px] text-zinc-500">•</span>
                     <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider shrink-0">
-                      {a.role === 'admin' ? 'Super Admin' : 'Editor'}
+                      {a.role === 'admin' ? 'Administrador' : 'Editor'}
                     </span>
                   </div>
                 </div>
@@ -5378,7 +5382,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         onClick={() => { setTargetTransferEmail(aEmail); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
                         disabled={loading} 
                         className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
-                        title={`Traspasar puesto de Super Admin Principal a ${aEmail}`}
+                        title={`Traspasar puesto de Administrador Principal a ${aEmail}`}
                       >
                         <Crown size={15} />
                       </button>
@@ -5390,7 +5394,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                       className="text-[10px] font-black uppercase tracking-widest bg-black/50 text-zinc-300 border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer"
                     >
                       <option value="editor">Editor</option>
-                      <option value="admin">Super Admin</option>
+                      <option value="admin">Administrador</option>
                     </select>
                     <button 
                       onClick={() => handleRemove(aEmail)} 
@@ -5446,7 +5450,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         )}
       </div>
 
-      {/* MODAL TRASPASAR SUPER ADMIN PRINCIPAL */}
+      {/* MODAL TRASPASAR ADMINISTRADOR PRINCIPAL */}
       {showTransferModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-[#0e0e0e] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative">
@@ -5461,20 +5465,20 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                 <Crown size={20} />
               </div>
               <div>
-                <h4 className="text-base font-bold text-white">Traspasar Super Admin Principal</h4>
+                <h4 className="text-base font-bold text-white">Traspasar Administrador Principal</h4>
                 <p className="text-[11px] text-zinc-400">Cede la titularidad principal de la videoteca</p>
               </div>
             </div>
 
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Como <strong className="text-white">Super Admin Principal</strong> actual ({primarySuperAdmin}), puedes ceder tu puesto a otro correo. Tu cuenta conservará el rol de <strong className="text-white">Super Admin</strong> y el nuevo correo asumirá la titularidad principal.
+              Como <strong className="text-white">Administrador Principal</strong> actual ({primarySuperAdmin}), puedes ceder tu puesto a otro correo. Tu cuenta conservará el rol de <strong className="text-white">Administrador</strong> y el nuevo correo asumirá la titularidad principal.
             </p>
 
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-zinc-300">Correo del nuevo Super Admin Principal:</label>
+              <label className="text-xs font-semibold text-zinc-300">Correo del nuevo Administrador Principal:</label>
               <input 
                 type="email"
-                placeholder="nuevo.superadmin@gmail.com"
+                placeholder="nuevo.admin@gmail.com"
                 value={targetTransferEmail}
                 onChange={(e) => setTargetTransferEmail(e.target.value)}
                 className="bg-zinc-900 border border-white/15 rounded-xl px-4 py-2.5 text-sm focus:border-white/40 outline-none text-white w-full"
