@@ -5,7 +5,7 @@ import {
 import { 
   getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  getDocsFromCache, getDocsFromServer, query, orderBy, limit, onSnapshot, where
+  getDocsFromCache, query, orderBy, limit, onSnapshot, where
 } from 'firebase/firestore';
 import { get, set } from 'idb-keyval';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -46,6 +46,11 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     const cachedPrimary = localStorage.getItem("videoteca_primary_superadmin");
     if (cachedPrimary) primary = cachedPrimary.toLowerCase().trim();
   } catch (_) {}
+
+  // 0. Verificación inmediata del SuperAdministrador Principal (0 lecturas, acceso garantizado inmediato)
+  if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
+    return { id: normalized, email: normalized, role: 'admin' };
+  }
 
   // 1. Verificación instantánea en memoria local IndexedDB (0 lecturas, alta velocidad)
   try {
@@ -88,18 +93,16 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     console.warn("Aviso al consultar /api/admins/check:", err);
   }
 
-  if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
-    return { id: normalized, email: normalized, role: 'admin' };
-  }
-
-  // 3. Verificación en Firestore directo por ID
+  // 3. Verificación en Firestore directo por ID (protegido contra saturación de cuota)
   try {
     const docSnap = await getDoc(doc(db, 'admins', normalized));
     if (docSnap.exists()) {
       return { id: docSnap.id, ...(docSnap.data() as any) };
     }
-  } catch (error) {
-    console.warn("Aviso al verificar admin en Firestore, recurriendo a consulta secundaria:", error);
+  } catch (error: any) {
+    if (!error?.message?.includes('Quota')) {
+      console.warn("Aviso al verificar admin en Firestore, recurriendo a consulta secundaria:", error);
+    }
   }
 
   // 4. Verificación en Firestore por campo email (por si se creó con auto-ID en la consola)
@@ -110,8 +113,10 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
       const firstDoc = qSnap.docs[0];
       return { id: firstDoc.id, ...(firstDoc.data() as any) };
     }
-  } catch (err) {
-    console.warn("Aviso al consultar email en Firestore:", err);
+  } catch (err: any) {
+    if (!err?.message?.includes('Quota')) {
+      console.warn("Aviso al consultar email en Firestore:", err);
+    }
   }
 
   return null;
@@ -198,16 +203,18 @@ export const mergeMoviesPreservingLocal = (localList: any[], incomingList: any[]
       const localTime = existing.updatedAt || existing.createdAt || "";
       const incomingTime = inc.updatedAt || inc.createdAt || "";
 
-      if (incomingTime > localTime) {
-        // Servidor es estrictamente más nuevo. Pero si el póster local se editó y el entrante es demo o vacío, preservar póster
+      if (incomingTime >= localTime || !localTime) {
+        // Servidor es igual o más reciente -> Aceptar actualización remota y preservar póster válido
         const finalPoster = (inc.poster && inc.poster !== "No disponible" && inc.poster !== "No encontrado")
           ? inc.poster
           : (existing.poster || inc.poster);
-        map.set(inc.id, { ...inc, poster: finalPoster });
+        map.set(inc.id, { ...existing, ...inc, poster: finalPoster });
       } else {
-        // La versión local es igual o más reciente (ej. editada en modo local o sin lecturas):
-        // Preservamos la versión local completa para no perder cambios ni pósters
-        map.set(inc.id, existing);
+        // Si la versión local es más reciente, fusionamos manteniendo los datos locales pero aceptando atributos faltantes
+        const finalPoster = (existing.poster && existing.poster !== "No disponible" && existing.poster !== "No encontrado")
+          ? existing.poster
+          : (inc.poster || existing.poster);
+        map.set(inc.id, { ...inc, ...existing, poster: finalPoster });
       }
     }
   }
@@ -303,7 +310,7 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
       where('updatedAt', '>', safeQueryTime)
     );
 
-    const snapshot = await getDocsFromServer(qDelta);
+    const snapshot = await getDocs(qDelta);
     if (snapshot.empty) {
       console.log("[Smart Delta Sync] Catálogo al día. 0 lecturas consumidas de datos nuevos.");
       return;
@@ -372,21 +379,125 @@ export const subscribeToMovies = (
       let deletedIds = await syncDeletedMovieIds();
       if (removedIds.length > 0) {
         deletedIds = Array.from(new Set([...deletedIds, ...removedIds]));
+        await set("videoteca_deleted_ids", deletedIds.slice(-1000));
       }
 
+      const deletedSet = new Set(deletedIds);
       const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const incomingIds = new Set(incomingMovies.map(m => m.id));
       const existing = await getCachedMovies() || [];
 
       const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
-      const deletedSet = new Set(deletedIds);
-      const cleanMerged = merged.filter(m => m && m.id && !deletedSet.has(m.id));
+
+      // Si una película existía en caché pero fue borrada en Firestore y no fue creada offline en los últimos 30s, purgarla
+      const nowMs = Date.now();
+      const cleanMerged = merged.filter(m => {
+        if (!m || !m.id) return false;
+        if (deletedSet.has(m.id)) return false;
+        if (incomingIds.has(m.id)) return true;
+        const createdMs = new Date(m.createdAt || m.updatedAt || 0).getTime();
+        return (nowMs - createdMs) < 30000;
+      });
 
       await setCachedMovies(cleanMerged, true);
       callback(cleanMerged);
     },
-    (err) => {
-      console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
-      if (onError) onError(err);
+    (err: any) => {
+      const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted';
+      if (!isQuota) {
+        console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
+        if (onError) onError(err);
+      } else {
+        console.log("[Firebase] Aviso: operando con catálogo en caché local (cuota protegida).");
+      }
+    }
+  );
+
+  return unsubscribe;
+};
+
+export const subscribeToAdmins = (
+  callback: (admins: any[]) => void, 
+  onError?: (err: any) => void
+) => {
+  console.log("[Firebase] Conectando sincronización en tiempo real de administradores...");
+  const q = collection(db, 'admins');
+
+  // Carga inicial optimizada instantánea desde caché/servidor
+  fetchAdminsOptimized().then(cachedAdmins => {
+    if (cachedAdmins && cachedAdmins.length > 0) {
+      callback(cachedAdmins);
+    }
+  }).catch(() => {});
+
+  const unsubscribe = onSnapshot(
+    q,
+    async (snapshot) => {
+      try {
+        const removedKeys: string[] = [];
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'removed' && change.doc && change.doc.id) {
+            removedKeys.push((change.doc.id || '').trim().toLowerCase());
+          }
+        });
+
+        const firestoreAdmins = snapshot.docs
+          .filter(doc => !doc.id.startsWith('_'))
+          .map(doc => ({ id: doc.id, ...doc.data() }));
+
+        let localAdmins: any[] = [];
+        try {
+          const offlineAdmins = await get("videoteca_admins_cache");
+          if (offlineAdmins) {
+            const parsed = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
+            if (Array.isArray(parsed)) localAdmins = parsed;
+          }
+        } catch (_) {}
+
+        let serverAdmins: any[] = [];
+        let deletedSet = new Set<string>(removedKeys);
+        try {
+          const [resAdmins, resDeleted] = await Promise.all([
+            fetch('/api/admins'),
+            fetch('/api/admins/deleted')
+          ]);
+          if (resAdmins.ok) {
+            const data = await resAdmins.json();
+            if (Array.isArray(data)) serverAdmins = data;
+          }
+          if (resDeleted.ok) {
+            const delData = await resDeleted.json();
+            if (Array.isArray(delData)) {
+              delData.forEach((d: string) => deletedSet.add((d || '').trim().toLowerCase()));
+            }
+          }
+        } catch (_) {}
+
+        let unified = mergeAdmins(serverAdmins, localAdmins, firestoreAdmins);
+        if (deletedSet.size > 0) {
+          unified = unified.filter(a => !deletedSet.has((a.email || a.id || '').trim().toLowerCase()));
+        }
+
+        await set("videoteca_admins_cache", unified);
+        fetch('/api/admins/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(unified)
+        }).catch(() => {});
+
+        callback(unified);
+      } catch (err) {
+        console.warn("[Firebase] Error procesando snapshot de admins:", err);
+      }
+    },
+    (err: any) => {
+      const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted';
+      if (!isQuota) {
+        console.warn("[Firebase] Aviso en onSnapshot de admins:", err);
+        if (onError) onError(err);
+      } else {
+        console.log("[Firebase] Aviso: administradores operando con caché local (cuota protegida).");
+      }
     }
   );
 
@@ -735,6 +846,11 @@ export const getPrimarySuperAdminEmail = async (): Promise<string> => {
     }
   } catch (_) {}
 
+  const defaultPrimary = 'chapceligg@gmail.com';
+  try {
+    localStorage.setItem("videoteca_primary_superadmin", defaultPrimary);
+  } catch (_) {}
+
   try {
     const docSnap = await getDoc(doc(db, 'admins', '_primary_config'));
     if (docSnap.exists()) {
@@ -745,11 +861,13 @@ export const getPrimarySuperAdminEmail = async (): Promise<string> => {
         return email;
       }
     }
-  } catch (err) {
-    console.warn("Aviso al obtener super admin principal desde Firestore:", err);
+  } catch (err: any) {
+    if (!err?.message?.includes('Quota')) {
+      console.warn("Aviso al obtener super admin principal desde Firestore:", err);
+    }
   }
 
-  return 'chapceligg@gmail.com';
+  return defaultPrimary;
 };
 
 export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAdminEmail: string) => {

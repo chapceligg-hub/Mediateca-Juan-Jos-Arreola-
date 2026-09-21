@@ -13,7 +13,7 @@ import {
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
-  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, getCachedMovies,
+  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
@@ -1443,10 +1443,6 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   }, []);
 
   useEffect(() => {
-    if (isAuthChecking) {
-      return;
-    }
-
     // 1. TRÍPTICO DE CARGA INCREMENTAL (FUSIÓN DE CACHÉ)
     // RECUPERACIÓN DE MEMORIA CACHÉ GUARDADA: Leemos inmediatamente por si Firestore tarda en conectar
     (async () => {
@@ -1461,22 +1457,26 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     })();
 
     // REFUERZO ANTI-AGOTAMIENTO DE LECTURAS:
-    // Sustituimos el sync pasivo por un onSnapshot respaldado por IndexedDB (persistentLocalCache).
-    // Esto GARANTIZA que el servidor solo sea consultado por los DELTAS (cambios) desde la última conexión.
-    // También recupera TODAS las películas que ya llevábamos al no filtrar localmente por createdAt.
+    // Suscripción única en segundo plano respaldada por IndexedDB (persistentLocalCache).
+    // Con dependencias vacías [] se ejecuta una sola vez al cargar la aplicación y no se destruye/reinicia en bucle.
     const unsub = subscribeToMovies(
       (unifiedMovies: Movie[]) => {
         setMovies(unifiedMovies);
         setFirestoreError(null);
       },
       (err: any) => {
-        console.error("Error en sincronización en tiempo real:", err);
-        setFirestoreError(err.message || "Error al sincronizar datos");
+        const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted';
+        if (!isQuota) {
+          console.error("Error en sincronización en tiempo real:", err);
+          setFirestoreError(err.message || "Error al sincronizar datos");
+        } else {
+          console.log("[Firebase] Operando con catálogo en memoria local (cuota protegida).");
+        }
       }
     );
 
     return () => unsub(); // Fundamental para no crear listeners infinitos y agotar lecturas
-  }, [isAuthChecking]);
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -5092,6 +5092,12 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
   useEffect(() => {
     loadAdmins(false);
+    const unsub = subscribeToAdmins((realtimeAdmins) => {
+      if (realtimeAdmins && Array.isArray(realtimeAdmins)) {
+        setAdmins(realtimeAdmins);
+      }
+    });
+    return () => unsub();
   }, []);
 
   const handleAdd = async (e: any) => {
