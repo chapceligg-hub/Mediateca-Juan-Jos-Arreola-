@@ -3575,7 +3575,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         isFavoriteOfMonthActive 
           ? 'bg-transparent mt-0 pt-1 pb-4 border-t border-transparent shadow-none px-0' 
           : 'pb-12 px-6 mt-1 border-t border-transparent'
-      }`}>
+      } ${selectedGenre !== "Todos" ? "category-footer-view" : "archivo-footer-view"}`}>
         <div className={`max-w-7xl mx-auto flex flex-col items-center space-y-6 transition-all duration-500 ${
           isFavoriteOfMonthActive ? 'pt-0' : 'pt-0'
         }`}>
@@ -3697,8 +3697,20 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   <ChevronRight size={20} strokeWidth={2.2} className="text-zinc-200 group-hover:text-white" />
                 </button>
               </div>
-              <p className={`pagination-summary-text text-[10px] md:text-xs font-bold uppercase tracking-[0.25em] mt-3 select-none ${isDayMode ? 'text-slate-600' : 'text-zinc-500'}`}>
-                TOTAL: <span className={`total-movies-count font-black ${isDayMode ? 'text-black' : 'text-white'}`}>{filteredMovies.length}</span> PELÍCULAS • PÁGINA <span className="current-page-num text-[#b41d1d] font-black">{currentPage}</span> DE <span className={`total-pages-count font-extrabold ${isDayMode ? 'text-black' : 'text-zinc-400'}`}>{totalPages}</span>
+              <p className={`pagination-summary-text text-[10px] md:text-xs font-bold uppercase tracking-[0.25em] mt-3 select-none ${
+                selectedGenre !== "Todos"
+                  ? 'text-zinc-500'
+                  : (isDayMode ? 'text-slate-600' : 'text-zinc-500')
+              }`}>
+                TOTAL: <span className={`total-movies-count font-black ${
+                  selectedGenre !== "Todos"
+                    ? 'text-white'
+                    : (isDayMode ? 'text-black' : 'text-white')
+                }`}>{filteredMovies.length}</span> PELÍCULAS • PÁGINA <span className="current-page-num text-[#b41d1d] font-black">{currentPage}</span> DE <span className={`total-pages-count font-extrabold ${
+                  selectedGenre !== "Todos"
+                    ? 'text-zinc-400'
+                    : (isDayMode ? 'text-black' : 'text-zinc-400')
+                }`}>{totalPages}</span>
               </p>
             </div>
           )}
@@ -4313,7 +4325,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                                         {ageRatingToUse}
                                       </span>
                                     )}
-                                    <span className="text-[9px] tracking-[0.12em] font-bold text-white bg-[#b41d1d]/80 border border-[#b41d1d] px-2.5 py-1 rounded">{yearToUse}</span>
+                                    <span className={`text-[9px] tracking-[0.12em] px-2.5 py-1 rounded bg-[#b41d1d]/80 border border-[#b41d1d] ${isDayMode ? 'text-black font-black' : 'text-white font-bold'}`}>
+                                      {yearToUse}
+                                    </span>
                                   </div>
                                 </div>
 

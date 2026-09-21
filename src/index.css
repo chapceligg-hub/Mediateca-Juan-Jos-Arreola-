@@ -1017,7 +1017,7 @@ button:hover svg[viewBox="0 0 72 40"] + div span {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9) !important;
 }
 
-/* Pagination Text Summary Below (Total Películas y Páginas) - DYNAMIC DARK/DAY MODE */
+/* Pagination Text Summary Below (Total Películas y Páginas) - DYNAMIC DARK/DAY MODE PARA OTRAS PESTAÑAS */
 .day-mode .pagination-summary-text,
 .day-mode footer p.pagination-summary-text {
   color: #3b5166 !important;
@@ -1064,6 +1064,34 @@ button:hover svg[viewBox="0 0 72 40"] + div span {
   padding: 0 !important;
   margin: 0 !important;
   box-shadow: none !important;
+}
+
+/* EXCLUSIÓN SOLO PARA LA PESTAÑA DE CATEGORÍAS: Conserva los colores exactos de modo noche */
+.day-mode .category-footer-view .pagination-summary-text,
+.day-mode footer.category-footer-view p.pagination-summary-text {
+  color: #71717a !important;
+  font-weight: 700 !important;
+}
+
+.day-mode .category-footer-view .pagination-summary-text .total-movies-count,
+.day-mode footer.category-footer-view .total-movies-count,
+.day-mode footer.category-footer-view span.total-movies-count {
+  color: #ffffff !important;
+  font-weight: 900 !important;
+}
+
+.day-mode .category-footer-view .pagination-summary-text .current-page-num,
+.day-mode footer.category-footer-view .current-page-num,
+.day-mode footer.category-footer-view span.current-page-num {
+  color: #b41d1d !important;
+  font-weight: 900 !important;
+}
+
+.day-mode .category-footer-view .pagination-summary-text .total-pages-count,
+.day-mode footer.category-footer-view .total-pages-count,
+.day-mode footer.category-footer-view span.total-pages-count {
+  color: #a1a1aa !important;
+  font-weight: 800 !important;
 }
 
 /* ==========================================================================
