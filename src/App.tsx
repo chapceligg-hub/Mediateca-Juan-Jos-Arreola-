@@ -1346,6 +1346,50 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     } catch (_) {}
   }, [isBypassActive]);
 
+  // Sincronización en tiempo real de cuentas registradas en todos los dispositivos (0 lecturas Firestore)
+  useEffect(() => {
+    const unsub = subscribeToAdmins((realtimeAdmins) => {
+      if (!realtimeAdmins || !Array.isArray(realtimeAdmins)) return;
+
+      // Actualizar sesión activa en tiempo real si el administrador modifica rol, nombre o revoca acceso desde otro dispositivo
+      setUser((currentActiveUser: any) => {
+        if (!currentActiveUser || !currentActiveUser.email) return currentActiveUser;
+        const currentEmail = (currentActiveUser.email || '').toLowerCase().trim();
+        if (currentEmail === 'chapceligg@gmail.com') return currentActiveUser;
+
+        const match = realtimeAdmins.find(a => (a.email || a.id || '').toLowerCase().trim() === currentEmail);
+        if (match) {
+          const roleLabel = match.role === 'admin' ? 'Administrador' : 'Editor';
+          const customName = (match.name || "").trim();
+          const hasCustomName = Boolean(customName && customName !== currentEmail && customName !== currentEmail.split('@')[0]);
+          const resolvedName = hasCustomName ? customName : roleLabel;
+          
+          setUserRole(match.role || 'editor');
+          setIsAdmin(true);
+
+          if (currentActiveUser.displayName !== resolvedName || currentActiveUser.photoURL !== (match.photoURL || '')) {
+            const updated = {
+              ...currentActiveUser,
+              displayName: resolvedName,
+              photoURL: match.photoURL || currentActiveUser.photoURL || ''
+            };
+            try { localStorage.setItem("videoteca_verified_user", JSON.stringify(updated)); } catch (_) {}
+            return updated;
+          }
+        } else {
+          // Si el administrador eliminó la cuenta en otro dispositivo, revocar de inmediato
+          try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {}
+          setIsAdmin(false);
+          setUserRole(null);
+          return null;
+        }
+        return currentActiveUser;
+      });
+    });
+
+    return () => unsub();
+  }, []);
+
   const handleVerifyGoogleEmail = async (emailToVerify?: string) => {
     const rawEmail = (emailToVerify || loginEmailInput || "").trim().toLowerCase();
     if (!rawEmail) {

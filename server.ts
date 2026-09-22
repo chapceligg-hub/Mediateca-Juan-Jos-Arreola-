@@ -231,10 +231,66 @@ function saveServerAdmins(admins: any[]) {
   }
 }
 
-app.get("/api/admins", (req, res) => {
+// Clientes conectados a la sincronización en tiempo real (SSE: Server-Sent Events, 0 lecturas de cuota)
+const adminStreamClients = new Set<express.Response>();
+
+function getActiveAdminsList(): any[] {
   const admins = loadServerAdmins();
   const deleted = new Set(loadDeletedAdminIds());
-  const active = admins.filter(a => !deleted.has((a.email || a.id || "").trim().toLowerCase()));
+  return admins.filter(a => !deleted.has((a.email || a.id || "").trim().toLowerCase()));
+}
+
+function broadcastAdminsUpdate() {
+  const active = getActiveAdminsList();
+  const payload = JSON.stringify({
+    type: "admins_update",
+    admins: active,
+    timestamp: new Date().toISOString()
+  });
+
+  for (const client of adminStreamClients) {
+    try {
+      client.write(`event: admins_update\ndata: ${payload}\n\n`);
+    } catch (_) {
+      adminStreamClients.delete(client);
+    }
+  }
+}
+
+// Endpoint de eventos en tiempo real (SSE) para sincronizar altas, bajas y cambios en cualquier dispositivo (0 lecturas Firestore)
+app.get("/api/admins/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof (res as any).flushHeaders === 'function') {
+    (res as any).flushHeaders();
+  }
+
+  // Enviar estado actual de inmediato al conectar
+  const active = getActiveAdminsList();
+  res.write(`event: admins_update\ndata: ${JSON.stringify({ type: "admins_update", admins: active, timestamp: new Date().toISOString() })}\n\n`);
+
+  adminStreamClients.add(res);
+
+  // Ping periódico cada 20s para mantener activo el canal y evitar caídas en redes móviles
+  const pingInterval = setInterval(() => {
+    try {
+      res.write(": ping\n\n");
+    } catch (_) {
+      clearInterval(pingInterval);
+      adminStreamClients.delete(res);
+    }
+  }, 20000);
+
+  req.on("close", () => {
+    clearInterval(pingInterval);
+    adminStreamClients.delete(res);
+  });
+});
+
+app.get("/api/admins", (req, res) => {
+  const active = getActiveAdminsList();
   res.json(active);
 });
 
@@ -248,13 +304,19 @@ app.get("/api/admins/check/:email", (req, res) => {
   if (!email) {
     return res.json({ isAdmin: false });
   }
+
+  const deleted = new Set(loadDeletedAdminIds());
+  if (deleted.has(email)) {
+    return res.json({ isAdmin: false, deleted: true });
+  }
+
   const admins = loadServerAdmins();
   if (email === "chapceligg@gmail.com") {
     const primaryMatch = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === "chapceligg@gmail.com");
     return res.json({ 
       isAdmin: true, 
       role: "admin", 
-      name: primaryMatch?.name || "", 
+      name: primaryMatch?.name || "Alex Cárdenas", 
       photoURL: primaryMatch?.photoURL || "",
       authProvider: "google",
       usedGoogleAuth: true
@@ -288,6 +350,7 @@ app.post("/api/admins/record-google-login", (req, res) => {
       lastGoogleLogin: new Date().toISOString() 
     };
     saveServerAdmins(admins);
+    broadcastAdminsUpdate();
   }
   res.json({ success: true });
 });
@@ -318,6 +381,7 @@ app.post("/api/admins", (req, res) => {
     admins.push(updatedEntry);
   }
   saveServerAdmins(admins);
+  broadcastAdminsUpdate();
   res.json({ success: true, admin: updatedEntry });
 });
 
@@ -344,11 +408,12 @@ app.post("/api/admins/sync", (req, res) => {
       id: "chapceligg@gmail.com",
       email: "chapceligg@gmail.com",
       role: "admin",
-      name: "Super Administrador"
+      name: "Alex Cárdenas"
     });
   }
   const merged = Array.from(map.values());
   saveServerAdmins(merged);
+  broadcastAdminsUpdate();
   res.json({ success: true, count: merged.length });
 });
 
@@ -366,6 +431,7 @@ app.delete("/api/admins/:email", (req, res) => {
 
   const admins = loadServerAdmins().filter(a => (a.email || a.id || "").trim().toLowerCase() !== email);
   saveServerAdmins(admins);
+  broadcastAdminsUpdate();
   res.json({ success: true });
 });
 

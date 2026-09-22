@@ -473,92 +473,129 @@ export const subscribeToMovies = (
   return unsubscribe;
 };
 
+// --- CANAL DE SINCRONIZACIÓN EN TIEMPO REAL MULTI-DISPOSITIVO (0 LECTURAS FIRESTORE) ---
+let adminBroadcastChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    adminBroadcastChannel = new BroadcastChannel('videoteca_admins_channel');
+  }
+} catch (_) {}
+
+const adminSubscribers = new Set<(admins: any[]) => void>();
+let globalAdminEventSource: EventSource | null = null;
+let adminReconnectTimeout: any = null;
+let adminPollFallbackInterval: any = null;
+let lastKnownAdminsList: any[] = [];
+
+export const notifyAdminSubscribers = (admins: any[]) => {
+  if (!Array.isArray(admins)) return;
+  lastKnownAdminsList = admins;
+  for (const cb of adminSubscribers) {
+    try {
+      cb(admins);
+    } catch (e) {
+      console.warn("Error en suscriptor de admins:", e);
+    }
+  }
+};
+
+const initAdminRealtimeStream = () => {
+  if (typeof window === 'undefined') return;
+  if (globalAdminEventSource && globalAdminEventSource.readyState !== EventSource.CLOSED) return;
+
+  try {
+    globalAdminEventSource = new EventSource('/api/admins/stream');
+
+    globalAdminEventSource.addEventListener('admins_update', async (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload && Array.isArray(payload.admins)) {
+          await set("videoteca_admins_cache", payload.admins);
+          notifyAdminSubscribers(payload.admins);
+          if (adminBroadcastChannel) {
+            adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: payload.admins });
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso al procesar evento de administradores:", err);
+      }
+    });
+
+    globalAdminEventSource.onopen = () => {
+      if (adminPollFallbackInterval) {
+        clearInterval(adminPollFallbackInterval);
+        adminPollFallbackInterval = null;
+      }
+    };
+
+    globalAdminEventSource.onerror = () => {
+      try { globalAdminEventSource?.close(); } catch (_) {}
+      globalAdminEventSource = null;
+
+      // Iniciar polling de respaldo cada 8 segundos mientras se reconecta
+      if (!adminPollFallbackInterval) {
+        adminPollFallbackInterval = setInterval(async () => {
+          try {
+            const res = await fetch('/api/admins');
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data) && data.length > 0) {
+                await set("videoteca_admins_cache", data);
+                notifyAdminSubscribers(data);
+              }
+            }
+          } catch (_) {}
+        }, 8000);
+      }
+
+      // Reconexión automática con EventSource tras 4 segundos
+      if (!adminReconnectTimeout) {
+        adminReconnectTimeout = setTimeout(() => {
+          adminReconnectTimeout = null;
+          initAdminRealtimeStream();
+        }, 4000);
+      }
+    };
+  } catch (err) {
+    console.warn("Aviso al iniciar EventSource de administradores:", err);
+  }
+};
+
+// Escuchar cambios de otras pestañas en el mismo dispositivo de forma instantánea (0ms)
+if (adminBroadcastChannel) {
+  adminBroadcastChannel.onmessage = async (event: MessageEvent) => {
+    if (event.data?.type === 'ADMINS_UPDATED' && Array.isArray(event.data.admins)) {
+      await set("videoteca_admins_cache", event.data.admins);
+      notifyAdminSubscribers(event.data.admins);
+    }
+  };
+}
+
 export const subscribeToAdmins = (
   callback: (admins: any[]) => void, 
   onError?: (err: any) => void
 ) => {
-  console.log("[Firebase] Conectando sincronización en tiempo real de administradores...");
-  const q = collection(db, 'admins');
+  adminSubscribers.add(callback);
 
-  // Carga inicial optimizada instantánea desde caché/servidor
-  fetchAdminsOptimized().then(cachedAdmins => {
-    if (cachedAdmins && cachedAdmins.length > 0) {
-      callback(cachedAdmins);
-    }
-  }).catch(() => {});
-
-  const unsubscribe = onSnapshot(
-    q,
-    async (snapshot) => {
-      try {
-        const removedKeys: string[] = [];
-        snapshot.docChanges().forEach(change => {
-          if (change.type === 'removed' && change.doc && change.doc.id) {
-            removedKeys.push((change.doc.id || '').trim().toLowerCase());
-          }
-        });
-
-        const firestoreAdmins = snapshot.docs
-          .filter(doc => !doc.id.startsWith('_'))
-          .map(doc => ({ id: doc.id, ...doc.data() }));
-
-        let localAdmins: any[] = [];
-        try {
-          const offlineAdmins = await get("videoteca_admins_cache");
-          if (offlineAdmins) {
-            const parsed = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
-            if (Array.isArray(parsed)) localAdmins = parsed;
-          }
-        } catch (_) {}
-
-        let serverAdmins: any[] = [];
-        let deletedSet = new Set<string>(removedKeys);
-        try {
-          const [resAdmins, resDeleted] = await Promise.all([
-            fetch('/api/admins'),
-            fetch('/api/admins/deleted')
-          ]);
-          if (resAdmins.ok) {
-            const data = await resAdmins.json();
-            if (Array.isArray(data)) serverAdmins = data;
-          }
-          if (resDeleted.ok) {
-            const delData = await resDeleted.json();
-            if (Array.isArray(delData)) {
-              delData.forEach((d: string) => deletedSet.add((d || '').trim().toLowerCase()));
-            }
-          }
-        } catch (_) {}
-
-        let unified = mergeAdmins(serverAdmins, localAdmins, firestoreAdmins);
-        if (deletedSet.size > 0) {
-          unified = unified.filter(a => !deletedSet.has((a.email || a.id || '').trim().toLowerCase()));
-        }
-
-        await set("videoteca_admins_cache", unified);
-        fetch('/api/admins/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(unified)
-        }).catch(() => {});
-
-        callback(unified);
-      } catch (err) {
-        console.warn("[Firebase] Error procesando snapshot de admins:", err);
+  // 1. Notificar de inmediato si ya tenemos lista en memoria
+  if (lastKnownAdminsList && lastKnownAdminsList.length > 0) {
+    callback(lastKnownAdminsList);
+  } else {
+    // 2. Cargar de caché local y de /api/admins de inmediato (0 lecturas Firestore)
+    fetchAdminsOptimized().then(cachedAdmins => {
+      if (cachedAdmins && cachedAdmins.length > 0) {
+        lastKnownAdminsList = cachedAdmins;
+        callback(cachedAdmins);
       }
-    },
-    (err: any) => {
-      const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted';
-      if (!isQuota) {
-        console.warn("[Firebase] Aviso en onSnapshot de admins:", err);
-        if (onError) onError(err);
-      } else {
-        console.log("[Firebase] Aviso: administradores operando con caché local (cuota protegida).");
-      }
-    }
-  );
+    }).catch(() => {});
+  }
 
-  return unsubscribe;
+  // 3. Conectar al canal SSE en tiempo real para recibir actualizaciones de cualquier dispositivo
+  initAdminRealtimeStream();
+
+  return () => {
+    adminSubscribers.delete(callback);
+  };
 };
 
 export const fetchMoviesOptimized = async (forceServer = false) => {
@@ -850,7 +887,7 @@ export const upsertAdmin = async (admin: any) => {
     console.warn("Aviso al guardar admin en Firestore (se guardará en backend y caché local):", err);
   }
   
-  // 3. Guardar en caché IndexedDB
+  // 3. Guardar en caché IndexedDB y propagar en tiempo real (0 lecturas)
   try {
     const offlineAdmins = await get("videoteca_admins_cache");
     let list: any[] = [];
@@ -864,6 +901,10 @@ export const upsertAdmin = async (admin: any) => {
       list.push(adminData);
     }
     await set("videoteca_admins_cache", list);
+    notifyAdminSubscribers(list);
+    if (adminBroadcastChannel) {
+      adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: list });
+    }
   } catch (e) {}
 
   return adminData;
@@ -891,6 +932,10 @@ export const deleteAdmin = async (idOrEmail: string) => {
       let list: any[] = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
       list = list.filter((a: any) => (a.id || a.email || '').toLowerCase().trim() !== adminId);
       await set("videoteca_admins_cache", list);
+      notifyAdminSubscribers(list);
+      if (adminBroadcastChannel) {
+        adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: list });
+      }
     }
   } catch (e) {}
 };
