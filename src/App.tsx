@@ -14,7 +14,7 @@ import {
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
-  getPrimarySuperAdminEmail, transferPrimarySuperAdmin
+  getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -336,6 +336,70 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [adminsList, setAdminsList] = useState<any[]>([]);
+  const [primarySuperAdminEmail, setPrimarySuperAdminEmail] = useState<string>("chapceligg@gmail.com");
+
+  useEffect(() => {
+    getPrimarySuperAdminEmail().then(email => {
+      if (email) setPrimarySuperAdminEmail(email);
+    }).catch(() => {});
+
+    fetchAdminsOptimized(false).then(adms => {
+      if (adms && Array.isArray(adms)) setAdminsList(adms);
+    }).catch(() => {});
+
+    const unsubAdmins = subscribeToAdmins((updated) => {
+      if (updated && Array.isArray(updated)) {
+        setAdminsList(updated);
+      }
+    });
+
+    return () => unsubAdmins();
+  }, []);
+
+  const sidebarDisplayName = useMemo(() => {
+    if (!user) return "";
+    const email = (user.email || '').toLowerCase().trim();
+    const primary = (primarySuperAdminEmail || 'chapceligg@gmail.com').toLowerCase().trim();
+    const isPrimary = email === primary;
+
+    // Buscar si existe un registro de administrador con nombre registrado
+    const currentAdminObj = adminsList.find(a => (a.email || a.id || '').toLowerCase().trim() === email);
+    const registeredName = (currentAdminObj?.name || user.customName || user.name || "").trim();
+    const googleOrDisplayName = (user.displayName || "").trim();
+
+    const isEmailOrPrefix = (name: string) => {
+      const n = name.toLowerCase().trim();
+      return !n || n === email || n === email.split('@')[0];
+    };
+
+    const isRoleName = (name: string) => {
+      const n = name.toLowerCase().trim();
+      return ['administrador', 'editor', 'administrador principal', 'admin', 'editor'].includes(n);
+    };
+
+    // 1. Si tiene nombre personalizado guardado
+    if (registeredName && !isEmailOrPrefix(registeredName) && !isRoleName(registeredName)) {
+      return registeredName;
+    }
+
+    // 2. Si displayName de Google/auth es un nombre real y no correo/rol/bypass
+    if (googleOrDisplayName && !isEmailOrPrefix(googleOrDisplayName) && !isRoleName(googleOrDisplayName) && googleOrDisplayName !== 'Admin Maestro (Bypass Dev)') {
+      return googleOrDisplayName;
+    }
+
+    // 3. Si no tiene nombre registrado, mostrar su ROL
+    if (isPrimary) {
+      return "Administrador Principal";
+    }
+
+    const currentRole = userRole || currentAdminObj?.role || user.role;
+    if (currentRole === 'admin') {
+      return "Administrador";
+    }
+
+    return "Editor";
+  }, [user, userRole, adminsList, primarySuperAdminEmail]);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -896,6 +960,7 @@ export default function App() {
   const [showEmailLoginModal, setShowEmailLoginModal] = useState(false);
   const [loginEmailInput, setLoginEmailInput] = useState("");
   const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const [pasteLimit, setPasteLimit] = useState<5 | 10>(5);
@@ -1252,16 +1317,20 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         const parsed = JSON.parse(savedVerifiedUser);
         const parsedEmail = (parsed?.email || '').toLowerCase().trim();
         if (parsedEmail === 'chapceligg@gmail.com') {
-          setUser(parsed);
+          setUser({ ...parsed, displayName: (parsed.displayName && parsed.displayName !== 'chapceligg@gmail.com') ? parsed.displayName : 'Administrador Principal' });
           setIsAdmin(true);
           setUserRole('admin');
           setIsAuthChecking(false);
         } else if (parsedEmail) {
           getAdminByEmail(parsedEmail).then(admin => {
             if (admin) {
+              const roleLabel = admin.role === 'admin' ? 'Administrador' : 'Editor';
+              const customName = (admin.name || "").trim();
+              const hasCustomName = Boolean(customName && customName !== parsedEmail && customName !== parsedEmail.split('@')[0]);
+              const resolvedName = hasCustomName ? customName : roleLabel;
               const updatedUser = {
                 ...parsed,
-                displayName: (admin.name && admin.name.trim()) || parsed.displayName || parsedEmail,
+                displayName: resolvedName,
                 photoURL: admin.photoURL || parsed.photoURL || ''
               };
               setUser(updatedUser);
@@ -1279,14 +1348,22 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
   const handleVerifyGoogleEmail = async (emailToVerify?: string) => {
     const rawEmail = (emailToVerify || loginEmailInput || "").trim().toLowerCase();
-    if (!rawEmail) return;
+    if (!rawEmail) {
+      setLoginError("Por favor ingresa un correo electrónico.");
+      return;
+    }
 
     setIsVerifyingEmail(true);
+    setLoginError("");
+
     try {
       const admin = await getAdminByEmail(rawEmail);
       if (rawEmail === 'chapceligg@gmail.com' || (admin && (admin.role === 'admin' || admin.role === 'editor'))) {
-        const resolvedName = (admin?.name || "").trim() || (rawEmail === 'chapceligg@gmail.com' ? 'Administrador Principal' : rawEmail);
         const resolvedRole = (rawEmail === 'chapceligg@gmail.com' || admin?.role === 'admin') ? 'admin' : 'editor';
+        const roleLabel = (rawEmail === 'chapceligg@gmail.com') ? 'Administrador Principal' : (resolvedRole === 'admin' ? 'Administrador' : 'Editor');
+        const customName = (admin?.name || "").trim();
+        const hasCustomName = Boolean(customName && customName !== rawEmail && customName !== rawEmail.split('@')[0]);
+        const resolvedName = hasCustomName ? customName : roleLabel;
         const editorUser = {
           email: rawEmail,
           displayName: resolvedName,
@@ -1298,13 +1375,14 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         try { localStorage.setItem("videoteca_verified_user", JSON.stringify(editorUser)); } catch (_) {}
         setShowEmailLoginModal(false);
         setLoginEmailInput("");
+        setLoginError("");
       } else {
         setShowEmailLoginModal(false);
         setAuthDeniedEmail(rawEmail);
         setAuthDenied(true);
       }
-    } catch (err) {
-      console.error("Error al validar correo de Google:", err);
+    } catch (err: any) {
+      console.error("Error al validar correo:", err);
       setShowEmailLoginModal(false);
       setAuthDeniedEmail(rawEmail);
       setAuthDenied(true);
@@ -1319,6 +1397,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       
       if (currentUser) {
         const userEmail = (currentUser.email || '').toLowerCase().trim();
+        if (userEmail) {
+          recordGoogleAuth(userEmail);
+        }
         let adminInfo: any = null;
         try {
           adminInfo = await getAdminByEmail(userEmail);
@@ -2245,7 +2326,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                              className={getSidebarItemClass(false)}
                            >
                              <Users className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                             <span>{t("GESTIONAR ADMINISTRADORES")}</span>
+                             <span>{t("ADMINISTRADORES")}</span>
                            </button>
                          )}
                          <button 
@@ -2293,10 +2374,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
           {user ? (
             <div className={`flex items-center gap-3.5 pt-2 cursor-pointer p-2 rounded-xl transition-colors ${isDayMode ? 'hover:bg-zinc-100' : 'hover:bg-white/5'}`}>
-              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || user.email}&background=random`} alt="Avatar" className={`w-9 h-9 rounded-full border shrink-0 ${isDayMode ? 'border-zinc-200' : 'border-white/10'}`} />
+              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${sidebarDisplayName || user.email}&background=random`} alt="Avatar" className={`w-9 h-9 rounded-full border shrink-0 ${isDayMode ? 'border-zinc-200' : 'border-white/10'}`} />
               <div className="flex flex-col min-w-0 overflow-hidden">
-                 <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`} title={user.displayName || user.email}>
-                   {user.displayName || user.email}
+                 <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`} title={sidebarDisplayName}>
+                   {sidebarDisplayName}
                  </span>
                  <span className={`text-[11px] truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={user.email}>
                    {user.email}
@@ -2418,11 +2499,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </div>
 
             <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
-              Acceso Reservado a Editores
+              Lo Sentimos
             </h3>
 
             <p className="text-sm text-zinc-300 font-medium leading-relaxed mb-4">
-              Esta sección es exclusiva para editores autorizados. Tu correo de Google no se encuentra registrado en la lista de editores gestionada por el Administrador Principal.
+              Esta sección es exclusiva para editores autorizados. Tu correo no se encuentra registrado en la lista de editores gestionada por el Administrador.
             </p>
 
             {authDeniedEmail && (
@@ -2433,7 +2514,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             )}
 
             <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
-              Si necesitas permisos para agregar o modificar películas, solicita al Administrador Principal que registre tu correo. Mientras tanto, puedes explorar y consultar libremente todo el catálogo de la videoteca.
+              Si necesitas permisos para agregar o modificar películas, solicita al Administrador que registre tu correo. Mientras tanto, puedes explorar y consultar libremente todo el catálogo de la Mediateca.
             </p>
 
             <button
@@ -2453,72 +2534,86 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         <div 
           id="modal-email-login"
           className="fixed inset-0 bg-black/85 backdrop-blur-md z-[400] flex items-center justify-center p-4 animate-in fade-in duration-300"
-          onClick={() => setShowEmailLoginModal(false)}
+          onClick={() => { setShowEmailLoginModal(false); setLoginError(""); }}
         >
           <div 
-            className="bg-[#0c0c0e] border border-white/10 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.95)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
+            className="bg-[#0c0c0e] border border-white/10 rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-[0_25px_70px_rgba(0,0,0,0.95)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <button 
               type="button" 
-              onClick={() => setShowEmailLoginModal(false)} 
+              onClick={() => { setShowEmailLoginModal(false); setLoginError(""); }} 
               className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
             >
               <X size={18} />
             </button>
 
-            <div className="w-14 h-14 rounded-2xl bg-white/5 border border-red-500/40 flex items-center justify-center text-white mb-4 shadow-[0_0_20px_rgba(180,29,29,0.2)]">
-              <Mail size={24} className="text-white drop-shadow-[0_2px_10px_rgba(239,68,68,0.4)]" />
+            <div className="w-13 h-13 rounded-2xl bg-white/5 border border-red-500/40 flex items-center justify-center text-white mb-3 shadow-[0_0_20px_rgba(180,29,29,0.2)]">
+              <Mail size={22} className="text-white drop-shadow-[0_2px_10px_rgba(239,68,68,0.4)]" />
             </div>
 
-            <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
+            <h3 className="text-xl font-black uppercase tracking-tight text-white mb-1.5">
               Acceso a Editores
             </h3>
 
-            <p className="text-xs sm:text-sm text-zinc-300 font-medium leading-relaxed mb-6">
-              Inicia sesión con tu cuenta de Google autorizada por el Administrador Principal para acceder a las herramientas de edición del catálogo.
+            <p className="text-xs text-zinc-300 font-medium leading-relaxed mb-5">
+              Inicia sesión con tu cuenta autorizada por el administrador para acceder a las herramientas de edición y catalogación.
             </p>
 
-            <button
-              type="button"
-              id="btn-modal-google-popup"
-              disabled={isVerifyingEmail}
-              onClick={async () => {
-                if (isVerifyingEmail) return;
-                setIsVerifyingEmail(true);
-                try {
-                  const loggedUser = await signInWithGoogle();
-                  if (loggedUser) {
-                    const email = ((loggedUser as any).email || (loggedUser as any).user?.email || '').toLowerCase().trim();
-                    if (email) {
-                      await handleVerifyGoogleEmail(email);
-                    }
-                  }
-                } catch (err: any) {
-                  console.warn("Popup de Google no completado:", err);
-                } finally {
-                  setIsVerifyingEmail(false);
-                }
+            {/* Formulario de Correo Autorizado */}
+            <form
+              id="form-verify-email-login"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleVerifyGoogleEmail(loginEmailInput);
               }}
-              className="w-full py-3.5 px-5 rounded-xl bg-white hover:bg-zinc-100 text-black font-extrabold text-sm transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:shadow-[0_0_40px_rgba(255,255,255,0.35)] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-3"
+              className="w-full flex flex-col gap-3"
             >
-              {isVerifyingEmail ? (
-                <>
-                  <Loader2 size={18} className="animate-spin text-black" />
-                  <span>Conectando con Google...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                  </svg>
-                  <span>Continuar con Google</span>
-                </>
+              <div className="flex flex-col text-left">
+                <label htmlFor="input-login-email" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <Mail size={12} className="text-zinc-400" />
+                  <span>Correo registrado</span>
+                </label>
+                <input
+                  id="input-login-email"
+                  type="email"
+                  value={loginEmailInput}
+                  onChange={(e) => {
+                    setLoginEmailInput(e.target.value);
+                    if (loginError) setLoginError("");
+                  }}
+                  placeholder="ej. editor@empresa.com"
+                  required
+                  className="w-full bg-zinc-900 border border-white/15 focus:border-[#b41d1d] focus:ring-1 focus:ring-[#b41d1d]/30 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-600 outline-none transition-all"
+                />
+              </div>
+
+              {loginError && (
+                <div className="p-2.5 bg-red-500/10 border border-red-500/25 rounded-xl text-xs text-red-400 text-left flex items-start gap-2">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5 text-red-400" />
+                  <span className="leading-tight">{loginError}</span>
+                </div>
               )}
-            </button>
+
+              <button
+                type="submit"
+                id="btn-submit-verify-email"
+                disabled={isVerifyingEmail || !loginEmailInput.trim()}
+                className="w-full py-2.5 px-4 rounded-xl bg-[#b41d1d] hover:bg-[#cf2424] text-white font-extrabold text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_20px_rgba(180,29,29,0.4)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
+              >
+                {isVerifyingEmail ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    <span>Verificando permisos...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={15} />
+                    <span>Verificar y Acceder</span>
+                  </>
+                )}
+              </button>
+            </form>
           </div>
         </div>
       )}
@@ -4789,7 +4884,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 sm:p-7 w-full max-w-xl shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button onClick={() => setShowAdminsModal(false)} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"><X size={20}/></button>
             <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2 mb-2"><Users className="text-brand-light" size={24} /> Gestionar Administradores</h3>
-            <p className="text-xs text-zinc-400 mb-6 font-medium leading-relaxed">Agrega administradores o editores autorizados para colaborar en la videoteca. Sus correos deben coincidir con la cuenta de Google con la que inicien sesión.</p>
+            <p className="text-xs text-zinc-400 mb-6 font-medium leading-relaxed">Agrega administradores o editores autorizados para colaborar en la mediateca. Registra sus correos electrónicos para habilitar su acceso a la plataforma.</p>
             <AdminManager currentUser={user} userRole={userRole} />
           </div>
         </div>
@@ -5067,10 +5162,18 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   const [admins, setAdmins] = useState<any[]>([]);
   const [primarySuperAdmin, setPrimarySuperAdmin] = useState<string>("chapceligg@gmail.com");
   const [newEmail, setNewEmail] = useState("");
+  const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("editor");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
+
+  // Estados para edición de cuentas existentes
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editEmailValue, setEditEmailValue] = useState("");
+  const [editNameValue, setEditNameValue] = useState("");
+  const [editRoleValue, setEditRoleValue] = useState("editor");
+  const [editSaving, setEditSaving] = useState(false);
 
   // Estados para traspaso de Super Admin Principal
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -5132,11 +5235,12 @@ const AdminManager = ({ currentUser, userRole }: any) => {
     setLoading(true);
     setError("");
     try {
+      const trimmedName = newName.trim();
       const payload = {
         email,
         createdAt: new Date().toISOString(),
         addedBy: currentUser?.email || currentUser?.uid || 'admin',
-        name: email.split('@')[0] || email,
+        name: trimmedName,
         photoURL: "",
         role: newRole,
         id: email
@@ -5148,11 +5252,112 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         return [...filtered, payload];
       });
       setNewEmail("");
+      setNewName("");
       setNewRole("editor");
     } catch (err: any) {
       setError(err?.message || "Error al registrar el administrador.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startEditing = (admin: any) => {
+    const email = (admin.email || admin.id || '').toLowerCase().trim();
+    setEditingEmail(email);
+    setEditEmailValue(email);
+    setEditNameValue(admin.name || "");
+    setEditRoleValue(admin.role || "editor");
+    setUserToDelete(null);
+    setError("");
+  };
+
+  const cancelEditing = () => {
+    setEditingEmail(null);
+    setEditEmailValue("");
+    setEditNameValue("");
+    setEditRoleValue("editor");
+  };
+
+  const handleSaveEdit = async (originalEmail: string) => {
+    const newTargetEmail = editEmailValue.trim().toLowerCase();
+    const newTargetName = editNameValue.trim();
+    const newTargetRole = editRoleValue;
+
+    if (!newTargetEmail || !newTargetEmail.includes('@') || !newTargetEmail.includes('.')) {
+      setError("Por favor introduce un correo electrónico válido.");
+      return;
+    }
+
+    const isPrimary = originalEmail.toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim();
+
+    if (!isPrimary && newTargetEmail === primarySuperAdmin.toLowerCase().trim()) {
+      setError(`No puedes renombrar esta cuenta al correo del Administrador Principal.`);
+      return;
+    }
+
+    setEditSaving(true);
+    setError("");
+    try {
+      const existingAdmin = admins.find(a => (a.email || a.id || '').toLowerCase().trim() === originalEmail);
+
+      if (isPrimary) {
+        if (newTargetEmail !== originalEmail) {
+          await transferPrimarySuperAdmin(newTargetEmail, originalEmail);
+          setPrimarySuperAdmin(newTargetEmail);
+        }
+        const payload = {
+          email: newTargetEmail,
+          name: newTargetName,
+          role: 'admin',
+          id: newTargetEmail,
+          createdAt: existingAdmin?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          addedBy: existingAdmin?.addedBy || currentUser?.email || 'admin',
+          photoURL: existingAdmin?.photoURL || ''
+        };
+        await upsertAdmin(payload);
+        setAdmins(prev => {
+          const filtered = prev.filter(a => {
+            const e = (a.email || a.id || '').toLowerCase().trim();
+            return e !== originalEmail && e !== newTargetEmail;
+          });
+          return [...filtered, payload];
+        });
+        setTransferSuccess("Cambios guardados.");
+        setTimeout(() => setTransferSuccess(""), 3500);
+      } else {
+        const payload = {
+          email: newTargetEmail,
+          name: newTargetName,
+          role: newTargetRole,
+          id: newTargetEmail,
+          createdAt: existingAdmin?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          addedBy: existingAdmin?.addedBy || currentUser?.email || 'admin',
+          photoURL: existingAdmin?.photoURL || ''
+        };
+
+        if (newTargetEmail !== originalEmail) {
+          await deleteAdmin(originalEmail);
+          await upsertAdmin(payload);
+          setAdmins(prev => {
+            const filtered = prev.filter(a => {
+              const e = (a.email || a.id || '').toLowerCase().trim();
+              return e !== originalEmail && e !== newTargetEmail;
+            });
+            return [...filtered, payload];
+          });
+        } else {
+          await upsertAdmin(payload);
+          setAdmins(prev => prev.map(a => ((a.email || a.id || '').toLowerCase().trim() === originalEmail ? { ...a, ...payload } : a)));
+        }
+      }
+
+      setEditingEmail(null);
+    } catch (err: any) {
+      setError(err?.message || "Error al actualizar los datos de la cuenta.");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -5168,6 +5373,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       return;
     }
     setError("");
+    setEditingEmail(null);
     setUserToDelete(target);
   };
 
@@ -5216,7 +5422,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
     }
     const newEmail = targetTransferEmail.trim().toLowerCase();
     if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
-      setTransferError("Por favor ingresa un correo de Google válido.");
+      setTransferError("Por favor ingresa un correo electrónico válido.");
       return;
     }
     if (newEmail === primarySuperAdmin.toLowerCase().trim()) {
@@ -5263,67 +5469,106 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   const additionalAdmins = admins.filter(a => (a.email || a.id || '').toLowerCase().trim() !== primarySuperAdmin.toLowerCase().trim());
 
   return (
-    <div className="flex flex-col gap-4 w-full font-sans">
-      <form id="form-add-admin" onSubmit={handleAdd} className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 w-full bg-white/[0.02] border border-white/5 p-4 rounded-2xl">
-        <div className="flex-1 min-w-0 flex flex-col">
-          <label htmlFor="input-new-admin-email" className="text-[11px] font-bold text-zinc-300 mb-1.5 flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <span>Cuenta de Google</span>
-            <span className="text-red-400">*</span>
-          </label>
-          <input 
-            id="input-new-admin-email"
-            type="email" 
-            placeholder="correo@dominio.com" 
-            value={newEmail} 
-            onChange={(e) => setNewEmail(e.target.value)}
-            required
-            className="w-full bg-zinc-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500/20 outline-none text-white placeholder:text-zinc-500 min-w-0 transition-all font-sans h-10"
-          />
+    <div className="flex flex-col gap-5 w-full font-sans">
+      {/* FORMULARIO AGREGAR CUENTA - DISEÑO COMPACTO Y OPTIMIZADO */}
+      <form id="form-add-admin" onSubmit={handleAdd} className="flex flex-col gap-4 w-full bg-[#121215] border border-white/[0.08] p-4 sm:p-5 rounded-2xl shadow-sm transition-all">
+        {/* Cabecera limpia y estilizada */}
+        <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-zinc-300">
+              <Users size={14} />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-100">Registrar Nuevo Acceso</span>
+            </div>
+          </div>
         </div>
 
-        <div className="w-full sm:w-44 flex flex-col min-w-0">
-          <label htmlFor="select-new-admin-role" className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5 flex items-center gap-1.5">
-            <Shield size={11} className="text-zinc-400" />
-            <span>Rol asignado</span>
-          </label>
-          <select
-            id="select-new-admin-role"
-            value={newRole}
-            onChange={(e) => setNewRole(e.target.value)}
-            className="w-full bg-zinc-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider focus:border-red-500 outline-none text-white cursor-pointer h-10 transition-colors"
-          >
-            <option value="editor">Editor</option>
-            <option value="admin">Administrador</option>
-          </select>
+        {/* Fila 1: Correo Electrónico y Nombre */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 w-full pt-0.5">
+          {/* Campo Correo Electrónico */}
+          <div className="sm:col-span-7 flex flex-col min-w-0">
+            <label htmlFor="input-new-admin-email" className="text-[11px] font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
+              <Mail size={12} className="text-zinc-400" />
+              <span>Correo electrónico</span>
+              <span className="text-red-400 text-xs">*</span>
+            </label>
+            <input 
+              id="input-new-admin-email"
+              type="email" 
+              placeholder="correo@ejemplo.com" 
+              value={newEmail} 
+              onChange={(e) => setNewEmail(e.target.value)}
+              required
+              className="w-full bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black rounded-xl px-3.5 py-2 text-xs text-white placeholder:text-zinc-600 outline-none transition-all h-10"
+            />
+          </div>
+
+          {/* Campo Nombre */}
+          <div className="sm:col-span-5 flex flex-col min-w-0">
+            <label htmlFor="input-new-admin-name" className="text-[11px] font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
+              <User size={12} className="text-zinc-400" />
+              <span>Nombre</span>
+              <span className="text-zinc-500 font-normal text-[10px]">(Opcional)</span>
+            </label>
+            <input 
+              id="input-new-admin-name"
+              type="text" 
+              placeholder="ej. Carlos Pérez" 
+              value={newName} 
+              onChange={(e) => setNewName(e.target.value)}
+              className="w-full bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black rounded-xl px-3.5 py-2 text-xs text-white placeholder:text-zinc-600 outline-none transition-all h-10"
+            />
+          </div>
         </div>
 
-        <button 
-          id="btn-add-admin"
-          disabled={loading || !newEmail.trim()} 
-          type="submit" 
-          className="bg-white hover:bg-zinc-200 text-black px-5 py-2 rounded-xl font-black text-xs uppercase tracking-wider disabled:opacity-40 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-md active:scale-95 h-10 w-full sm:w-auto"
-          title="Agregar cuenta con permisos"
-        >
-          <Plus size={16} strokeWidth={2.5} />
-          <span>Añadir</span>
-        </button>
+        {/* Fila 2: Selector de Rol y Botón de Acción con amplio espacio */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 w-full items-end">
+          {/* Selector de Rol */}
+          <div className="sm:col-span-7 flex flex-col min-w-0">
+            <label htmlFor="select-new-admin-role" className="text-[11px] font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
+              <Shield size={12} className="text-zinc-400" />
+              <span>Rol asignado</span>
+            </label>
+            <div className="relative">
+              <select
+                id="select-new-admin-role"
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value)}
+                className="w-full bg-[#0a0a0c] border border-white/10 focus:border-white/30 rounded-xl pl-3.5 pr-8 py-2 text-xs font-semibold text-zinc-200 outline-none cursor-pointer h-10 transition-colors appearance-none"
+              >
+                <option value="editor" className="bg-[#121215] text-white py-1">Editor (Catalogación y Edición)</option>
+                <option value="admin" className="bg-[#121215] text-white py-1">Administrador (Control Total)</option>
+              </select>
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Botón de Acción bien proporcionado */}
+          <div className="sm:col-span-5 flex flex-col min-w-0">
+            <button 
+              id="btn-add-admin"
+              disabled={loading || !newEmail.trim()} 
+              type="submit" 
+              className="bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-950 font-bold text-xs px-5 rounded-xl transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white h-10 w-full"
+              title="Agregar cuenta con permisos"
+            >
+              <Plus size={16} strokeWidth={2.5} className="shrink-0 text-zinc-950" />
+              <span className="tracking-wide">Añadir cuenta</span>
+            </button>
+          </div>
+        </div>
       </form>
       
       {error && (
-        <div className="text-red-400 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl flex items-center gap-2">
-          <AlertTriangle size={14} className="shrink-0 text-red-400" />
+        <div className="text-red-400 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-2.5">
+          <AlertTriangle size={15} className="shrink-0 text-red-400" />
           <span>{error}</span>
         </div>
       )}
 
       {transferSuccess && (
-        <div className="text-emerald-400 text-xs font-semibold bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl flex items-center gap-2">
+        <div className="bg-emerald-950/40 border border-emerald-500/20 text-emerald-300 text-xs font-medium px-3.5 py-2.5 rounded-xl flex items-center gap-2.5 animate-in fade-in duration-150 shadow-sm">
           <Check size={14} className="shrink-0 text-emerald-400" />
           <span>{transferSuccess}</span>
         </div>
@@ -5339,88 +5584,311 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           onClick={() => loadAdmins(true)}
           disabled={loading}
           title="Recargar lista desde Firestore"
-          className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+          className="text-zinc-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] font-medium"
         >
           <RotateCcw size={12} className={loading ? "animate-spin text-red-500" : ""} />
           <span>Sincronizar</span>
         </button>
       </div>
       
-      <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1.5 custom-scrollbar">
+      <div className="flex flex-col gap-2.5 max-h-[360px] overflow-y-auto pr-1.5 custom-scrollbar">
         {/* Administrador Principal Card */}
-        <div className="flex items-center justify-between bg-zinc-900/80 p-3 rounded-xl border border-white/10 shadow-sm gap-2">
-          <div className="flex flex-col min-w-0 flex-1">
-            <span className="text-sm font-bold text-white truncate" title={primarySuperAdmin}>{primarySuperAdmin}</span>
-            <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider mt-0.5">
-              Administrador Principal
-            </span>
-          </div>
-          {isCurrentPrimary && (
-            <button
-              type="button"
-              onClick={() => { setTargetTransferEmail(""); setTransferError(""); setShowTransferModal(true); }}
-              className="text-xs bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0"
-              title="Ceder el puesto de Administrador Principal a otro correo"
-            >
-              <Crown size={14} className="text-zinc-400" />
-              <span>Traspasar puesto</span>
-            </button>
-          )}
-        </div>
+        {(() => {
+          const primaryAdminObj = admins.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || { email: primarySuperAdmin, name: '', role: 'admin' };
+          const customName = (primaryAdminObj.name || '').trim();
+          const hasCustomName = Boolean(customName && customName !== primarySuperAdmin && customName !== primarySuperAdmin.split('@')[0]);
+          const displayName = hasCustomName ? customName : primarySuperAdmin;
+          const isEditingPrimary = editingEmail === primarySuperAdmin.toLowerCase().trim();
+
+          return (
+            <div key={primarySuperAdmin} className="flex flex-col bg-zinc-900/80 rounded-xl border border-white/10 gap-2 w-full overflow-hidden transition-all hover:border-white/20">
+              {isEditingPrimary ? (
+                <div className="p-4 bg-black/70 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Edit2 size={13} className="text-red-400" />
+                      <span>Editar Administrador Principal</span>
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={cancelEditing}
+                      className="text-zinc-500 hover:text-white p-1 rounded-md transition-colors"
+                      title="Cancelar edición"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col min-w-0">
+                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
+                        <Mail size={11} className="text-zinc-400" />
+                        <span>Correo electrónico</span>
+                        <span className="text-red-400 font-bold">*</span>
+                      </label>
+                      <input 
+                        type="email"
+                        value={editEmailValue}
+                        onChange={(e) => setEditEmailValue(e.target.value)}
+                        placeholder="correo@dominio.com"
+                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="flex flex-col min-w-0">
+                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
+                        <User size={11} className="text-zinc-400" />
+                        <span>Nombre (Opcional)</span>
+                      </label>
+                      <input 
+                        type="text"
+                        value={editNameValue}
+                        onChange={(e) => setEditNameValue(e.target.value)}
+                        placeholder="ej. Carlos Pérez"
+                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1 border-t border-white/5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-medium text-zinc-400">Rol:</span>
+                      <span className="text-[11px] font-medium text-zinc-200 bg-white/[0.04] border border-white/10 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 shadow-sm">
+                        <Crown size={12} className="text-amber-400/90" />
+                        <span>Administrador Principal</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => handleSaveEdit(primarySuperAdmin.toLowerCase().trim())}
+                        disabled={editSaving || !editEmailValue.trim()}
+                        className="flex-1 sm:flex-none bg-white hover:bg-zinc-200 text-black px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                      >
+                        {editSaving ? <RotateCcw size={13} className="animate-spin" /> : <Check size={13} />}
+                        <span>Guardar cambios</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={cancelEditing}
+                        disabled={editSaving}
+                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white rounded-lg text-xs font-medium transition-colors cursor-pointer border border-white/10"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-3.5 gap-3">
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-sm font-bold text-white truncate" title={displayName}>
+                      {displayName}
+                    </span>
+                    <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                      {hasCustomName && (
+                        <>
+                          <span className="text-xs text-zinc-400 font-normal truncate" title={primarySuperAdmin}>
+                            {primarySuperAdmin}
+                          </span>
+                          <span className="text-[10px] text-zinc-500">•</span>
+                        </>
+                      )}
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
+                        Administrador Principal
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isSuper && (
+                      <button 
+                        type="button"
+                        onClick={() => startEditing(primaryAdminObj)}
+                        disabled={loading}
+                        className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs"
+                        title="Editar nombre o correo del Administrador Principal"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+                    )}
+                    {isCurrentPrimary && (
+                      <button
+                        type="button"
+                        onClick={() => { setTargetTransferEmail(""); setTransferError(""); setShowTransferModal(true); }}
+                        className="text-xs bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0"
+                        title="Ceder el puesto de Administrador Principal a otro correo"
+                      >
+                        <Crown size={14} className="text-zinc-400" />
+                        <span className="hidden sm:inline">Traspasar</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         
         {additionalAdmins.map(a => {
           const aEmail = (a.email || a.id || '').toLowerCase().trim();
-          const displayName = a.name && a.name.trim() !== aEmail ? a.name.trim() : (aEmail.split('@')[0] || aEmail);
+          const customName = (a.name || '').trim();
+          const hasCustomName = Boolean(customName && customName !== aEmail && customName !== aEmail.split('@')[0]);
+          const roleLabel = a.role === 'admin' ? 'Administrador' : 'Editor';
+          const displayName = hasCustomName ? customName : roleLabel;
           const isDeletingThis = userToDelete === aEmail;
+          const isEditingThis = editingEmail === aEmail;
+
           return (
-            <div key={aEmail} className="flex flex-col bg-zinc-900/80 rounded-xl border border-white/10 gap-2 w-full overflow-hidden transition-colors hover:border-white/20">
-              <div className="flex items-center justify-between p-3 gap-2">
-                <div className="flex flex-col flex-1 min-w-0">
-                  <span className="text-sm font-bold text-white truncate" title={displayName}>
-                    {displayName}
-                  </span>
-                  <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                    <span className="text-xs text-zinc-400 font-normal truncate" title={aEmail}>
-                      {aEmail}
+            <div key={aEmail} className="flex flex-col bg-zinc-900/80 rounded-xl border border-white/10 gap-2 w-full overflow-hidden transition-all hover:border-white/20">
+              {/* MODO EDICIÓN INLINE */}
+              {isEditingThis ? (
+                <div className="p-4 bg-black/70 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Edit2 size={13} className="text-red-400" />
+                      <span>Editar datos de la cuenta</span>
                     </span>
-                    <span className="text-[10px] text-zinc-500">•</span>
-                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider shrink-0">
-                      {a.role === 'admin' ? 'Administrador' : 'Editor'}
-                    </span>
-                  </div>
-                </div>
-                {aEmail !== currentEmail && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isCurrentPrimary && (
-                      <button 
-                        onClick={() => { setTargetTransferEmail(aEmail); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
-                        disabled={loading} 
-                        className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
-                        title={`Traspasar puesto de Administrador Principal a ${aEmail}`}
-                      >
-                        <Crown size={15} />
-                      </button>
-                    )}
-                    <select 
-                      value={a.role || 'editor'}
-                      onChange={(e) => handleRoleChange(aEmail, e.target.value)}
-                      disabled={loading}
-                      className="text-[10px] font-black uppercase tracking-widest bg-black/50 text-zinc-300 border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer"
-                    >
-                      <option value="editor">Editor</option>
-                      <option value="admin">Administrador</option>
-                    </select>
                     <button 
-                      onClick={() => handleRemove(aEmail)} 
-                      disabled={loading} 
-                      className="text-zinc-500 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
-                      title="Eliminar permiso"
+                      type="button"
+                      onClick={cancelEditing}
+                      className="text-zinc-500 hover:text-white p-1 rounded-md transition-colors"
+                      title="Cancelar edición"
                     >
-                      <Trash2 size={16} />
+                      <X size={15} />
                     </button>
                   </div>
-                )}
-              </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col min-w-0">
+                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
+                        <Mail size={11} className="text-zinc-400" />
+                        <span>Correo electrónico</span>
+                        <span className="text-red-400 font-bold">*</span>
+                      </label>
+                      <input 
+                        type="email"
+                        value={editEmailValue}
+                        onChange={(e) => setEditEmailValue(e.target.value)}
+                        placeholder="correo@dominio.com"
+                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="flex flex-col min-w-0">
+                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
+                        <User size={11} className="text-zinc-400" />
+                        <span>Nombre (Opcional)</span>
+                      </label>
+                      <input 
+                        type="text"
+                        value={editNameValue}
+                        onChange={(e) => setEditNameValue(e.target.value)}
+                        placeholder="ej. Carlos Pérez"
+                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1 border-t border-white/5">
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] font-bold text-zinc-400">Rol:</label>
+                      <select 
+                        value={editRoleValue}
+                        onChange={(e) => setEditRoleValue(e.target.value)}
+                        className="bg-zinc-900 text-xs font-bold text-white border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer"
+                      >
+                        <option value="editor">Editor</option>
+                        <option value="admin">Administrador</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => handleSaveEdit(aEmail)}
+                        disabled={editSaving || !editEmailValue.trim()}
+                        className="flex-1 sm:flex-none bg-white hover:bg-zinc-200 text-black px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                      >
+                        {editSaving ? <RotateCcw size={13} className="animate-spin" /> : <Check size={13} />}
+                        <span>Guardar cambios</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={cancelEditing}
+                        disabled={editSaving}
+                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white rounded-lg text-xs font-medium transition-colors cursor-pointer border border-white/10"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* MODO VISTA NORMAL */
+                <div className="flex items-center justify-between p-3.5 gap-3">
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-sm font-bold text-white truncate" title={displayName}>
+                      {displayName}
+                    </span>
+                    <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                      <span className="text-xs text-zinc-400 font-normal truncate" title={aEmail}>
+                        {aEmail}
+                      </span>
+                      <span className="text-[10px] text-zinc-500">•</span>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider shrink-0">
+                        {a.role === 'admin' ? 'Administrador' : 'Editor'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {aEmail !== currentEmail && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button 
+                        type="button"
+                        onClick={() => startEditing(a)}
+                        disabled={loading}
+                        className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs"
+                        title="Editar nombre o correo"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+
+                      {isCurrentPrimary && (
+                        <button 
+                          type="button"
+                          onClick={() => { setTargetTransferEmail(aEmail); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
+                          disabled={loading} 
+                          className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
+                          title={`Traspasar puesto de Administrador Principal a ${aEmail}`}
+                        >
+                          <Crown size={15} />
+                        </button>
+                      )}
+
+                      <select 
+                        value={a.role || 'editor'}
+                        onChange={(e) => handleRoleChange(aEmail, e.target.value)}
+                        disabled={loading}
+                        className="text-[10px] font-black uppercase tracking-widest bg-black/50 text-zinc-300 border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer"
+                      >
+                        <option value="editor">Editor</option>
+                        <option value="admin">Administrador</option>
+                      </select>
+
+                      <button 
+                        type="button"
+                        onClick={() => handleRemove(aEmail)} 
+                        disabled={loading} 
+                        className="text-zinc-400 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
+                        title="Eliminar permiso"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               
               {isDeletingThis && (
                 <div className="bg-black/60 border-t border-red-500/20 p-3.5 flex flex-col gap-3 animate-in fade-in duration-200">
@@ -5459,7 +5927,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         })}
         {additionalAdmins.length === 0 && (
           <p className="text-zinc-500 text-xs italic text-center py-5">
-            No hay editores adicionales registrados aún. Añade correos de Google arriba para habilitar su acceso.
+            No hay editores adicionales registrados aún. Añade correos arriba para habilitar su acceso.
           </p>
         )}
       </div>

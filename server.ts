@@ -251,13 +251,45 @@ app.get("/api/admins/check/:email", (req, res) => {
   const admins = loadServerAdmins();
   if (email === "chapceligg@gmail.com") {
     const primaryMatch = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === "chapceligg@gmail.com");
-    return res.json({ isAdmin: true, role: "admin", name: primaryMatch?.name || "", photoURL: primaryMatch?.photoURL || "" });
+    return res.json({ 
+      isAdmin: true, 
+      role: "admin", 
+      name: primaryMatch?.name || "", 
+      photoURL: primaryMatch?.photoURL || "",
+      authProvider: "google",
+      usedGoogleAuth: true
+    });
   }
   const match = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
   if (match) {
-    return res.json({ isAdmin: true, role: match.role || "editor", name: match.name || "", photoURL: match.photoURL || "" });
+    const isGoogle = match.authProvider === 'google' || match.usedGoogleAuth === true || email.endsWith('@gmail.com') || email.endsWith('@googlemail.com');
+    return res.json({ 
+      isAdmin: true, 
+      role: match.role || "editor", 
+      name: match.name || "", 
+      photoURL: match.photoURL || "",
+      authProvider: isGoogle ? "google" : (match.authProvider || "email"),
+      usedGoogleAuth: isGoogle
+    });
   }
   return res.json({ isAdmin: false });
+});
+
+app.post("/api/admins/record-google-login", (req, res) => {
+  const email = (req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "Email requerido" });
+  const admins = loadServerAdmins();
+  const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
+  if (idx > -1) {
+    admins[idx] = { 
+      ...admins[idx], 
+      authProvider: "google", 
+      usedGoogleAuth: true, 
+      lastGoogleLogin: new Date().toISOString() 
+    };
+    saveServerAdmins(admins);
+  }
+  res.json({ success: true });
 });
 
 app.post("/api/admins", (req, res) => {

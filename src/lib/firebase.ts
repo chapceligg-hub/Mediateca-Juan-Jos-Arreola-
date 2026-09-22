@@ -37,7 +37,47 @@ export const initAuth = async () => {
   return true;
 };
 
-export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string, photoURL?: string } | null> => {
+export const isGoogleAccountEmail = (email: string): boolean => {
+  const normalized = (email || '').toLowerCase().trim();
+  if (!normalized) return false;
+  if (normalized.endsWith('@gmail.com') || normalized.endsWith('@googlemail.com')) return true;
+  try {
+    const raw = localStorage.getItem("videoteca_google_accounts");
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.includes(normalized)) return true;
+    }
+  } catch (_) {}
+  return false;
+};
+
+export const recordGoogleAuth = async (email: string) => {
+  const normalized = (email || '').toLowerCase().trim();
+  if (!normalized) return;
+  try {
+    const raw = localStorage.getItem("videoteca_google_accounts");
+    const list = raw ? JSON.parse(raw) : [];
+    if (!list.includes(normalized)) {
+      list.push(normalized);
+      localStorage.setItem("videoteca_google_accounts", JSON.stringify(list));
+    }
+  } catch (_) {}
+
+  try {
+    fetch("/api/admins/record-google-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalized })
+    }).catch(() => {});
+  } catch (_) {}
+
+  try {
+    const adminRef = doc(db, 'admins', normalized);
+    updateDoc(adminRef, { authProvider: 'google', usedGoogleAuth: true }).catch(() => {});
+  } catch (_) {}
+};
+
+export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string, photoURL?: string, authProvider?: string, usedGoogleAuth?: boolean } | null> => {
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) return null;
 
@@ -49,7 +89,7 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
 
   // 0. Verificación inmediata del SuperAdministrador Principal (0 lecturas, acceso garantizado inmediato)
   if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
-    return { id: normalized, email: normalized, role: 'admin' };
+    return { id: normalized, email: normalized, role: 'admin', authProvider: 'google', usedGoogleAuth: true };
   }
 
   // 1. Verificación instantánea en memoria local IndexedDB (0 lecturas, alta velocidad)
@@ -59,7 +99,14 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
       const list = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
       if (Array.isArray(list)) {
         const found = list.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
-        if (found) return found;
+        if (found) {
+          const isGoogle = found.authProvider === 'google' || found.usedGoogleAuth === true || isGoogleAccountEmail(normalized);
+          return {
+            ...found,
+            authProvider: isGoogle ? 'google' : (found.authProvider || 'email'),
+            usedGoogleAuth: isGoogle
+          };
+        }
       }
     }
   } catch (_) {}
@@ -70,21 +117,27 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     if (res.ok) {
       const data = await res.json();
       if (data && data.isAdmin) {
+        const isGoogle = data.authProvider === 'google' || data.usedGoogleAuth === true || isGoogleAccountEmail(normalized);
         const adminObj = { 
           id: normalized, 
           email: normalized, 
           role: data.role || (normalized === 'chapceligg@gmail.com' ? 'admin' : 'editor'),
           name: data.name || '',
-          photoURL: data.photoURL || ''
+          photoURL: data.photoURL || '',
+          authProvider: isGoogle ? 'google' : (data.authProvider || 'email'),
+          usedGoogleAuth: isGoogle
         };
         try {
           const offlineAdmins = (await get("videoteca_admins_cache")) || [];
           let list = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
           if (!Array.isArray(list)) list = [];
-          if (!list.some((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized)) {
+          const idx = list.findIndex((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
+          if (idx > -1) {
+            list[idx] = { ...list[idx], ...adminObj };
+          } else {
             list.push(adminObj);
-            await set("videoteca_admins_cache", list);
           }
+          await set("videoteca_admins_cache", list);
         } catch (_) {}
         return adminObj;
       }
@@ -97,7 +150,9 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
   try {
     const docSnap = await getDoc(doc(db, 'admins', normalized));
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...(docSnap.data() as any) };
+      const d = docSnap.data() as any;
+      const isGoogle = d.authProvider === 'google' || d.usedGoogleAuth === true || isGoogleAccountEmail(normalized);
+      return { id: docSnap.id, ...d, authProvider: isGoogle ? 'google' : (d.authProvider || 'email'), usedGoogleAuth: isGoogle };
     }
   } catch (error: any) {
     if (!error?.message?.includes('Quota')) {
@@ -111,7 +166,9 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     const qSnap = await getDocs(qEmail);
     if (!qSnap.empty) {
       const firstDoc = qSnap.docs[0];
-      return { id: firstDoc.id, ...(firstDoc.data() as any) };
+      const d = firstDoc.data() as any;
+      const isGoogle = d.authProvider === 'google' || d.usedGoogleAuth === true || isGoogleAccountEmail(normalized);
+      return { id: firstDoc.id, ...d, authProvider: isGoogle ? 'google' : (d.authProvider || 'email'), usedGoogleAuth: isGoogle };
     }
   } catch (err: any) {
     if (!err?.message?.includes('Quota')) {
