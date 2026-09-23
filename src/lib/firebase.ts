@@ -299,9 +299,24 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
     const deletedIds = await syncDeletedMovieIds();
     const deletedSet = new Set(deletedIds);
 
-    const cached = await getCachedMovies();
+    let cached = await getCachedMovies();
     if (!cached || cached.length === 0) {
-      console.log("[Smart Delta Sync] Sin catálogo local previo. Obteniendo catálogo inicial...");
+      // 1. Intentar cargar desde el servidor Express central (/api/movies) -> 0 lecturas Firestore
+      try {
+        const res = await fetch('/api/movies');
+        if (res.ok) {
+          const serverMovies = await res.json();
+          if (Array.isArray(serverMovies) && serverMovies.length > 0) {
+            cached = serverMovies.filter(m => m && m.id && !deletedSet.has(m.id));
+            await setCachedMovies(cached, true);
+            if (callback) callback(cached);
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!cached || cached.length === 0) {
+      console.log("[Smart Delta Sync] Sin catálogo local ni servidor backend. Obteniendo catálogo inicial de Firestore...");
       const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
       const snapshot = await getDocs(q);
       const data = snapshot.docs
