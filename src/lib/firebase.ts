@@ -209,6 +209,17 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
     if (bypassIntegrity || shouldUpdateCache(currentMovies, newMovies)) {
       await set("videoteca_movies_cache", newMovies);
       console.log(`[Cache Manager] Caché local en IndexedDB actualizada exitosamente (${newMovies.length} películas)`);
+
+      // Respaldar en servidor backend en segundo plano (0 bloqueo, 0 lecturas Firestore)
+      if (Array.isArray(newMovies) && newMovies.length > 0) {
+        try {
+          fetch('/api/movies/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newMovies)
+          }).catch(() => {});
+        } catch (_) {}
+      }
     } else {
       console.log(`[Cache Manager] Integridad rechazada. Conservando caché unificada previa de ${currentMovies.length} películas.`);
     }
