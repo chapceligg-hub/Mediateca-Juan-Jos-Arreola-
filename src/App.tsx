@@ -14,7 +14,8 @@ import {
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
-  getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail
+  getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
+  isDeletedAdmin, mergeAdmins
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -345,12 +346,14 @@ export default function App() {
     }).catch(() => {});
 
     fetchAdminsOptimized(false).then(adms => {
-      if (adms && Array.isArray(adms)) setAdminsList(adms);
+      if (adms && Array.isArray(adms) && adms.length > 0) {
+        setAdminsList(prev => mergeAdmins(prev, adms));
+      }
     }).catch(() => {});
 
     const unsubAdmins = subscribeToAdmins((updated) => {
-      if (updated && Array.isArray(updated)) {
-        setAdminsList(updated);
+      if (updated && Array.isArray(updated) && updated.length > 0) {
+        setAdminsList(prev => mergeAdmins(prev, updated));
       }
     });
 
@@ -1349,9 +1352,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   // Sincronización en tiempo real de cuentas registradas en todos los dispositivos (0 lecturas Firestore)
   useEffect(() => {
     const unsub = subscribeToAdmins((realtimeAdmins) => {
-      if (!realtimeAdmins || !Array.isArray(realtimeAdmins)) return;
+      if (!realtimeAdmins || !Array.isArray(realtimeAdmins) || realtimeAdmins.length === 0) return;
 
-      // Actualizar sesión activa en tiempo real si el administrador modifica rol, nombre o revoca acceso desde otro dispositivo
+      // Actualizar sesión activa en tiempo real si el administrador modifica rol o nombre
       setUser((currentActiveUser: any) => {
         if (!currentActiveUser || !currentActiveUser.email) return currentActiveUser;
         const currentEmail = (currentActiveUser.email || '').toLowerCase().trim();
@@ -1377,11 +1380,15 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             return updated;
           }
         } else {
-          // Si el administrador eliminó la cuenta en otro dispositivo, revocar de inmediato
-          try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {}
-          setIsAdmin(false);
-          setUserRole(null);
-          return null;
+          // SOLO revocar si la cuenta fue explícitamente eliminada en el servidor central
+          isDeletedAdmin(currentEmail).then(isDeleted => {
+            if (isDeleted) {
+              try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {}
+              setIsAdmin(false);
+              setUserRole(null);
+              setUser(null);
+            }
+          }).catch(() => {});
         }
         return currentActiveUser;
       });
@@ -5239,7 +5246,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         fetchAdminsOptimized(forceServer),
         getPrimarySuperAdminEmail()
       ]);
-      setAdmins(serverOrCachedAdmins || []);
+      if (serverOrCachedAdmins && Array.isArray(serverOrCachedAdmins) && serverOrCachedAdmins.length > 0) {
+        setAdmins(prev => mergeAdmins(prev, serverOrCachedAdmins));
+      }
       if (primaryEmail) {
         setPrimarySuperAdmin(primaryEmail);
       }
@@ -5254,8 +5263,8 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   useEffect(() => {
     loadAdmins(false);
     const unsub = subscribeToAdmins((realtimeAdmins) => {
-      if (realtimeAdmins && Array.isArray(realtimeAdmins)) {
-        setAdmins(realtimeAdmins);
+      if (realtimeAdmins && Array.isArray(realtimeAdmins) && realtimeAdmins.length > 0) {
+        setAdmins(prev => mergeAdmins(prev, realtimeAdmins));
       }
     });
     return () => unsub();

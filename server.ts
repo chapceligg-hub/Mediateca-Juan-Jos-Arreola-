@@ -228,26 +228,96 @@ function savePrimarySuperAdmin(email: string) {
   }
 }
 
+const DEFAULT_PERSISTENT_ADMINS: any[] = [
+  {
+    id: "chapceligg@gmail.com",
+    email: "chapceligg@gmail.com",
+    role: "admin",
+    name: "Alex Cárdenas",
+    photoURL: "",
+    authProvider: "google",
+    usedGoogleAuth: true,
+    createdAt: "2026-09-17T20:29:42.431Z",
+    updatedAt: "2026-09-22T17:57:55.347Z"
+  },
+  {
+    id: "uriel.cardenas@udgvirtual.udg.mx",
+    email: "uriel.cardenas@udgvirtual.udg.mx",
+    role: "editor",
+    name: "Uriel Cárdenas",
+    photoURL: "",
+    createdAt: "2026-09-18T19:36:07.784Z",
+    updatedAt: "2026-09-23T16:51:40.205Z"
+  },
+  {
+    id: "lizbeth.hernandez@udgvirtual.udg.mx",
+    email: "lizbeth.hernandez@udgvirtual.udg.mx",
+    role: "editor",
+    name: "lizbeth hernandez",
+    photoURL: "",
+    createdAt: "2026-09-21T19:28:27.162Z",
+    updatedAt: "2026-09-22T17:37:40.371Z"
+  }
+];
+
 function loadServerAdmins(): any[] {
   const primary = loadPrimarySuperAdmin();
+  const deletedSet = new Set(loadDeletedAdminIds());
+  deletedSet.delete(primary);
+  deletedSet.delete("chapceligg@gmail.com");
+
+  const map = new Map<string, any>();
+
+  // 1. Cargar administradores base predeterminados (garantía anti-pérdida)
+  for (const def of DEFAULT_PERSISTENT_ADMINS) {
+    const key = def.email.toLowerCase().trim();
+    if (!deletedSet.has(key)) {
+      map.set(key, { ...def });
+    }
+  }
+
+  // 2. Cargar y combinar archivo admins-registry.json si existe
   try {
     if (fs.existsSync(ADMINS_FILE)) {
       const raw = fs.readFileSync(ADMINS_FILE, "utf-8");
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          const key = (item.email || item.id || "").toLowerCase().trim();
+          if (key && !deletedSet.has(key)) {
+            const existing = map.get(key);
+            if (!existing) {
+              map.set(key, { ...item, id: key, email: key });
+            } else {
+              const itemTime = item.updatedAt || item.createdAt || "";
+              const existTime = existing.updatedAt || existing.createdAt || "";
+              if (itemTime >= existTime) {
+                map.set(key, { ...existing, ...item, id: key, email: key });
+              } else {
+                map.set(key, { ...item, ...existing, id: key, email: key });
+              }
+            }
+          }
+        }
+      }
     }
   } catch (e) {
     console.warn("Error leyendo admins-registry.json:", e);
   }
-  return [
-    {
-      id: primary,
-      email: primary,
-      role: "admin",
-      name: "Alex Cárdenas",
-      createdAt: new Date().toISOString()
-    }
-  ];
+
+  // Asegurar que el Administrador Principal siempre tenga rol admin
+  const primaryAdmin = map.get(primary) || {
+    id: primary,
+    email: primary,
+    role: "admin",
+    name: "Alex Cárdenas",
+    createdAt: new Date().toISOString()
+  };
+  primaryAdmin.role = "admin";
+  map.set(primary, primaryAdmin);
+
+  const result = Array.from(map.values());
+  return result;
 }
 
 function saveServerAdmins(admins: any[]) {
