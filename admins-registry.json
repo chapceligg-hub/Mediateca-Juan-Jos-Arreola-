@@ -4,32 +4,32 @@
     "email": "chapceligg@gmail.com",
     "role": "admin",
     "name": "Alex Cárdenas",
-    "createdAt": "2026-09-17T20:29:42.431Z",
+    "photoURL": "",
     "authProvider": "google",
     "usedGoogleAuth": true,
-    "lastGoogleLogin": "2026-09-22T17:03:14.895Z",
+    "createdAt": "2026-09-17T20:29:42.431Z",
     "updatedAt": "2026-09-22T17:57:55.347Z",
     "addedBy": "chapceligg@gmail.com",
-    "photoURL": ""
+    "lastGoogleLogin": "2026-09-22T17:03:14.895Z"
   },
   {
+    "id": "uriel.cardenas@udgvirtual.udg.mx",
     "email": "uriel.cardenas@udgvirtual.udg.mx",
-    "createdAt": "2026-09-18T19:36:07.784Z",
-    "addedBy": "chapceligg@gmail.com",
+    "role": "editor",
     "name": "Uriel Cárdenas",
     "photoURL": "",
-    "role": "editor",
-    "id": "uriel.cardenas@udgvirtual.udg.mx",
-    "updatedAt": "2026-09-23T16:51:40.205Z"
+    "createdAt": "2026-09-18T19:36:07.784Z",
+    "updatedAt": "2026-09-23T17:15:52.797Z",
+    "addedBy": "chapceligg@gmail.com"
   },
   {
+    "id": "lizbeth.hernandez@udgvirtual.udg.mx",
     "email": "lizbeth.hernandez@udgvirtual.udg.mx",
-    "createdAt": "2026-09-21T19:28:27.162Z",
-    "addedBy": "chapceligg@gmail.com",
+    "role": "editor",
     "name": "lizbeth hernandez",
     "photoURL": "",
-    "role": "editor",
-    "id": "lizbeth.hernandez@udgvirtual.udg.mx",
-    "updatedAt": "2026-09-22T17:37:40.371Z"
+    "createdAt": "2026-09-21T19:28:27.162Z",
+    "updatedAt": "2026-09-22T17:37:40.371Z",
+    "addedBy": "chapceligg@gmail.com"
   }
 ]

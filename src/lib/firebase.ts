@@ -986,7 +986,7 @@ export const mergeAdmins = (...lists: any[][]): any[] => {
       } else {
         const itemTime = item.updatedAt || item.createdAt || "";
         const existTime = existing.updatedAt || existing.createdAt || "";
-        if (itemTime > existTime) {
+        if (itemTime >= existTime) {
           map.set(email, { ...existing, ...item, id: email, email });
         } else {
           map.set(email, { ...item, ...existing, id: email, email });
