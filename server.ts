@@ -202,7 +202,34 @@ function saveDeletedAdminIds(ids: string[]) {
   }
 }
 
+// --- REGISTRO DE ADMINISTRADOR PRINCIPAL Y EDITORES (Persistencia y Sincronización) ---
+const PRIMARY_ADMIN_FILE = path.join(process.cwd(), "primary-admin.json");
+
+function loadPrimarySuperAdmin(): string {
+  try {
+    if (fs.existsSync(PRIMARY_ADMIN_FILE)) {
+      const raw = fs.readFileSync(PRIMARY_ADMIN_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.email === 'string' && parsed.email.trim()) {
+        return parsed.email.trim().toLowerCase();
+      }
+    }
+  } catch (e) {
+    console.warn("Error leyendo primary-admin.json:", e);
+  }
+  return "chapceligg@gmail.com";
+}
+
+function savePrimarySuperAdmin(email: string) {
+  try {
+    fs.writeFileSync(PRIMARY_ADMIN_FILE, JSON.stringify({ email: email.trim().toLowerCase(), updatedAt: new Date().toISOString() }, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Error guardando primary-admin.json:", e);
+  }
+}
+
 function loadServerAdmins(): any[] {
+  const primary = loadPrimarySuperAdmin();
   try {
     if (fs.existsSync(ADMINS_FILE)) {
       const raw = fs.readFileSync(ADMINS_FILE, "utf-8");
@@ -214,10 +241,10 @@ function loadServerAdmins(): any[] {
   }
   return [
     {
-      id: "chapceligg@gmail.com",
-      email: "chapceligg@gmail.com",
+      id: primary,
+      email: primary,
       role: "admin",
-      name: "Super Administrador",
+      name: "Alex Cárdenas",
       createdAt: new Date().toISOString()
     }
   ];
@@ -237,6 +264,10 @@ const adminStreamClients = new Set<express.Response>();
 function getActiveAdminsList(): any[] {
   const admins = loadServerAdmins();
   const deleted = new Set(loadDeletedAdminIds());
+  const primary = loadPrimarySuperAdmin();
+  // El Administrador Principal jamás puede figurar como eliminado
+  deleted.delete(primary);
+  deleted.delete("chapceligg@gmail.com");
   return admins.filter(a => !deleted.has((a.email || a.id || "").trim().toLowerCase()));
 }
 
@@ -245,6 +276,7 @@ function broadcastAdminsUpdate() {
   const payload = JSON.stringify({
     type: "admins_update",
     admins: active,
+    primarySuperAdmin: loadPrimarySuperAdmin(),
     timestamp: new Date().toISOString()
   });
 
@@ -267,13 +299,16 @@ app.get("/api/admins/stream", (req, res) => {
     (res as any).flushHeaders();
   }
 
+  // Relleno inicial de 2KB para forzar el vaciado de buffers intermedios (Nginx, Cloud Run)
+  res.write(`: ${" ".repeat(2048)}\n\n`);
+
   // Enviar estado actual de inmediato al conectar
   const active = getActiveAdminsList();
-  res.write(`event: admins_update\ndata: ${JSON.stringify({ type: "admins_update", admins: active, timestamp: new Date().toISOString() })}\n\n`);
+  res.write(`event: admins_update\ndata: ${JSON.stringify({ type: "admins_update", admins: active, primarySuperAdmin: loadPrimarySuperAdmin(), timestamp: new Date().toISOString() })}\n\n`);
 
   adminStreamClients.add(res);
 
-  // Ping periódico cada 20s para mantener activo el canal y evitar caídas en redes móviles
+  // Ping periódico cada 15s para mantener activo el canal y evitar caídas en redes móviles
   const pingInterval = setInterval(() => {
     try {
       res.write(": ping\n\n");
@@ -281,12 +316,45 @@ app.get("/api/admins/stream", (req, res) => {
       clearInterval(pingInterval);
       adminStreamClients.delete(res);
     }
-  }, 20000);
+  }, 15000);
 
   req.on("close", () => {
     clearInterval(pingInterval);
     adminStreamClients.delete(res);
   });
+});
+
+app.get("/api/primary-admin", (req, res) => {
+  res.json({ email: loadPrimarySuperAdmin() });
+});
+
+app.post("/api/primary-admin", (req, res) => {
+  const email = (req.body?.email || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Email inválido" });
+  }
+  savePrimarySuperAdmin(email);
+
+  // Asegurar que el primary super admin esté registrado en admins
+  const admins = loadServerAdmins();
+  const deleted = loadDeletedAdminIds().filter(d => d !== email);
+  saveDeletedAdminIds(deleted);
+
+  const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
+  if (idx > -1) {
+    admins[idx].role = "admin";
+  } else {
+    admins.unshift({
+      id: email,
+      email,
+      role: "admin",
+      name: email.split("@")[0],
+      createdAt: new Date().toISOString()
+    });
+  }
+  saveServerAdmins(admins);
+  broadcastAdminsUpdate();
+  res.json({ success: true, email });
 });
 
 app.get("/api/admins", (req, res) => {
@@ -305,14 +373,10 @@ app.get("/api/admins/check/:email", (req, res) => {
     return res.json({ isAdmin: false });
   }
 
-  const deleted = new Set(loadDeletedAdminIds());
-  if (deleted.has(email)) {
-    return res.json({ isAdmin: false, deleted: true });
-  }
-
-  const admins = loadServerAdmins();
-  if (email === "chapceligg@gmail.com") {
-    const primaryMatch = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === "chapceligg@gmail.com");
+  const primary = loadPrimarySuperAdmin();
+  if (email === primary || email === "chapceligg@gmail.com") {
+    const admins = loadServerAdmins();
+    const primaryMatch = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
     return res.json({ 
       isAdmin: true, 
       role: "admin", 
@@ -322,6 +386,13 @@ app.get("/api/admins/check/:email", (req, res) => {
       usedGoogleAuth: true
     });
   }
+
+  const deleted = new Set(loadDeletedAdminIds());
+  if (deleted.has(email)) {
+    return res.json({ isAdmin: false, deleted: true });
+  }
+
+  const admins = loadServerAdmins();
   const match = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
   if (match) {
     const isGoogle = match.authProvider === 'google' || match.usedGoogleAuth === true || email.endsWith('@gmail.com') || email.endsWith('@googlemail.com');
@@ -362,7 +433,7 @@ app.post("/api/admins", (req, res) => {
   }
   const email = (adminData.email || adminData.id).trim().toLowerCase();
   
-  // Si se vuelve a agregar, quitar de la lista de eliminados
+  // Si se vuelve a agregar o editar, quitar de la lista de eliminados
   const deletedIds = loadDeletedAdminIds().filter(id => id !== email);
   saveDeletedAdminIds(deletedIds);
 
@@ -390,7 +461,11 @@ app.post("/api/admins/sync", (req, res) => {
   if (!Array.isArray(list)) {
     return res.status(400).json({ error: "Se esperaba un array de administradores" });
   }
+  const primary = loadPrimarySuperAdmin();
   const deletedSet = new Set(loadDeletedAdminIds());
+  deletedSet.delete(primary);
+  deletedSet.delete("chapceligg@gmail.com");
+
   const current = loadServerAdmins();
   const map = new Map<string, any>();
   for (const a of current) {
@@ -400,13 +475,24 @@ app.post("/api/admins/sync", (req, res) => {
   for (const item of list) {
     const key = (item.email || item.id || "").trim().toLowerCase();
     if (key && !deletedSet.has(key)) {
-      map.set(key, { ...map.get(key), ...item, id: key, email: key });
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, { ...item, id: key, email: key });
+      } else {
+        const itemTime = item.updatedAt || item.createdAt || "";
+        const existTime = existing.updatedAt || existing.createdAt || "";
+        if (itemTime > existTime) {
+          map.set(key, { ...existing, ...item, id: key, email: key });
+        } else {
+          map.set(key, { ...item, ...existing, id: key, email: key });
+        }
+      }
     }
   }
-  if (!map.has("chapceligg@gmail.com")) {
-    map.set("chapceligg@gmail.com", {
-      id: "chapceligg@gmail.com",
-      email: "chapceligg@gmail.com",
+  if (!map.has(primary)) {
+    map.set(primary, {
+      id: primary,
+      email: primary,
       role: "admin",
       name: "Alex Cárdenas"
     });
@@ -419,7 +505,8 @@ app.post("/api/admins/sync", (req, res) => {
 
 app.delete("/api/admins/:email", (req, res) => {
   const email = (req.params.email || "").trim().toLowerCase();
-  if (email === "chapceligg@gmail.com") {
+  const primary = loadPrimarySuperAdmin();
+  if (email === primary || email === "chapceligg@gmail.com") {
     return res.status(403).json({ error: "No se puede eliminar el Super Admin Principal" });
   }
   // Registrar en lista de eliminados para propagar a otros dispositivos
@@ -432,6 +519,185 @@ app.delete("/api/admins/:email", (req, res) => {
   const admins = loadServerAdmins().filter(a => (a.email || a.id || "").trim().toLowerCase() !== email);
   saveServerAdmins(admins);
   broadcastAdminsUpdate();
+  res.json({ success: true });
+});
+
+// --- REGISTRO Y SINCRONIZACIÓN DE PELÍCULAS EN TIEMPO REAL (0 LECTURAS FIRESTORE) ---
+const MOVIES_FILE = path.join(process.cwd(), "movies-registry.json");
+const moviesStreamClients = new Set<express.Response>();
+
+function loadServerMovies(): any[] {
+  try {
+    if (fs.existsSync(MOVIES_FILE)) {
+      const raw = fs.readFileSync(MOVIES_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn("Error leyendo movies-registry.json:", e);
+  }
+  return [];
+}
+
+function saveServerMovies(movies: any[]) {
+  try {
+    fs.writeFileSync(MOVIES_FILE, JSON.stringify(movies, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Error guardando movies-registry.json:", e);
+  }
+}
+
+function getActiveMoviesList(): any[] {
+  const movies = loadServerMovies();
+  const deleted = new Set(loadDeletedMovieIds());
+  return movies.filter(m => m && m.id && !deleted.has(m.id));
+}
+
+function broadcastMoviesUpdate(eventType: string, payload: any) {
+  const data = JSON.stringify({
+    type: eventType,
+    data: payload,
+    timestamp: new Date().toISOString()
+  });
+
+  for (const client of moviesStreamClients) {
+    try {
+      client.write(`event: ${eventType}\ndata: ${data}\n\n`);
+    } catch (_) {
+      moviesStreamClients.delete(client);
+    }
+  }
+}
+
+// Endpoint de streaming en tiempo real para películas (0 lecturas Firestore)
+app.get("/api/movies/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof (res as any).flushHeaders === 'function') {
+    (res as any).flushHeaders();
+  }
+
+  // Relleno inicial para forzar flujo en Nginx y Cloud Run
+  res.write(`: ${" ".repeat(2048)}\n\n`);
+  res.write(`event: connected\ndata: {}\n\n`);
+
+  moviesStreamClients.add(res);
+
+  const pingInterval = setInterval(() => {
+    try {
+      res.write(": ping\n\n");
+    } catch (_) {
+      clearInterval(pingInterval);
+      moviesStreamClients.delete(res);
+    }
+  }, 15000);
+
+  req.on("close", () => {
+    clearInterval(pingInterval);
+    moviesStreamClients.delete(res);
+  });
+});
+
+app.get("/api/movies", (req, res) => {
+  const active = getActiveMoviesList();
+  res.json(active);
+});
+
+app.post("/api/movies", (req, res) => {
+  const movie = req.body;
+  if (!movie || !movie.id) {
+    return res.status(400).json({ error: "Película inválida o sin ID" });
+  }
+
+  // Quitar de deleted-movies si se vuelve a crear o editar
+  const deleted = loadDeletedMovieIds().filter(id => id !== movie.id);
+  saveDeletedMovieIds(deleted);
+
+  const movies = loadServerMovies();
+  const idx = movies.findIndex(m => m && m.id === movie.id);
+  const nowIso = new Date().toISOString();
+  const updatedMovie = {
+    ...movie,
+    updatedAt: movie.updatedAt || nowIso
+  };
+
+  if (idx > -1) {
+    movies[idx] = { ...movies[idx], ...updatedMovie };
+  } else {
+    movies.unshift(updatedMovie);
+  }
+
+  saveServerMovies(movies);
+  broadcastMoviesUpdate("movie_upsert", updatedMovie);
+  res.json({ success: true, movie: updatedMovie });
+});
+
+app.post("/api/movies/sync", (req, res) => {
+  const clientMovies = req.body;
+  if (!Array.isArray(clientMovies)) {
+    return res.status(400).json({ error: "Se esperaba un array de películas" });
+  }
+
+  const deletedSet = new Set(loadDeletedMovieIds());
+  const serverMovies = loadServerMovies();
+  const map = new Map<string, any>();
+
+  // Cargar películas del servidor
+  for (const m of serverMovies) {
+    if (m && m.id && !deletedSet.has(m.id)) {
+      map.set(m.id, m);
+    }
+  }
+
+  // Fusionar con películas del cliente respetando la versión más reciente
+  let updatedCount = 0;
+  for (const cm of clientMovies) {
+    if (!cm || !cm.id || deletedSet.has(cm.id)) continue;
+    const existing = map.get(cm.id);
+    if (!existing) {
+      map.set(cm.id, cm);
+      updatedCount++;
+    } else {
+      const serverTime = existing.updatedAt || existing.createdAt || "";
+      const clientTime = cm.updatedAt || cm.createdAt || "";
+      if (clientTime > serverTime) {
+        map.set(cm.id, { ...existing, ...cm });
+        updatedCount++;
+      } else {
+        map.set(cm.id, { ...cm, ...existing });
+      }
+    }
+  }
+
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => {
+    const timeA = a.createdAt || a.updatedAt || "";
+    const timeB = b.createdAt || b.updatedAt || "";
+    return timeB.localeCompare(timeA);
+  });
+
+  saveServerMovies(merged);
+  if (updatedCount > 0) {
+    broadcastMoviesUpdate("movies_update", { count: merged.length });
+  }
+  res.json({ success: true, count: merged.length, movies: merged });
+});
+
+app.delete("/api/movies/:id", (req, res) => {
+  const id = req.params.id;
+  if (!id) return res.status(400).json({ error: "ID requerido" });
+
+  const deleted = loadDeletedMovieIds();
+  if (!deleted.includes(id)) {
+    deleted.push(id);
+    saveDeletedMovieIds(deleted.slice(-1000));
+  }
+
+  const movies = loadServerMovies().filter(m => m && m.id !== id);
+  saveServerMovies(movies);
+  broadcastMoviesUpdate("movie_deleted", { id });
   res.json({ success: true });
 });
 
@@ -476,6 +742,10 @@ app.post("/api/movies/deleted", (req, res) => {
   }
   const updated = Array.from(setIds).slice(-1000);
   saveDeletedMovieIds(updated);
+
+  const movies = loadServerMovies().filter(m => m && m.id && !setIds.has(m.id));
+  saveServerMovies(movies);
+  broadcastMoviesUpdate("movies_update", { count: movies.length });
   res.json({ success: true, count: updated.length, deleted: updated });
 });
 
