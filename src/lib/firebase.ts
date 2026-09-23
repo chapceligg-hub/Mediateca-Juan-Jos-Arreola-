@@ -40,44 +40,14 @@ export const initAuth = async () => {
 export const isGoogleAccountEmail = (email: string): boolean => {
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) return false;
-  if (normalized.endsWith('@gmail.com') || normalized.endsWith('@googlemail.com')) return true;
-  try {
-    const raw = localStorage.getItem("videoteca_google_accounts");
-    if (raw) {
-      const list = JSON.parse(raw);
-      if (Array.isArray(list) && list.includes(normalized)) return true;
-    }
-  } catch (_) {}
-  return false;
+  return normalized.endsWith('@gmail.com') || normalized.endsWith('@googlemail.com');
 };
 
 export const recordGoogleAuth = async (email: string) => {
-  const normalized = (email || '').toLowerCase().trim();
-  if (!normalized) return;
-  try {
-    const raw = localStorage.getItem("videoteca_google_accounts");
-    const list = raw ? JSON.parse(raw) : [];
-    if (!list.includes(normalized)) {
-      list.push(normalized);
-      localStorage.setItem("videoteca_google_accounts", JSON.stringify(list));
-    }
-  } catch (_) {}
-
-  try {
-    fetch("/api/admins/record-google-login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: normalized })
-    }).catch(() => {});
-  } catch (_) {}
-
-  try {
-    const adminRef = doc(db, 'admins', normalized);
-    updateDoc(adminRef, { authProvider: 'google', usedGoogleAuth: true }).catch(() => {});
-  } catch (_) {}
+  // Función simplificada sin tracking adicional
 };
 
-export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string, photoURL?: string, authProvider?: string, usedGoogleAuth?: boolean } | null> => {
+export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string } | null> => {
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) return null;
 
@@ -89,7 +59,7 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
 
   // 0. Verificación inmediata del SuperAdministrador Principal (0 lecturas, acceso garantizado inmediato)
   if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
-    return { id: normalized, email: normalized, role: 'admin', authProvider: 'google', usedGoogleAuth: true };
+    return { id: normalized, email: normalized, role: 'admin' };
   }
 
   // 1. Verificación instantánea en memoria local IndexedDB (0 lecturas, alta velocidad)
@@ -100,11 +70,11 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
       if (Array.isArray(list)) {
         const found = list.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
         if (found) {
-          const isGoogle = found.authProvider === 'google' || found.usedGoogleAuth === true || isGoogleAccountEmail(normalized);
           return {
-            ...found,
-            authProvider: isGoogle ? 'google' : (found.authProvider || 'email'),
-            usedGoogleAuth: isGoogle
+            id: normalized,
+            email: normalized,
+            role: found.role || 'editor',
+            name: found.name || ''
           };
         }
       }
@@ -117,15 +87,11 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     if (res.ok) {
       const data = await res.json();
       if (data && data.isAdmin) {
-        const isGoogle = data.authProvider === 'google' || data.usedGoogleAuth === true || isGoogleAccountEmail(normalized);
         const adminObj = { 
           id: normalized, 
           email: normalized, 
           role: data.role || (normalized === 'chapceligg@gmail.com' ? 'admin' : 'editor'),
-          name: data.name || '',
-          photoURL: data.photoURL || '',
-          authProvider: isGoogle ? 'google' : (data.authProvider || 'email'),
-          usedGoogleAuth: isGoogle
+          name: data.name || ''
         };
         try {
           const offlineAdmins = (await get("videoteca_admins_cache")) || [];
@@ -151,8 +117,7 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     const docSnap = await getDoc(doc(db, 'admins', normalized));
     if (docSnap.exists()) {
       const d = docSnap.data() as any;
-      const isGoogle = d.authProvider === 'google' || d.usedGoogleAuth === true || isGoogleAccountEmail(normalized);
-      return { id: docSnap.id, ...d, authProvider: isGoogle ? 'google' : (d.authProvider || 'email'), usedGoogleAuth: isGoogle };
+      return { id: docSnap.id, ...d };
     }
   } catch (error: any) {
     if (!error?.message?.includes('Quota')) {
@@ -668,9 +633,6 @@ export const DEFAULT_CLIENT_ADMINS: any[] = [
     email: "chapceligg@gmail.com",
     role: "admin",
     name: "Alex Cárdenas",
-    photoURL: "",
-    authProvider: "google",
-    usedGoogleAuth: true,
     createdAt: "2026-09-17T20:29:42.431Z",
     updatedAt: "2026-09-22T17:57:55.347Z"
   },
@@ -679,7 +641,6 @@ export const DEFAULT_CLIENT_ADMINS: any[] = [
     email: "uriel.cardenas@udgvirtual.udg.mx",
     role: "editor",
     name: "Uriel Cárdenas",
-    photoURL: "",
     createdAt: "2026-09-18T19:36:07.784Z",
     updatedAt: "2026-09-23T16:51:40.205Z"
   },
@@ -688,7 +649,6 @@ export const DEFAULT_CLIENT_ADMINS: any[] = [
     email: "lizbeth.hernandez@udgvirtual.udg.mx",
     role: "editor",
     name: "lizbeth hernandez",
-    photoURL: "",
     createdAt: "2026-09-21T19:28:27.162Z",
     updatedAt: "2026-09-22T17:37:40.371Z"
   }
@@ -743,13 +703,15 @@ export const getDeletedAdminsSet = async (): Promise<Set<string>> => {
   } catch (_) {}
 
   // El Administrador Principal jamás puede considerarse eliminado
-  setObj.delete("chapceligg@gmail.com");
+  const currentPrimary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').trim().toLowerCase();
+  setObj.delete(currentPrimary);
   return setObj;
 };
 
 export const recordDeletedAdmin = (email: string) => {
   const norm = (email || '').trim().toLowerCase();
-  if (!norm || norm === 'chapceligg@gmail.com') return;
+  const currentPrimary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').trim().toLowerCase();
+  if (!norm || norm === currentPrimary) return;
   try {
     const raw = localStorage.getItem("videoteca_deleted_admins");
     const current = raw ? JSON.parse(raw) : [];
@@ -776,16 +738,37 @@ export const unrecordDeletedAdmin = (email: string) => {
 
 export const isDeletedAdmin = async (email: string): Promise<boolean> => {
   const norm = (email || '').trim().toLowerCase();
-  if (!norm || norm === 'chapceligg@gmail.com') return false;
+  const currentPrimary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').trim().toLowerCase();
+  if (!norm || norm === currentPrimary) return false;
   const deletedSet = await getDeletedAdminsSet();
   return deletedSet.has(norm);
 };
 
 const adminSubscribers = new Set<(admins: any[]) => void>();
+const primaryAdminSubscribers = new Set<(primaryEmail: string) => void>();
 let globalAdminEventSource: EventSource | null = null;
 let adminReconnectTimeout: any = null;
 let adminPollFallbackInterval: any = null;
 let lastKnownAdminsList: any[] = [];
+
+export const notifyPrimarySuperAdminSubscribers = (primaryEmail: string) => {
+  if (!primaryEmail) return;
+  const clean = primaryEmail.trim().toLowerCase();
+  for (const cb of primaryAdminSubscribers) {
+    try {
+      cb(clean);
+    } catch (e) {
+      console.warn("Error en suscriptor de primary admin:", e);
+    }
+  }
+};
+
+export const subscribeToPrimarySuperAdmin = (callback: (primaryEmail: string) => void) => {
+  primaryAdminSubscribers.add(callback);
+  return () => {
+    primaryAdminSubscribers.delete(callback);
+  };
+};
 
 export const notifyAdminSubscribers = (admins: any[]) => {
   if (!Array.isArray(admins)) return;
@@ -827,6 +810,7 @@ const initAdminRealtimeStream = () => {
           try {
             localStorage.setItem("videoteca_primary_superadmin", payload.primarySuperAdmin);
           } catch (_) {}
+          notifyPrimarySuperAdminSubscribers(payload.primarySuperAdmin);
         }
       } catch (err) {
         console.warn("Aviso al procesar evento de administradores:", err);
@@ -986,11 +970,11 @@ export const mergeAdmins = (...lists: any[][]): any[] => {
       } else {
         const itemTime = item.updatedAt || item.createdAt || "";
         const existTime = existing.updatedAt || existing.createdAt || "";
-        if (itemTime >= existTime) {
-          map.set(email, { ...existing, ...item, id: email, email });
-        } else {
-          map.set(email, { ...item, ...existing, id: email, email });
-        }
+        const base = itemTime >= existTime ? { ...existing, ...item } : { ...item, ...existing };
+        const existingName = (existing.name || '').trim();
+        const incomingName = (item.name || '').trim();
+        const finalName = incomingName || existingName;
+        map.set(email, { ...base, id: email, email, name: finalName });
       }
     }
   }
@@ -1249,12 +1233,19 @@ export const upsertAdmin = async (admin: any) => {
   // Al agregar o modificar, retirar explícitamente de la lista de eliminados
   unrecordDeletedAdmin(adminId);
 
+  const permAdmins = getPermanentLocalAdmins();
+  const existingInPerm = permAdmins.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === adminId);
+  const existingName = (existingInPerm?.name || '').trim();
+  const incomingName = admin.name !== undefined ? String(admin.name).trim() : '';
+  const finalName = incomingName || existingName || adminId.split('@')[0];
+
   const adminData: any = {
+    ...(existingInPerm || {}),
     ...admin,
     id: adminId,
     email: adminId,
-    name: admin.name || adminId.split('@')[0],
-    role: admin.role || 'editor',
+    name: finalName,
+    role: admin.role || existingInPerm?.role || 'editor',
     updatedAt: new Date().toISOString()
   };
 
@@ -1284,7 +1275,6 @@ export const upsertAdmin = async (admin: any) => {
   }
   
   // 3. Guardar en almacenamiento inmutable permanente (localStorage + IndexedDB) y propagar
-  const permAdmins = getPermanentLocalAdmins();
   const updatedList = mergeAdmins(permAdmins, [adminData]);
   savePermanentLocalAdmins(updatedList);
   await set("videoteca_admins_cache", updatedList);
@@ -1307,7 +1297,8 @@ export const upsertAdmin = async (admin: any) => {
 
 export const deleteAdmin = async (idOrEmail: string) => {
   const adminId = (idOrEmail || '').toLowerCase().trim();
-  if (!adminId || adminId === 'chapceligg@gmail.com') return;
+  const currentPrimary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').trim().toLowerCase();
+  if (!adminId || adminId === currentPrimary) return;
 
   // Registrar como eliminado para evitar que se reviva
   recordDeletedAdmin(adminId);
@@ -1416,28 +1407,36 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
     }, { merge: true });
   } catch (_) {}
 
-  // 3. Asignar rol 'admin' al nuevo Administrador Principal
+  // Obtener administradores locales para conservar nombres reales
+  const permAdmins = getPermanentLocalAdmins();
+  const existingNewObj = permAdmins.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalizedNew);
+  const existingCurrentObj = permAdmins.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalizedCurrent);
+
+  // 3. Asignar rol 'admin' al nuevo Administrador Principal conservando su nombre opcional si ya lo tenía
   await upsertAdmin({
+    ...(existingNewObj || {}),
     email: normalizedNew,
     role: 'admin',
-    name: normalizedNew.split('@')[0],
+    name: typeof existingNewObj?.name === 'string' ? existingNewObj.name.trim() : '',
     updatedAt: new Date().toISOString()
   });
 
-  // Asegurar que el anterior Super Admin Principal conserve rol de Super Admin
+  // 4. Asegurar que el anterior Super Admin Principal conserve rol de Super Admin y su nombre opcional intacto
   if (normalizedCurrent) {
     await upsertAdmin({
+      ...(existingCurrentObj || {}),
       email: normalizedCurrent,
       role: 'admin',
-      name: normalizedCurrent.split('@')[0],
+      name: typeof existingCurrentObj?.name === 'string' ? existingCurrentObj.name.trim() : '',
       updatedAt: new Date().toISOString()
     });
   }
 
-  // Actualizar caché en localStorage
+  // Actualizar caché en localStorage y notificar suscriptores
   try {
     localStorage.setItem("videoteca_primary_superadmin", normalizedNew);
   } catch (_) {}
+  notifyPrimarySuperAdminSubscribers(normalizedNew);
 
   return normalizedNew;
 };

@@ -234,9 +234,6 @@ const DEFAULT_PERSISTENT_ADMINS: any[] = [
     email: "chapceligg@gmail.com",
     role: "admin",
     name: "Alex Cárdenas",
-    photoURL: "",
-    authProvider: "google",
-    usedGoogleAuth: true,
     createdAt: "2026-09-17T20:29:42.431Z",
     updatedAt: "2026-09-22T17:57:55.347Z"
   },
@@ -245,7 +242,6 @@ const DEFAULT_PERSISTENT_ADMINS: any[] = [
     email: "uriel.cardenas@udgvirtual.udg.mx",
     role: "editor",
     name: "Uriel Cárdenas",
-    photoURL: "",
     createdAt: "2026-09-18T19:36:07.784Z",
     updatedAt: "2026-09-23T16:51:40.205Z"
   },
@@ -254,7 +250,6 @@ const DEFAULT_PERSISTENT_ADMINS: any[] = [
     email: "lizbeth.hernandez@udgvirtual.udg.mx",
     role: "editor",
     name: "lizbeth hernandez",
-    photoURL: "",
     createdAt: "2026-09-21T19:28:27.162Z",
     updatedAt: "2026-09-22T17:37:40.371Z"
   }
@@ -264,7 +259,6 @@ function loadServerAdmins(): any[] {
   const primary = loadPrimarySuperAdmin();
   const deletedSet = new Set(loadDeletedAdminIds());
   deletedSet.delete(primary);
-  deletedSet.delete("chapceligg@gmail.com");
 
   const map = new Map<string, any>();
 
@@ -291,11 +285,11 @@ function loadServerAdmins(): any[] {
             } else {
               const itemTime = item.updatedAt || item.createdAt || "";
               const existTime = existing.updatedAt || existing.createdAt || "";
-              if (itemTime >= existTime) {
-                map.set(key, { ...existing, ...item, id: key, email: key });
-              } else {
-                map.set(key, { ...item, ...existing, id: key, email: key });
-              }
+              const base = itemTime >= existTime ? { ...existing, ...item } : { ...item, ...existing };
+              const existingName = (existing.name || "").trim();
+              const incomingName = (item.name || "").trim();
+              const finalName = incomingName || existingName;
+              map.set(key, { ...base, id: key, email: key, name: finalName });
             }
           }
         }
@@ -310,7 +304,7 @@ function loadServerAdmins(): any[] {
     id: primary,
     email: primary,
     role: "admin",
-    name: "Alex Cárdenas",
+    name: primary.split("@")[0],
     createdAt: new Date().toISOString()
   };
   primaryAdmin.role = "admin";
@@ -400,6 +394,7 @@ app.get("/api/primary-admin", (req, res) => {
 
 app.post("/api/primary-admin", (req, res) => {
   const email = (req.body?.email || "").trim().toLowerCase();
+  const current = (req.body?.current || "").trim().toLowerCase();
   if (!email || !email.includes("@")) {
     return res.status(400).json({ error: "Email inválido" });
   }
@@ -418,10 +413,19 @@ app.post("/api/primary-admin", (req, res) => {
       id: email,
       email,
       role: "admin",
-      name: email.split("@")[0],
+      name: "",
       createdAt: new Date().toISOString()
     });
   }
+
+  // Si el anterior primary admin estaba registrado, mantenerlo como admin conservando su nombre
+  if (current && current !== email) {
+    const curIdx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === current);
+    if (curIdx > -1) {
+      admins[curIdx].role = "admin";
+    }
+  }
+
   saveServerAdmins(admins);
   broadcastAdminsUpdate();
   res.json({ success: true, email });
@@ -450,10 +454,7 @@ app.get("/api/admins/check/:email", (req, res) => {
     return res.json({ 
       isAdmin: true, 
       role: "admin", 
-      name: primaryMatch?.name || "Alex Cárdenas", 
-      photoURL: primaryMatch?.photoURL || "",
-      authProvider: "google",
-      usedGoogleAuth: true
+      name: primaryMatch?.name || "Alex Cárdenas"
     });
   }
 
@@ -465,35 +466,13 @@ app.get("/api/admins/check/:email", (req, res) => {
   const admins = loadServerAdmins();
   const match = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
   if (match) {
-    const isGoogle = match.authProvider === 'google' || match.usedGoogleAuth === true || email.endsWith('@gmail.com') || email.endsWith('@googlemail.com');
     return res.json({ 
       isAdmin: true, 
       role: match.role || "editor", 
-      name: match.name || "", 
-      photoURL: match.photoURL || "",
-      authProvider: isGoogle ? "google" : (match.authProvider || "email"),
-      usedGoogleAuth: isGoogle
+      name: match.name || ""
     });
   }
   return res.json({ isAdmin: false });
-});
-
-app.post("/api/admins/record-google-login", (req, res) => {
-  const email = (req.body?.email || "").trim().toLowerCase();
-  if (!email) return res.status(400).json({ error: "Email requerido" });
-  const admins = loadServerAdmins();
-  const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
-  if (idx > -1) {
-    admins[idx] = { 
-      ...admins[idx], 
-      authProvider: "google", 
-      usedGoogleAuth: true, 
-      lastGoogleLogin: new Date().toISOString() 
-    };
-    saveServerAdmins(admins);
-    broadcastAdminsUpdate();
-  }
-  res.json({ success: true });
 });
 
 app.post("/api/admins", (req, res) => {
@@ -509,15 +488,21 @@ app.post("/api/admins", (req, res) => {
 
   const admins = loadServerAdmins();
   const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
+  const existingName = (idx > -1 ? (admins[idx].name || "") : "").trim();
+  const incomingName = (adminData.name !== undefined ? String(adminData.name) : "").trim();
+  const finalName = incomingName || existingName;
+
   const updatedEntry = {
+    ...(idx > -1 ? admins[idx] : {}),
     ...adminData,
     id: email,
     email: email,
-    role: adminData.role || "editor",
+    name: finalName,
+    role: adminData.role || (idx > -1 ? admins[idx].role : "editor"),
     updatedAt: new Date().toISOString()
   };
   if (idx > -1) {
-    admins[idx] = { ...admins[idx], ...updatedEntry };
+    admins[idx] = updatedEntry;
   } else {
     admins.push(updatedEntry);
   }
@@ -534,7 +519,6 @@ app.post("/api/admins/sync", (req, res) => {
   const primary = loadPrimarySuperAdmin();
   const deletedSet = new Set(loadDeletedAdminIds());
   deletedSet.delete(primary);
-  deletedSet.delete("chapceligg@gmail.com");
 
   const current = loadServerAdmins();
   const map = new Map<string, any>();
@@ -551,11 +535,11 @@ app.post("/api/admins/sync", (req, res) => {
       } else {
         const itemTime = item.updatedAt || item.createdAt || "";
         const existTime = existing.updatedAt || existing.createdAt || "";
-        if (itemTime > existTime) {
-          map.set(key, { ...existing, ...item, id: key, email: key });
-        } else {
-          map.set(key, { ...item, ...existing, id: key, email: key });
-        }
+        const base = itemTime >= existTime ? { ...existing, ...item } : { ...item, ...existing };
+        const existingName = (existing.name || "").trim();
+        const incomingName = (item.name || "").trim();
+        const finalName = incomingName || existingName;
+        map.set(key, { ...base, id: key, email: key, name: finalName });
       }
     }
   }
@@ -564,7 +548,7 @@ app.post("/api/admins/sync", (req, res) => {
       id: primary,
       email: primary,
       role: "admin",
-      name: "Alex Cárdenas"
+      name: primary.split("@")[0]
     });
   }
   const merged = Array.from(map.values());
@@ -576,7 +560,7 @@ app.post("/api/admins/sync", (req, res) => {
 app.delete("/api/admins/:email", (req, res) => {
   const email = (req.params.email || "").trim().toLowerCase();
   const primary = loadPrimarySuperAdmin();
-  if (email === primary || email === "chapceligg@gmail.com") {
+  if (email === primary) {
     return res.status(403).json({ error: "No se puede eliminar el Super Admin Principal" });
   }
   // Registrar en lista de eliminados para propagar a otros dispositivos

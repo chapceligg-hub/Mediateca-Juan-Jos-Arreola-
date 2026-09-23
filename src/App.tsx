@@ -15,7 +15,7 @@ import {
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
-  isDeletedAdmin, mergeAdmins
+  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -357,7 +357,16 @@ export default function App() {
       }
     });
 
-    return () => unsubAdmins();
+    const unsubPrimary = subscribeToPrimarySuperAdmin((newPrimary) => {
+      if (newPrimary) {
+        setPrimarySuperAdminEmail(newPrimary);
+      }
+    });
+
+    return () => {
+      unsubAdmins();
+      unsubPrimary();
+    };
   }, []);
 
   const sidebarDisplayName = useMemo(() => {
@@ -1418,7 +1427,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         const editorUser = {
           email: rawEmail,
           displayName: resolvedName,
-          photoURL: admin?.photoURL || ''
+          photoURL: ''
         };
         setUser(editorUser);
         setIsAdmin(true);
@@ -1463,7 +1472,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         const normalizedUser = {
           ...currentUser,
           displayName: finalDisplayName,
-          photoURL: currentUser.photoURL || currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || adminInfo?.photoURL || '',
+          photoURL: currentUser.photoURL || currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || '',
         };
 
         if (userEmail === 'chapceligg@gmail.com') {
@@ -5267,7 +5276,15 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         setAdmins(prev => mergeAdmins(prev, realtimeAdmins));
       }
     });
-    return () => unsub();
+    const unsubPrimary = subscribeToPrimarySuperAdmin((newPrimary) => {
+      if (newPrimary) {
+        setPrimarySuperAdmin(newPrimary);
+      }
+    });
+    return () => {
+      unsub();
+      unsubPrimary();
+    };
   }, []);
 
   const handleAdd = async (e: any) => {
@@ -5459,8 +5476,17 @@ const AdminManager = ({ currentUser, userRole }: any) => {
     setLoading(true);
     setError("");
     try {
-       await upsertAdmin({ email: target, role });
-       setAdmins(prev => prev.map(a => ((a.email || a.id || '').toLowerCase().trim() === target ? { ...a, role } : a)));
+       const existingAdmin = admins.find(a => (a.email || a.id || '').toLowerCase().trim() === target);
+       const preservedName = (existingAdmin?.name || '').trim();
+       const updatedPayload = {
+         ...(existingAdmin || {}),
+         email: target,
+         role,
+         name: preservedName,
+         updatedAt: new Date().toISOString()
+       };
+       await upsertAdmin(updatedPayload);
+       setAdmins(prev => prev.map(a => ((a.email || a.id || '').toLowerCase().trim() === target ? { ...a, role, name: preservedName } : a)));
     } catch (err: any) {
        setError(err?.message || "Error al actualizar rol.");
     } finally {
@@ -5649,7 +5675,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         {(() => {
           const primaryAdminObj = admins.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || { email: primarySuperAdmin, name: '', role: 'admin' };
           const customName = (primaryAdminObj.name || '').trim();
-          const hasCustomName = Boolean(customName && customName !== primarySuperAdmin && customName !== primarySuperAdmin.split('@')[0]);
+          const hasCustomName = Boolean(customName && customName !== primarySuperAdmin);
           const displayName = hasCustomName ? customName : primarySuperAdmin;
           const isEditingPrimary = editingEmail === primarySuperAdmin.toLowerCase().trim();
 
@@ -5786,11 +5812,11 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         {additionalAdmins.map(a => {
           const aEmail = (a.email || a.id || '').toLowerCase().trim();
           const customName = (a.name || '').trim();
-          const hasCustomName = Boolean(customName && customName !== aEmail && customName !== aEmail.split('@')[0]);
           const roleLabel = a.role === 'admin' ? 'Administrador' : 'Editor';
-          const displayName = hasCustomName ? customName : roleLabel;
+          const displayName = customName || roleLabel;
           const isDeletingThis = userToDelete === aEmail;
           const isEditingThis = editingEmail === aEmail;
+          const isSelf = aEmail === currentEmail;
 
           return (
             <div key={aEmail} className="flex flex-col bg-zinc-900/80 rounded-xl border border-white/10 gap-2 w-full overflow-hidden transition-all hover:border-white/20">
@@ -5849,7 +5875,8 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                       <select 
                         value={editRoleValue}
                         onChange={(e) => setEditRoleValue(e.target.value)}
-                        className="bg-zinc-900 text-xs font-bold text-white border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer"
+                        disabled={isSelf}
+                        className="bg-zinc-900 text-xs font-bold text-white border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer disabled:opacity-50"
                       >
                         <option value="editor">Editor</option>
                         <option value="admin">Administrador</option>
@@ -5890,13 +5917,14 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                       </span>
                       <span className="text-[10px] text-zinc-500">•</span>
                       <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider shrink-0">
-                        {a.role === 'admin' ? 'Administrador' : 'Editor'}
+                        {roleLabel}
                       </span>
                     </div>
                   </div>
 
-                  {aEmail !== currentEmail && (
-                    <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Botón Editar - permitido para administradores y para el propio usuario */}
+                    {(isSuper || isSelf) && (
                       <button 
                         type="button"
                         onClick={() => startEditing(a)}
@@ -5906,19 +5934,23 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                       >
                         <Edit2 size={15} />
                       </button>
+                    )}
 
-                      {isCurrentPrimary && (
-                        <button 
-                          type="button"
-                          onClick={() => { setTargetTransferEmail(aEmail); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
-                          disabled={loading} 
-                          className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
-                          title={`Traspasar puesto de Administrador Principal a ${aEmail}`}
-                        >
-                          <Crown size={15} />
-                        </button>
-                      )}
+                    {/* Botón Traspasar Administrador Principal - solo el Administrador Principal actual puede ceder su titularidad */}
+                    {isCurrentPrimary && !isSelf && (
+                      <button 
+                        type="button"
+                        onClick={() => { setTargetTransferEmail(aEmail); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
+                        disabled={loading} 
+                        className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
+                        title={`Traspasar puesto de Administrador Principal a ${aEmail}`}
+                      >
+                        <Crown size={15} />
+                      </button>
+                    )}
 
+                    {/* Selector de Rol - disponible para cambiar el rol a cualquier otra cuenta */}
+                    {isSuper && !isSelf && (
                       <select 
                         value={a.role || 'editor'}
                         onChange={(e) => handleRoleChange(aEmail, e.target.value)}
@@ -5928,7 +5960,10 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         <option value="editor">Editor</option>
                         <option value="admin">Administrador</option>
                       </select>
+                    )}
 
+                    {/* Botón Eliminar - disponible para revocar permisos a cualquier otra cuenta */}
+                    {isSuper && !isSelf && (
                       <button 
                         type="button"
                         onClick={() => handleRemove(aEmail)} 
@@ -5938,8 +5973,8 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                       >
                         <Trash2 size={16} />
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
               
