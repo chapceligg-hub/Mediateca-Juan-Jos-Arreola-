@@ -15,7 +15,7 @@ import {
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
-  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin
+  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -337,7 +337,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [adminsList, setAdminsList] = useState<any[]>([]);
+  const [adminsList, setAdminsList] = useState<any[]>(DEFAULT_CLIENT_ADMINS);
   const [primarySuperAdminEmail, setPrimarySuperAdminEmail] = useState<string>("chapceligg@gmail.com");
 
   useEffect(() => {
@@ -373,12 +373,11 @@ export default function App() {
     if (!user) return "";
     const email = (user.email || '').toLowerCase().trim();
     const primary = (primarySuperAdminEmail || 'chapceligg@gmail.com').toLowerCase().trim();
-    const isPrimary = email === primary;
+    const isPrimary = email === primary || email === 'chapceligg@gmail.com';
 
-    // Buscar si existe un registro de administrador con nombre registrado
-    const currentAdminObj = adminsList.find(a => (a.email || a.id || '').toLowerCase().trim() === email);
+    // Buscar si existe un registro de administrador con nombre opcional registrado/editado
+    const currentAdminObj = adminsList.find(a => (a.email || a.id || '').toLowerCase().trim() === email) || DEFAULT_CLIENT_ADMINS.find(a => (a.email || a.id || '').toLowerCase().trim() === email);
     const registeredName = (currentAdminObj?.name || user.customName || user.name || "").trim();
-    const googleOrDisplayName = (user.displayName || "").trim();
 
     const isEmailOrPrefix = (name: string) => {
       const n = name.toLowerCase().trim();
@@ -387,20 +386,21 @@ export default function App() {
 
     const isRoleName = (name: string) => {
       const n = name.toLowerCase().trim();
-      return ['administrador', 'editor', 'administrador principal', 'admin', 'editor'].includes(n);
+      return ['administrador', 'editor', 'administrador principal', 'admin'].includes(n);
     };
 
-    // 1. Si tiene nombre personalizado guardado
+    // 1. Si tiene nombre opcional asignado desde el registro o edición en el panel
     if (registeredName && !isEmailOrPrefix(registeredName) && !isRoleName(registeredName)) {
       return registeredName;
     }
 
-    // 2. Si displayName de Google/auth es un nombre real y no correo/rol/bypass
-    if (googleOrDisplayName && !isEmailOrPrefix(googleOrDisplayName) && !isRoleName(googleOrDisplayName) && googleOrDisplayName !== 'Admin Maestro (Bypass Dev)') {
-      return googleOrDisplayName;
+    // 2. Si en user.displayName viene un nombre que no es email/rol/bypass
+    const rawDisplayName = (user.displayName || "").trim();
+    if (rawDisplayName && !isEmailOrPrefix(rawDisplayName) && !isRoleName(rawDisplayName) && rawDisplayName !== 'Admin Maestro (Bypass Dev)') {
+      return rawDisplayName;
     }
 
-    // 3. Si no tiene nombre registrado, mostrar su ROL
+    // 3. En caso de que no haya un nombre opcional desde el registro o edición, solo se pondrá el rol
     if (isPrimary) {
       return "Administrador Principal";
     }
@@ -1329,10 +1329,20 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         const parsed = JSON.parse(savedVerifiedUser);
         const parsedEmail = (parsed?.email || '').toLowerCase().trim();
         if (parsedEmail === 'chapceligg@gmail.com') {
-          setUser({ ...parsed, displayName: (parsed.displayName && parsed.displayName !== 'chapceligg@gmail.com') ? parsed.displayName : 'Administrador Principal' });
-          setIsAdmin(true);
-          setUserRole('admin');
-          setIsAuthChecking(false);
+          getAdminByEmail(parsedEmail).then(admin => {
+            const customName = (admin?.name || "").trim();
+            const hasCustomName = Boolean(customName && customName !== parsedEmail && customName !== parsedEmail.split('@')[0]);
+            const resolvedName = hasCustomName ? customName : 'Administrador Principal';
+            setUser({ ...parsed, displayName: resolvedName });
+            setIsAdmin(true);
+            setUserRole('admin');
+            setIsAuthChecking(false);
+          }).catch(() => {
+            setUser({ ...parsed, displayName: 'Administrador Principal' });
+            setIsAdmin(true);
+            setUserRole('admin');
+            setIsAuthChecking(false);
+          });
         } else if (parsedEmail) {
           getAdminByEmail(parsedEmail).then(admin => {
             if (admin) {
@@ -1367,23 +1377,24 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       setUser((currentActiveUser: any) => {
         if (!currentActiveUser || !currentActiveUser.email) return currentActiveUser;
         const currentEmail = (currentActiveUser.email || '').toLowerCase().trim();
-        if (currentEmail === 'chapceligg@gmail.com') return currentActiveUser;
+        const primary = (primarySuperAdminEmail || 'chapceligg@gmail.com').toLowerCase().trim();
+        const isPrimary = currentEmail === primary || currentEmail === 'chapceligg@gmail.com';
 
         const match = realtimeAdmins.find(a => (a.email || a.id || '').toLowerCase().trim() === currentEmail);
-        if (match) {
-          const roleLabel = match.role === 'admin' ? 'Administrador' : 'Editor';
-          const customName = (match.name || "").trim();
-          const hasCustomName = Boolean(customName && customName !== currentEmail && customName !== currentEmail.split('@')[0]);
-          const resolvedName = hasCustomName ? customName : roleLabel;
+        if (match || isPrimary) {
+          const roleLabel = isPrimary ? 'Administrador Principal' : (match?.role === 'admin' ? 'Administrador' : 'Editor');
+          const customName = (match?.name || "").trim();
+          const isInvalidName = !customName || customName === currentEmail || customName === currentEmail.split('@')[0] || ['administrador', 'editor', 'administrador principal', 'admin'].includes(customName.toLowerCase());
+          const resolvedName = !isInvalidName ? customName : roleLabel;
           
-          setUserRole(match.role || 'editor');
+          setUserRole(isPrimary ? 'admin' : (match?.role || 'editor'));
           setIsAdmin(true);
 
-          if (currentActiveUser.displayName !== resolvedName || currentActiveUser.photoURL !== (match.photoURL || '')) {
+          if (currentActiveUser.displayName !== resolvedName || (match?.photoURL && currentActiveUser.photoURL !== match.photoURL)) {
             const updated = {
               ...currentActiveUser,
               displayName: resolvedName,
-              photoURL: match.photoURL || currentActiveUser.photoURL || ''
+              photoURL: match?.photoURL || currentActiveUser.photoURL || ''
             };
             try { localStorage.setItem("videoteca_verified_user", JSON.stringify(updated)); } catch (_) {}
             return updated;
@@ -1404,7 +1415,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     });
 
     return () => unsub();
-  }, []);
+  }, [primarySuperAdminEmail]);
 
   const handleVerifyGoogleEmail = async (emailToVerify?: string) => {
     const rawEmail = (emailToVerify || loginEmailInput || "").trim().toLowerCase();
@@ -1465,9 +1476,20 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
           adminInfo = await getAdminByEmail(userEmail);
         } catch (_) {}
 
-        const googleName = (currentUser.displayName || currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || "").trim();
         const registeredName = (adminInfo?.name || "").trim();
-        const finalDisplayName = googleName || registeredName || userEmail;
+        const isEmailOrPrefix = (name: string) => {
+          const n = name.toLowerCase().trim();
+          return !n || n === userEmail || n === userEmail.split('@')[0];
+        };
+        const isRoleName = (name: string) => {
+          const n = name.toLowerCase().trim();
+          return ['administrador', 'editor', 'administrador principal', 'admin'].includes(n);
+        };
+        const hasCustomName = Boolean(registeredName && !isEmailOrPrefix(registeredName) && !isRoleName(registeredName));
+        const defaultRoleName = userEmail === 'chapceligg@gmail.com' 
+          ? 'Administrador Principal' 
+          : (adminInfo?.role === 'admin' ? 'Administrador' : 'Editor');
+        const finalDisplayName = hasCustomName ? registeredName : defaultRoleName;
 
         const normalizedUser = {
           ...currentUser,
@@ -5219,7 +5241,7 @@ const TechItem = ({ label, value, className = "", icon = null }: any) => (
 );
 
 const AdminManager = ({ currentUser, userRole }: any) => {
-  const [admins, setAdmins] = useState<any[]>([]);
+  const [admins, setAdmins] = useState<any[]>(DEFAULT_CLIENT_ADMINS);
   const [primarySuperAdmin, setPrimarySuperAdmin] = useState<string>("chapceligg@gmail.com");
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
@@ -5673,9 +5695,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       <div className="flex flex-col gap-2.5 max-h-[360px] overflow-y-auto pr-1.5 custom-scrollbar">
         {/* Administrador Principal Card */}
         {(() => {
-          const primaryAdminObj = admins.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || { email: primarySuperAdmin, name: '', role: 'admin' };
+          const primaryAdminObj = admins.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || DEFAULT_CLIENT_ADMINS.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || { email: primarySuperAdmin, name: '', role: 'admin' };
           const customName = (primaryAdminObj.name || '').trim();
-          const hasCustomName = Boolean(customName && customName !== primarySuperAdmin);
+          const hasCustomName = Boolean(customName && customName !== primarySuperAdmin && !['administrador', 'editor', 'administrador principal', 'admin'].includes(customName.toLowerCase()));
           const displayName = hasCustomName ? customName : primarySuperAdmin;
           const isEditingPrimary = editingEmail === primarySuperAdmin.toLowerCase().trim();
 

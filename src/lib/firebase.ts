@@ -57,12 +57,15 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     if (cachedPrimary) primary = cachedPrimary.toLowerCase().trim();
   } catch (_) {}
 
-  // 0. Verificación inmediata del SuperAdministrador Principal (0 lecturas, acceso garantizado inmediato)
-  if (normalized === 'chapceligg@gmail.com' || normalized === primary) {
-    return { id: normalized, email: normalized, role: 'admin' };
-  }
+  const isPrimary = normalized === 'chapceligg@gmail.com' || normalized === primary;
 
-  // 1. Verificación instantánea en memoria local IndexedDB (0 lecturas, alta velocidad)
+  // 0. Verificación en memoria local instantánea (Permanente + Defaults)
+  const perm = getPermanentLocalAdmins();
+  const defMatch = DEFAULT_CLIENT_ADMINS.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
+  const permMatch = perm.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
+  let resolvedName = permMatch?.name || defMatch?.name || '';
+
+  // 1. Verificación en memoria local IndexedDB (0 lecturas, alta velocidad)
   try {
     const offlineAdmins = await get("videoteca_admins_cache");
     if (offlineAdmins) {
@@ -70,16 +73,26 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
       if (Array.isArray(list)) {
         const found = list.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
         if (found) {
+          if (found.name) resolvedName = found.name;
           return {
             id: normalized,
             email: normalized,
-            role: found.role || 'editor',
-            name: found.name || ''
+            role: isPrimary ? 'admin' : (found.role || 'editor'),
+            name: resolvedName
           };
         }
       }
     }
   } catch (_) {}
+
+  if (isPrimary) {
+    return { 
+      id: normalized, 
+      email: normalized, 
+      role: 'admin',
+      name: resolvedName
+    };
+  }
 
   // 2. Verificación en el backend del servidor (soporte multi-dispositivo garantizado sin límite de cuota)
   try {
