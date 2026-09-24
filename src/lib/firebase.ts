@@ -56,9 +56,6 @@ export const markFirestoreQuotaExhausted = () => {
 };
 
 export const getApiUrl = (endpoint: string): string => {
-  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    return `${CLOUD_RUN_CENTRAL_URL}${endpoint}`;
-  }
   return endpoint;
 };
 
