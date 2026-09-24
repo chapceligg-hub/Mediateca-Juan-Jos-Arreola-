@@ -47,6 +47,21 @@ export const recordGoogleAuth = async (email: string) => {
   // Función simplificada sin tracking adicional
 };
 
+export const CLOUD_RUN_CENTRAL_URL = "https://ais-pre-xyitmmdapgw2fr37dyjkrh-452282047905.us-west2.run.app";
+
+let isFirestoreQuotaExhaustedSession = false;
+
+export const markFirestoreQuotaExhausted = () => {
+  isFirestoreQuotaExhaustedSession = true;
+};
+
+export const getApiUrl = (endpoint: string): string => {
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    return `${CLOUD_RUN_CENTRAL_URL}${endpoint}`;
+  }
+  return endpoint;
+};
+
 export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string } | null> => {
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) return null;
@@ -96,7 +111,7 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
 
   // 2. Verificación en el backend del servidor (soporte multi-dispositivo garantizado sin límite de cuota)
   try {
-    const res = await fetch(`/api/admins/check/${encodeURIComponent(normalized)}`);
+    const res = await fetch(getApiUrl(`/api/admins/check/${encodeURIComponent(normalized)}`));
     if (res.ok) {
       const data = await res.json();
       if (data && data.isAdmin) {
@@ -213,7 +228,7 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
       // Respaldar en servidor backend en segundo plano (0 bloqueo, 0 lecturas Firestore)
       if (Array.isArray(newMovies) && newMovies.length > 0) {
         try {
-          fetch('/api/movies/sync', {
+          fetch(getApiUrl('/api/movies/sync'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newMovies)
@@ -286,7 +301,7 @@ export const syncDeletedMovieIds = async (): Promise<string[]> => {
   } catch (_) {}
 
   try {
-    const res = await fetch('/api/movies/deleted');
+    const res = await fetch(getApiUrl('/api/movies/deleted'));
     if (res.ok) {
       const serverDeleted = await res.json();
       if (Array.isArray(serverDeleted) && serverDeleted.length > 0) {
@@ -314,7 +329,7 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
     if (!cached || cached.length === 0) {
       // 1. Intentar cargar desde el servidor Express central (/api/movies) -> 0 lecturas Firestore
       try {
-        const res = await fetch('/api/movies');
+        const res = await fetch(getApiUrl('/api/movies'));
         if (res.ok) {
           const serverMovies = await res.json();
           if (Array.isArray(serverMovies) && serverMovies.length > 0) {
@@ -423,7 +438,7 @@ const initMovieRealtimeStream = () => {
   if (globalMovieEventSource && globalMovieEventSource.readyState !== EventSource.CLOSED) return;
 
   try {
-    globalMovieEventSource = new EventSource('/api/movies/stream');
+    globalMovieEventSource = new EventSource(getApiUrl('/api/movies/stream'));
 
     globalMovieEventSource.addEventListener('movie_upsert', async (e: MessageEvent) => {
       try {
@@ -465,7 +480,7 @@ const initMovieRealtimeStream = () => {
 
     globalMovieEventSource.addEventListener('movies_update', async () => {
       try {
-        const res = await fetch('/api/movies');
+        const res = await fetch(getApiUrl('/api/movies'));
         if (res.ok) {
           const serverMovies = await res.json();
           if (Array.isArray(serverMovies)) {
@@ -496,7 +511,7 @@ const initMovieRealtimeStream = () => {
       if (!moviePollFallbackInterval) {
         moviePollFallbackInterval = setInterval(async () => {
           try {
-            const res = await fetch('/api/movies');
+            const res = await fetch(getApiUrl('/api/movies'));
             if (res.ok) {
               const data = await res.json();
               if (Array.isArray(data) && data.length > 0) {
@@ -552,7 +567,7 @@ export const subscribeToMovies = (
 
     // 2. Sincronizar de inmediato con el servidor central (0 lecturas Firestore)
     try {
-      const res = await fetch('/api/movies');
+      const res = await fetch(getApiUrl('/api/movies'));
       if (res.ok) {
         const serverMovies = await res.json();
         if (Array.isArray(serverMovies) && serverMovies.length > 0) {
@@ -560,9 +575,17 @@ export const subscribeToMovies = (
           const merged = mergeMoviesPreservingLocal(current, serverMovies, deletedIds);
           await setCachedMovies(merged, true);
           notifyMovieSubscribers(merged);
+          // Si el catálogo local consolidado tiene más títulos que el servidor, poblar el servidor central
+          if (merged.length > serverMovies.length) {
+            fetch(getApiUrl('/api/movies/sync'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(merged)
+            }).catch(() => {});
+          }
         } else if (offlineData && offlineData.length > 0) {
           // El servidor central aún no tiene películas: enviar nuestra copia local para poblar el servidor
-          fetch('/api/movies/sync', {
+          fetch(getApiUrl('/api/movies/sync'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(offlineData)
@@ -577,68 +600,66 @@ export const subscribeToMovies = (
     runSmartDeltaSyncOnce(callback);
   });
 
-  // 3. Conectar al canal SSE en tiempo real para recibir actualizaciones de películas
+  // 3. Conectar al canal SSE en tiempo real para recibir actualizaciones de películas (0 lecturas Firestore)
   initMovieRealtimeStream();
 
-  // 4. Suscripción pasiva en tiempo real con onSnapshot respaldada por persistentLocalCache
+  // 4. Suscripción delta pasiva en tiempo real (0 lecturas iniciales, solo novedades futuras)
   let unsubscribeFirestore = () => {};
-  try {
-    const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
-    
-    unsubscribeFirestore = onSnapshot(
-      q,
-      async (snapshot) => {
-        const removedIds: string[] = [];
-        snapshot.docChanges().forEach(change => {
-          if (change.type === 'removed' && change.doc && change.doc.id) {
-            removedIds.push(change.doc.id);
+  if (!isFirestoreQuotaExhaustedSession) {
+    try {
+      const listenFromTime = new Date().toISOString();
+      const qDeltaRealtime = query(
+        collection(db, 'movies'),
+        where('updatedAt', '>', listenFromTime)
+      );
+      
+      unsubscribeFirestore = onSnapshot(
+        qDeltaRealtime,
+        async (snapshot) => {
+          if (snapshot.empty) return;
+          const removedIds: string[] = [];
+          snapshot.docChanges().forEach(change => {
+            if (change.type === 'removed' && change.doc && change.doc.id) {
+              removedIds.push(change.doc.id);
+            }
+          });
+
+          if (removedIds.length > 0) {
+            fetch(getApiUrl('/api/movies/deleted'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids: removedIds })
+            }).catch(() => {});
           }
-        });
 
-        if (removedIds.length > 0) {
-          fetch('/api/movies/deleted', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: removedIds })
-          }).catch(() => {});
+          let deletedIds = await syncDeletedMovieIds();
+          if (removedIds.length > 0) {
+            deletedIds = Array.from(new Set([...deletedIds, ...removedIds]));
+            await set("videoteca_deleted_ids", deletedIds.slice(-1000));
+          }
+
+          const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const existing = await getCachedMovies() || [];
+          const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
+          const cleanMerged = merged.filter(m => m && m.id && !deletedIds.includes(m.id));
+
+          await setCachedMovies(cleanMerged, true);
+          notifyMovieSubscribers(cleanMerged);
+        },
+        (err: any) => {
+          const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted');
+          if (isQuota) {
+            isFirestoreQuotaExhaustedSession = true;
+            try { unsubscribeFirestore(); } catch (_) {}
+            console.log("[Firebase] Cuota agotada detectada: operando 100% con servidor central y caché local.");
+          } else {
+            console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
+            if (onError) onError(err);
+          }
         }
-
-        let deletedIds = await syncDeletedMovieIds();
-        if (removedIds.length > 0) {
-          deletedIds = Array.from(new Set([...deletedIds, ...removedIds]));
-          await set("videoteca_deleted_ids", deletedIds.slice(-1000));
-        }
-
-        const deletedSet = new Set(deletedIds);
-        const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const incomingIds = new Set(incomingMovies.map(m => m.id));
-        const existing = await getCachedMovies() || [];
-
-        const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
-
-        const nowMs = Date.now();
-        const cleanMerged = merged.filter(m => {
-          if (!m || !m.id) return false;
-          if (deletedSet.has(m.id)) return false;
-          if (incomingIds.has(m.id)) return true;
-          const createdMs = new Date(m.createdAt || m.updatedAt || 0).getTime();
-          return (nowMs - createdMs) < 30000;
-        });
-
-        await setCachedMovies(cleanMerged, true);
-        notifyMovieSubscribers(cleanMerged);
-      },
-      (err: any) => {
-        const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted';
-        if (!isQuota) {
-          console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
-          if (onError) onError(err);
-        } else {
-          console.log("[Firebase] Aviso: operando con catálogo en caché local (cuota protegida).");
-        }
-      }
-    );
-  } catch (_) {}
+      );
+    } catch (_) {}
+  }
 
   return () => {
     movieSubscribers.delete(callback);
@@ -727,7 +748,7 @@ export const getDeletedAdminsSet = async (): Promise<Set<string>> => {
   } catch (_) {}
 
   try {
-    const res = await fetch('/api/admins/deleted');
+    const res = await fetch(getApiUrl('/api/admins/deleted'));
     if (res.ok) {
       const serverDeleted = await res.json();
       if (Array.isArray(serverDeleted)) {
@@ -812,24 +833,29 @@ export const subscribeToPrimarySuperAdmin = (callback: (primaryEmail: string) =>
 
   // 2. Suscribirse a cambios en Firestore de _primary_config en tiempo real
   let unsubscribeFirestore = () => {};
-  try {
-    const primaryDocRef = doc(db, 'admins', '_primary_config');
-    unsubscribeFirestore = onSnapshot(primaryDocRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data && typeof data.email === 'string' && data.email.trim()) {
-          const clean = data.email.toLowerCase().trim();
-          try { localStorage.setItem("videoteca_primary_superadmin", clean); } catch (_) {}
-          notifyPrimarySuperAdminSubscribers(clean);
+  if (!isFirestoreQuotaExhaustedSession) {
+    try {
+      const primaryDocRef = doc(db, 'admins', '_primary_config');
+      unsubscribeFirestore = onSnapshot(primaryDocRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && typeof data.email === 'string' && data.email.trim()) {
+            const clean = data.email.toLowerCase().trim();
+            try { localStorage.setItem("videoteca_primary_superadmin", clean); } catch (_) {}
+            notifyPrimarySuperAdminSubscribers(clean);
+          }
         }
-      }
-    }, (err) => {
-      const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
-      if (!isQuota) {
-        console.warn("[Firebase] Aviso en onSnapshot de primary super admin:", err);
-      }
-    });
-  } catch (_) {}
+      }, (err) => {
+        const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted');
+        if (isQuota) {
+          isFirestoreQuotaExhaustedSession = true;
+          try { unsubscribeFirestore(); } catch (_) {}
+        } else {
+          console.warn("[Firebase] Aviso en onSnapshot de primary super admin:", err);
+        }
+      });
+    } catch (_) {}
+  }
 
   return () => {
     primaryAdminSubscribers.delete(callback);
@@ -877,7 +903,7 @@ const initAdminRealtimeStream = () => {
   if (globalAdminEventSource && globalAdminEventSource.readyState !== EventSource.CLOSED) return;
 
   try {
-    globalAdminEventSource = new EventSource('/api/admins/stream');
+    globalAdminEventSource = new EventSource(getApiUrl('/api/admins/stream'));
 
     globalAdminEventSource.addEventListener('admins_update', async (e: MessageEvent) => {
       try {
@@ -918,7 +944,7 @@ const initAdminRealtimeStream = () => {
       if (!adminPollFallbackInterval) {
         adminPollFallbackInterval = setInterval(async () => {
           try {
-            const res = await fetch('/api/admins');
+            const res = await fetch(getApiUrl('/api/admins'));
             if (res.ok) {
               const data = await res.json();
               if (Array.isArray(data)) {
@@ -981,54 +1007,59 @@ export const subscribeToAdmins = (
 
   // 4. Suscripción en tiempo real a Firestore de la colección 'admins'
   let unsubscribeFirestore = () => {};
-  try {
-    const q = collection(db, 'admins');
-    unsubscribeFirestore = onSnapshot(q, (snapshot) => {
-      const activeAdmins: any[] = [];
-      const removedEmails: string[] = [];
+  if (!isFirestoreQuotaExhaustedSession) {
+    try {
+      const q = collection(db, 'admins');
+      unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+        const activeAdmins: any[] = [];
+        const removedEmails: string[] = [];
 
-      snapshot.docChanges().forEach(change => {
-        if (change.type === 'removed') {
-          const docId = change.doc.id;
-          if (docId && !docId.startsWith('_')) {
-            removedEmails.push(docId.toLowerCase().trim());
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'removed') {
+            const docId = change.doc.id;
+            if (docId && !docId.startsWith('_')) {
+              removedEmails.push(docId.toLowerCase().trim());
+            }
           }
+        });
+
+        if (removedEmails.length > 0) {
+          removedEmails.forEach(e => recordDeletedAdmin(e));
+        }
+
+        snapshot.docs.forEach(docSnap => {
+          const id = docSnap.id;
+          if (!id.startsWith('_')) {
+            const data = docSnap.data();
+            const email = (data.email || id).toLowerCase().trim();
+            activeAdmins.push({
+              id: email,
+              email,
+              name: data.name || '',
+              role: data.role || 'editor',
+              createdAt: data.createdAt || new Date().toISOString(),
+              updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
+              photoURL: data.photoURL || '',
+              ...data
+            });
+          }
+        });
+
+        if (activeAdmins.length > 0) {
+          notifyAdminSubscribers(activeAdmins);
+        }
+      }, (err) => {
+        const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted');
+        if (isQuota) {
+          isFirestoreQuotaExhaustedSession = true;
+          try { unsubscribeFirestore(); } catch (_) {}
+        } else {
+          console.warn("[Firebase] Aviso en onSnapshot de admins:", err);
+          if (onError) onError(err);
         }
       });
-
-      if (removedEmails.length > 0) {
-        removedEmails.forEach(e => recordDeletedAdmin(e));
-      }
-
-      snapshot.docs.forEach(docSnap => {
-        const id = docSnap.id;
-        if (!id.startsWith('_')) {
-          const data = docSnap.data();
-          const email = (data.email || id).toLowerCase().trim();
-          activeAdmins.push({
-            id: email,
-            email,
-            name: data.name || '',
-            role: data.role || 'editor',
-            createdAt: data.createdAt || new Date().toISOString(),
-            updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
-            photoURL: data.photoURL || '',
-            ...data
-          });
-        }
-      });
-
-      if (activeAdmins.length > 0) {
-        notifyAdminSubscribers(activeAdmins);
-      }
-    }, (err) => {
-      const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
-      if (!isQuota) {
-        console.warn("[Firebase] Aviso en onSnapshot de admins:", err);
-        if (onError) onError(err);
-      }
-    });
-  } catch (_) {}
+    } catch (_) {}
+  }
 
   return () => {
     adminSubscribers.delete(callback);
@@ -1045,7 +1076,7 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
 
   // 2. Consultar servidor central (0 lecturas Firestore, multi-dispositivo)
   try {
-    const res = await fetch('/api/movies');
+    const res = await fetch(getApiUrl('/api/movies'));
     if (res.ok) {
       const serverMovies = await res.json();
       if (Array.isArray(serverMovies) && serverMovies.length > 0) {
@@ -1078,7 +1109,7 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
     const snapshot = await getDocs(q);
     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     await setCachedMovies(data, true);
-    fetch('/api/movies/sync', {
+    fetch(getApiUrl('/api/movies/sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -1149,7 +1180,7 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
   const deletedSet = await getDeletedAdminsSet();
 
   try {
-    const resAdmins = await fetch('/api/admins');
+    const resAdmins = await fetch(getApiUrl('/api/admins'));
     if (resAdmins.ok) {
       const data = await resAdmins.json();
       if (Array.isArray(data)) serverAdmins = data;
@@ -1201,7 +1232,7 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
     lastKnownAdminsList = unified;
 
     // Sincronizar en segundo plano con el backend y Firestore
-    fetch('/api/admins/sync', {
+    fetch(getApiUrl('/api/admins/sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(unified)
@@ -1269,7 +1300,7 @@ export const upsertMovie = async (movie: any) => {
 
   // 2. Guardar en el backend del servidor central (persistencia multi-dispositivo y SSE)
   try {
-    await fetch('/api/movies', {
+    await fetch(getApiUrl('/api/movies'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(movieData)
@@ -1318,7 +1349,7 @@ export const updateMovie = async (id: string, updates: any) => {
 
   // 1. Guardar en backend central para sincronización inmediata
   try {
-    await fetch('/api/movies', {
+    await fetch(getApiUrl('/api/movies'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...safeUpdates, id })
@@ -1357,8 +1388,8 @@ export const deleteMovie = async (id: string) => {
 
   // 1. Notificar al servidor central (sincronización multi-dispositivo con 0 costo de Firestore)
   try {
-    await fetch(`/api/movies/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await fetch('/api/movies/deleted', {
+    await fetch(getApiUrl(`/api/movies/${encodeURIComponent(id)}`), { method: 'DELETE' });
+    await fetch(getApiUrl('/api/movies/deleted'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id })
@@ -1407,7 +1438,7 @@ export const upsertAdmin = async (admin: any) => {
 
   // 1. Guardar en el backend del servidor (persistencia multi-dispositivo garantizada)
   try {
-    await fetch('/api/admins', {
+    await fetch(getApiUrl('/api/admins'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(adminData)
@@ -1453,7 +1484,7 @@ export const deleteAdmin = async (idOrEmail: string) => {
   recordDeletedAdmin(adminId);
 
   try {
-    await fetch(`/api/admins/${encodeURIComponent(adminId)}`, { method: 'DELETE' });
+    await fetch(getApiUrl(`/api/admins/${encodeURIComponent(adminId)}`), { method: 'DELETE' });
   } catch (err) {
     console.warn("Aviso al eliminar admin en backend:", err);
   }
@@ -1485,7 +1516,7 @@ export const deleteAdmin = async (idOrEmail: string) => {
 export const getPrimarySuperAdminEmail = async (): Promise<string> => {
   // 1. Consultar servidor central (garantiza sincronización multi-dispositivo inmediata)
   try {
-    const res = await fetch('/api/primary-admin');
+    const res = await fetch(getApiUrl('/api/primary-admin'));
     if (res.ok) {
       const data = await res.json();
       if (data && typeof data.email === 'string' && data.email.trim()) {
@@ -1538,7 +1569,7 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
 
   // 1. Actualizar en el servidor central (persistencia multi-dispositivo garantizada)
   try {
-    await fetch('/api/primary-admin', {
+    await fetch(getApiUrl('/api/primary-admin'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: normalizedNew, current: normalizedCurrent, keepPrevious: keepPreviousAsAdmin })

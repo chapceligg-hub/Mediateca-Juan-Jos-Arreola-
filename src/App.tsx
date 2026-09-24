@@ -15,7 +15,7 @@ import {
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
-  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS
+  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS, getApiUrl
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -1607,12 +1607,23 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
   useEffect(() => {
     // 1. TRÍPTICO DE CARGA INCREMENTAL (FUSIÓN DE CACHÉ)
-    // RECUPERACIÓN DE MEMORIA CACHÉ GUARDADA: Leemos inmediatamente por si Firestore tarda en conectar
+    // RECUPERACIÓN DE MEMORIA CACHÉ GUARDADA (Capa 1: IndexedDB -> Capa 2: Servidor Central /api/movies)
     (async () => {
       try {
         const offlineData = await getCachedMovies();
         if (offlineData && offlineData.length > 0) {
           setMovies(offlineData);
+        } else {
+          // Si la memoria local está vacía (modo incógnito o nuevo dispositivo), cargar de inmediato del servidor central (0 lecturas Firestore)
+          try {
+            const res = await fetch(getApiUrl('/api/movies'));
+            if (res.ok) {
+              const serverMovies = await res.json();
+              if (Array.isArray(serverMovies) && serverMovies.length > 0) {
+                setMovies(serverMovies);
+              }
+            }
+          } catch (_) {}
         }
       } catch (e) {
         console.warn("Error leyendo la caché inicial de películas:", e);
