@@ -804,21 +804,68 @@ export const notifyPrimarySuperAdminSubscribers = (primaryEmail: string) => {
 
 export const subscribeToPrimarySuperAdmin = (callback: (primaryEmail: string) => void) => {
   primaryAdminSubscribers.add(callback);
+
+  // 1. Notificar de inmediato con el valor actual en memoria o servidor
+  getPrimarySuperAdminEmail().then(email => {
+    if (email) callback(email);
+  }).catch(() => {});
+
+  // 2. Suscribirse a cambios en Firestore de _primary_config en tiempo real
+  let unsubscribeFirestore = () => {};
+  try {
+    const primaryDocRef = doc(db, 'admins', '_primary_config');
+    unsubscribeFirestore = onSnapshot(primaryDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && typeof data.email === 'string' && data.email.trim()) {
+          const clean = data.email.toLowerCase().trim();
+          try { localStorage.setItem("videoteca_primary_superadmin", clean); } catch (_) {}
+          notifyPrimarySuperAdminSubscribers(clean);
+        }
+      }
+    }, (err) => {
+      const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+      if (!isQuota) {
+        console.warn("[Firebase] Aviso en onSnapshot de primary super admin:", err);
+      }
+    });
+  } catch (_) {}
+
   return () => {
     primaryAdminSubscribers.delete(callback);
+    try { unsubscribeFirestore(); } catch (_) {}
   };
 };
 
 export const notifyAdminSubscribers = (admins: any[]) => {
   if (!Array.isArray(admins)) return;
-  // Fusión con memoria para evitar caídas de cuentas en pantalla
-  const merged = mergeAdmins(lastKnownAdminsList, admins);
-  lastKnownAdminsList = merged;
-  savePermanentLocalAdmins(merged);
+  
+  let deletedSet = new Set<string>();
+  try {
+    const raw = localStorage.getItem("videoteca_deleted_admins");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) parsed.forEach(d => {
+        if (d && typeof d === 'string') deletedSet.add(d.toLowerCase().trim());
+      });
+    }
+  } catch (_) {}
+  const primary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').toLowerCase().trim();
+  deletedSet.delete(primary);
+
+  const cleaned = admins.filter(a => {
+    if (!a) return false;
+    const e = (a.email || a.id || '').toLowerCase().trim();
+    return e && !deletedSet.has(e);
+  });
+
+  lastKnownAdminsList = cleaned;
+  savePermanentLocalAdmins(cleaned);
+  set("videoteca_admins_cache", cleaned).catch(() => {});
 
   for (const cb of adminSubscribers) {
     try {
-      cb(merged);
+      cb(cleaned);
     } catch (e) {
       console.warn("Error en suscriptor de admins:", e);
     }
@@ -835,14 +882,14 @@ const initAdminRealtimeStream = () => {
     globalAdminEventSource.addEventListener('admins_update', async (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data);
-        if (payload && Array.isArray(payload.admins) && payload.admins.length > 0) {
+        if (payload && Array.isArray(payload.admins)) {
           const deletedSet = await getDeletedAdminsSet();
-          const merged = mergeAdmins(lastKnownAdminsList, payload.admins).filter(a => !deletedSet.has((a.email || a.id || '').toLowerCase().trim()));
-          await set("videoteca_admins_cache", merged);
-          savePermanentLocalAdmins(merged);
-          notifyAdminSubscribers(merged);
+          const cleaned = payload.admins.filter(a => !deletedSet.has((a.email || a.id || '').toLowerCase().trim()));
+          await set("videoteca_admins_cache", cleaned);
+          savePermanentLocalAdmins(cleaned);
+          notifyAdminSubscribers(cleaned);
           if (adminBroadcastChannel) {
-            adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: merged });
+            adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: cleaned });
           }
         }
         if (payload?.primarySuperAdmin) {
@@ -874,12 +921,12 @@ const initAdminRealtimeStream = () => {
             const res = await fetch('/api/admins');
             if (res.ok) {
               const data = await res.json();
-              if (Array.isArray(data) && data.length > 0) {
+              if (Array.isArray(data)) {
                 const deletedSet = await getDeletedAdminsSet();
-                const merged = mergeAdmins(lastKnownAdminsList, data).filter(a => !deletedSet.has((a.email || a.id || '').toLowerCase().trim()));
-                await set("videoteca_admins_cache", merged);
-                savePermanentLocalAdmins(merged);
-                notifyAdminSubscribers(merged);
+                const cleaned = data.filter(a => !deletedSet.has((a.email || a.id || '').toLowerCase().trim()));
+                await set("videoteca_admins_cache", cleaned);
+                savePermanentLocalAdmins(cleaned);
+                notifyAdminSubscribers(cleaned);
               }
             }
           } catch (_) {}
@@ -903,11 +950,9 @@ const initAdminRealtimeStream = () => {
 if (adminBroadcastChannel) {
   adminBroadcastChannel.onmessage = async (event: MessageEvent) => {
     if (event.data?.type === 'ADMINS_UPDATED' && Array.isArray(event.data.admins)) {
-      const deletedSet = await getDeletedAdminsSet();
-      const merged = mergeAdmins(lastKnownAdminsList, event.data.admins).filter(a => !deletedSet.has((a.email || a.id || '').toLowerCase().trim()));
-      await set("videoteca_admins_cache", merged);
-      savePermanentLocalAdmins(merged);
-      notifyAdminSubscribers(merged);
+      notifyAdminSubscribers(event.data.admins);
+    } else if (event.data?.type === 'PRIMARY_ADMIN_UPDATED' && event.data.primaryEmail) {
+      notifyPrimarySuperAdminSubscribers(event.data.primaryEmail);
     }
   };
 }
@@ -934,8 +979,60 @@ export const subscribeToAdmins = (
   // 3. Conectar al canal SSE en tiempo real para recibir actualizaciones de cualquier dispositivo
   initAdminRealtimeStream();
 
+  // 4. Suscripción en tiempo real a Firestore de la colección 'admins'
+  let unsubscribeFirestore = () => {};
+  try {
+    const q = collection(db, 'admins');
+    unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+      const activeAdmins: any[] = [];
+      const removedEmails: string[] = [];
+
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'removed') {
+          const docId = change.doc.id;
+          if (docId && !docId.startsWith('_')) {
+            removedEmails.push(docId.toLowerCase().trim());
+          }
+        }
+      });
+
+      if (removedEmails.length > 0) {
+        removedEmails.forEach(e => recordDeletedAdmin(e));
+      }
+
+      snapshot.docs.forEach(docSnap => {
+        const id = docSnap.id;
+        if (!id.startsWith('_')) {
+          const data = docSnap.data();
+          const email = (data.email || id).toLowerCase().trim();
+          activeAdmins.push({
+            id: email,
+            email,
+            name: data.name || '',
+            role: data.role || 'editor',
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
+            photoURL: data.photoURL || '',
+            ...data
+          });
+        }
+      });
+
+      if (activeAdmins.length > 0) {
+        notifyAdminSubscribers(activeAdmins);
+      }
+    }, (err) => {
+      const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+      if (!isQuota) {
+        console.warn("[Firebase] Aviso en onSnapshot de admins:", err);
+        if (onError) onError(err);
+      }
+    });
+  } catch (_) {}
+
   return () => {
     adminSubscribers.delete(callback);
+    try { unsubscribeFirestore(); } catch (_) {}
   };
 };
 
@@ -996,13 +1093,26 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
 };
 
 export const mergeAdmins = (...lists: any[][]): any[] => {
+  let deletedSet = new Set<string>();
+  try {
+    const raw = localStorage.getItem("videoteca_deleted_admins");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) parsed.forEach(d => {
+        if (d && typeof d === 'string') deletedSet.add(d.toLowerCase().trim());
+      });
+    }
+  } catch (_) {}
+  const primary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').toLowerCase().trim();
+  deletedSet.delete(primary);
+
   const map = new Map<string, any>();
   for (const list of lists) {
     if (!Array.isArray(list)) continue;
     for (const item of list) {
       if (!item) continue;
       const email = (item.email || item.id || '').trim().toLowerCase();
-      if (!email) continue;
+      if (!email || deletedSet.has(email)) continue;
       const existing = map.get(email);
       if (!existing) {
         map.set(email, { ...item, id: email, email });
@@ -1419,7 +1529,7 @@ export const getPrimarySuperAdminEmail = async (): Promise<string> => {
   return defaultPrimary;
 };
 
-export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAdminEmail: string) => {
+export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAdminEmail: string, keepPreviousAsAdmin = true) => {
   const normalizedNew = (newEmail || '').toLowerCase().trim();
   const normalizedCurrent = (currentSuperAdminEmail || '').toLowerCase().trim();
   if (!normalizedNew || !normalizedNew.includes('@') || !normalizedNew.includes('.')) {
@@ -1431,7 +1541,7 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
     await fetch('/api/primary-admin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: normalizedNew, current: normalizedCurrent })
+      body: JSON.stringify({ email: normalizedNew, current: normalizedCurrent, keepPrevious: keepPreviousAsAdmin })
     });
   } catch (e) {
     console.warn("Aviso al transferir primary admin en backend:", e);
@@ -1460,15 +1570,19 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
     updatedAt: new Date().toISOString()
   });
 
-  // 4. Asegurar que el anterior Super Admin Principal conserve rol de Super Admin y su nombre opcional intacto
-  if (normalizedCurrent) {
-    await upsertAdmin({
-      ...(existingCurrentObj || {}),
-      email: normalizedCurrent,
-      role: 'admin',
-      name: typeof existingCurrentObj?.name === 'string' ? existingCurrentObj.name.trim() : '',
-      updatedAt: new Date().toISOString()
-    });
+  // 4. Si keepPreviousAsAdmin es true (traspaso), mantener el anterior como admin. Si es false (renombre/edición de correo), eliminar el viejo.
+  if (normalizedCurrent && normalizedCurrent !== normalizedNew) {
+    if (keepPreviousAsAdmin) {
+      await upsertAdmin({
+        ...(existingCurrentObj || {}),
+        email: normalizedCurrent,
+        role: 'admin',
+        name: typeof existingCurrentObj?.name === 'string' ? existingCurrentObj.name.trim() : '',
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      await deleteAdmin(normalizedCurrent);
+    }
   }
 
   // Actualizar caché en localStorage y notificar suscriptores
@@ -1476,6 +1590,9 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
     localStorage.setItem("videoteca_primary_superadmin", normalizedNew);
   } catch (_) {}
   notifyPrimarySuperAdminSubscribers(normalizedNew);
+  if (adminBroadcastChannel) {
+    adminBroadcastChannel.postMessage({ type: 'PRIMARY_ADMIN_UPDATED', primaryEmail: normalizedNew });
+  }
 
   return normalizedNew;
 };

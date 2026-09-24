@@ -346,14 +346,14 @@ export default function App() {
     }).catch(() => {});
 
     fetchAdminsOptimized(false).then(adms => {
-      if (adms && Array.isArray(adms) && adms.length > 0) {
-        setAdminsList(prev => mergeAdmins(prev, adms));
+      if (adms && Array.isArray(adms)) {
+        setAdminsList(adms);
       }
     }).catch(() => {});
 
     const unsubAdmins = subscribeToAdmins((updated) => {
-      if (updated && Array.isArray(updated) && updated.length > 0) {
-        setAdminsList(prev => mergeAdmins(prev, updated));
+      if (updated && Array.isArray(updated)) {
+        setAdminsList(updated);
       }
     });
 
@@ -5277,8 +5277,8 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         fetchAdminsOptimized(forceServer),
         getPrimarySuperAdminEmail()
       ]);
-      if (serverOrCachedAdmins && Array.isArray(serverOrCachedAdmins) && serverOrCachedAdmins.length > 0) {
-        setAdmins(prev => mergeAdmins(prev, serverOrCachedAdmins));
+      if (serverOrCachedAdmins && Array.isArray(serverOrCachedAdmins)) {
+        setAdmins(serverOrCachedAdmins);
       }
       if (primaryEmail) {
         setPrimarySuperAdmin(primaryEmail);
@@ -5294,8 +5294,8 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   useEffect(() => {
     loadAdmins(false);
     const unsub = subscribeToAdmins((realtimeAdmins) => {
-      if (realtimeAdmins && Array.isArray(realtimeAdmins) && realtimeAdmins.length > 0) {
-        setAdmins(prev => mergeAdmins(prev, realtimeAdmins));
+      if (realtimeAdmins && Array.isArray(realtimeAdmins)) {
+        setAdmins(realtimeAdmins);
       }
     });
     const unsubPrimary = subscribeToPrimarySuperAdmin((newPrimary) => {
@@ -5331,6 +5331,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       const payload = {
         email,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         addedBy: currentUser?.email || currentUser?.uid || 'admin',
         name: trimmedName,
         photoURL: "",
@@ -5339,10 +5340,6 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       };
       
       await upsertAdmin(payload);
-      setAdmins(prev => {
-        const filtered = prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== email);
-        return [...filtered, payload];
-      });
       setNewEmail("");
       setNewName("");
       setNewRole("editor");
@@ -5394,7 +5391,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
       if (isPrimary) {
         if (newTargetEmail !== originalEmail) {
-          await transferPrimarySuperAdmin(newTargetEmail, originalEmail);
+          await transferPrimarySuperAdmin(newTargetEmail, originalEmail, false);
           setPrimarySuperAdmin(newTargetEmail);
         }
         const payload = {
@@ -5408,13 +5405,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           photoURL: existingAdmin?.photoURL || ''
         };
         await upsertAdmin(payload);
-        setAdmins(prev => {
-          const filtered = prev.filter(a => {
-            const e = (a.email || a.id || '').toLowerCase().trim();
-            return e !== originalEmail && e !== newTargetEmail;
-          });
-          return [...filtered, payload];
-        });
+        setEditingEmail(null);
         setTransferSuccess("Cambios guardados.");
         setTimeout(() => setTransferSuccess(""), 3500);
       } else {
@@ -5432,20 +5423,11 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         if (newTargetEmail !== originalEmail) {
           await deleteAdmin(originalEmail);
           await upsertAdmin(payload);
-          setAdmins(prev => {
-            const filtered = prev.filter(a => {
-              const e = (a.email || a.id || '').toLowerCase().trim();
-              return e !== originalEmail && e !== newTargetEmail;
-            });
-            return [...filtered, payload];
-          });
         } else {
           await upsertAdmin(payload);
-          setAdmins(prev => prev.map(a => ((a.email || a.id || '').toLowerCase().trim() === originalEmail ? { ...a, ...payload } : a)));
         }
+        setEditingEmail(null);
       }
-
-      setEditingEmail(null);
     } catch (err: any) {
       setError(err?.message || "Error al actualizar los datos de la cuenta.");
     } finally {
@@ -5475,7 +5457,6 @@ const AdminManager = ({ currentUser, userRole }: any) => {
     setError("");
     try {
       await deleteAdmin(userToDelete);
-      setAdmins(prev => prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== userToDelete));
       setUserToDelete(null);
     } catch (err: any) {
       setError(err?.message || "Error al eliminar acceso.");
@@ -5508,7 +5489,6 @@ const AdminManager = ({ currentUser, userRole }: any) => {
          updatedAt: new Date().toISOString()
        };
        await upsertAdmin(updatedPayload);
-       setAdmins(prev => prev.map(a => ((a.email || a.id || '').toLowerCase().trim() === target ? { ...a, role, name: preservedName } : a)));
     } catch (err: any) {
        setError(err?.message || "Error al actualizar rol.");
     } finally {
@@ -5537,11 +5517,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
     setTransferLoading(true);
     setTransferError("");
     try {
-      await transferPrimarySuperAdmin(newEmail, primarySuperAdmin);
+      await transferPrimarySuperAdmin(newEmail, primarySuperAdmin, true);
       setPrimarySuperAdmin(newEmail);
       setTransferSuccess(`Puesto de Administrador Principal transferido exitosamente a ${newEmail}`);
-      const updatedAdmins = await fetchAdminsOptimized(true);
-      setAdmins(updatedAdmins || []);
       setShowTransferModal(false);
       setTargetTransferEmail("");
       setConfirmPhrase("");

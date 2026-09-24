@@ -395,13 +395,14 @@ app.get("/api/primary-admin", (req, res) => {
 app.post("/api/primary-admin", (req, res) => {
   const email = (req.body?.email || "").trim().toLowerCase();
   const current = (req.body?.current || "").trim().toLowerCase();
+  const keepPrevious = req.body?.keepPrevious !== false;
   if (!email || !email.includes("@")) {
     return res.status(400).json({ error: "Email inválido" });
   }
   savePrimarySuperAdmin(email);
 
   // Asegurar que el primary super admin esté registrado en admins
-  const admins = loadServerAdmins();
+  let admins = loadServerAdmins();
   const deleted = loadDeletedAdminIds().filter(d => d !== email);
   saveDeletedAdminIds(deleted);
 
@@ -418,11 +419,20 @@ app.post("/api/primary-admin", (req, res) => {
     });
   }
 
-  // Si el anterior primary admin estaba registrado, mantenerlo como admin conservando su nombre
+  // Si el anterior primary admin estaba registrado, mantenerlo si keepPrevious es true, o removerlo si es false (edición)
   if (current && current !== email) {
-    const curIdx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === current);
-    if (curIdx > -1) {
-      admins[curIdx].role = "admin";
+    if (keepPrevious) {
+      const curIdx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === current);
+      if (curIdx > -1) {
+        admins[curIdx].role = "admin";
+      }
+    } else {
+      admins = admins.filter(a => (a.email || a.id || "").trim().toLowerCase() !== current);
+      const delList = loadDeletedAdminIds();
+      if (!delList.includes(current)) {
+        delList.push(current);
+        saveDeletedAdminIds(delList.slice(-500));
+      }
     }
   }
 
