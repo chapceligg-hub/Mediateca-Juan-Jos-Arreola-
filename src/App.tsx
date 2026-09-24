@@ -8,11 +8,11 @@ import {
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
   Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table,
-  Mail, RotateCcw, Crown
+  Mail, RotateCcw, Crown, Save, BookmarkCheck, CheckCircle2
 } from 'lucide-react';
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
-  upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
+  upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin, markLatestMoviesInDB, forcePushMasterCatalogToDB,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
   isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS, getApiUrl
@@ -419,6 +419,62 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showReviewOnly, setShowReviewOnly] = useState(false);
   const [showHistoryOnly, setShowHistoryOnly] = useState(false);
+  const [showLatestOnly, setShowLatestOnly] = useState(false);
+  const [isSavingLatestBatch, setIsSavingLatestBatch] = useState(false);
+  const [latestNotice, setLatestNotice] = useState<string | null>(null);
+
+  const [showMasterSyncModal, setShowMasterSyncModal] = useState(false);
+  const [isSyncingMaster, setIsSyncingMaster] = useState(false);
+  const [masterSyncSuccess, setMasterSyncSuccess] = useState<string | null>(null);
+
+  const handlePushMasterCatalog = async () => {
+    if (movies.length === 0) return;
+    setIsSyncingMaster(true);
+    playClapSound();
+
+    try {
+      await forcePushMasterCatalogToDB(movies);
+      setMasterSyncSuccess(`¡Catálogo completo guardado exitosamente en la base de datos! Se registraron ${movies.length} obras como la copia maestra y correcta.`);
+      setShowMasterSyncModal(false);
+      setTimeout(() => setMasterSyncSuccess(null), 7000);
+    } catch (err: any) {
+      console.error("Error guardando catálogo maestro:", err);
+      alert("Error al guardar catálogo maestro: " + (err.message || "Error desconocido"));
+    } finally {
+      setIsSyncingMaster(false);
+    }
+  };
+
+  const latestSavedCount = useMemo(() => {
+    const flagged = movies.filter(m => m.isLatestSaved || m.latestSavedAt);
+    return flagged.length > 0 ? flagged.length : Math.min(20, movies.length);
+  }, [movies]);
+
+  const handleSaveLatestBatch = async () => {
+    if (movies.length === 0) return;
+    setIsSavingLatestBatch(true);
+    playClapSound();
+
+    try {
+      const sortedNewest = [...movies].sort((a, b) => {
+        const timeA = a.createdAt || a.updatedAt || "";
+        const timeB = b.createdAt || b.updatedAt || "";
+        return timeB.localeCompare(timeA);
+      }).slice(0, 20);
+
+      const targetIds = sortedNewest.map(m => m.id);
+      await markLatestMoviesInDB(targetIds);
+
+      setLatestNotice(`¡Base de datos actualizó y detectó las últimas ${targetIds.length} películas guardadas exitosamente!`);
+      setTimeout(() => setLatestNotice(null), 5000);
+    } catch (err: any) {
+      console.error("Error al guardar últimas películas en BD:", err);
+      setLatestNotice("Error al registrar en base de datos.");
+      setTimeout(() => setLatestNotice(null), 4000);
+    } finally {
+      setIsSavingLatestBatch(false);
+    }
+  };
   const [selectedGenre, setSelectedGenre] = useState("Todos");
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [selectedYearRange, setSelectedYearRange] = useState<{ label: string, start: number, end: number } | null>(null);
@@ -1654,7 +1710,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly]);
+  }, [searchTerm, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly, showLatestOnly]);
 
   const dynamicGenres = useMemo(() => {
     // 21 categorías + Todos + Clásico + Mexicanas como se solicita
@@ -1668,6 +1724,17 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   }, []);
 
   const filteredMovies = useMemo(() => {
+    const flaggedCount = movies.filter(m => m.isLatestSaved || m.latestSavedAt).length;
+    let fallbackSet = new Set<string>();
+    if (showLatestOnly && flaggedCount === 0 && movies.length > 0) {
+      const top20 = [...movies].sort((a, b) => {
+        const timeA = a.createdAt || a.updatedAt || "";
+        const timeB = b.createdAt || b.updatedAt || "";
+        return timeB.localeCompare(timeA);
+      }).slice(0, 20);
+      fallbackSet = new Set(top20.map(m => m.id));
+    }
+
     return movies.filter(m => {
       const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/);
       const matchSearch = searchTerms.every(term => {
@@ -1714,7 +1781,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
 
       const movieSec = String(m.section || 'peliculas').toLowerCase().trim();
       const isSearching = searchTerm.trim() !== "";
-      const matchTab = (isSearching || showHistoryOnly)
+      const matchTab = (isSearching || showHistoryOnly || showLatestOnly)
         ? true
         : activeExploreTab === 'centauro'
         ? movieSec === 'centauro'
@@ -1723,8 +1790,9 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         : (movieSec === 'peliculas' || movieSec === '');
 
       const matchHistory = showHistoryOnly ? dailyHistoryIds.includes(m.id) : true;
+      const matchLatest = showLatestOnly ? (m.isLatestSaved || Boolean(m.latestSavedAt) || fallbackSet.has(m.id)) : true;
 
-      return matchSearch && matchGenre && matchLetter && matchYear && matchReview && matchTab && matchHistory;
+      return matchSearch && matchGenre && matchLetter && matchYear && matchReview && matchTab && matchHistory && matchLatest;
     }).sort((a, b) => {
       if (searchTerm.trim() !== "") {
         const normSearch = normalizeText(searchTerm);
@@ -2392,6 +2460,30 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                      <HistoryIcon className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500 shrink-0" /> 
                      <span>{t("HISTORIAL")}</span>
                    </button>
+                   <button 
+                     id="btn-sidebar-ultimas-guardadas"
+                     onClick={() => { 
+                       const newVal = !showLatestOnly; 
+                       setShowLatestOnly(newVal); 
+                       if (newVal) {
+                         setShowHistoryOnly(false); 
+                         setShowReviewOnly(false);
+                         setIsDirectorFilterActive(false);
+                         setIsFavoriteOfMonthActive(false);
+                         setSelectedLetter(null);
+                         setSelectedYearRange(null);
+                         setSelectedGenre("Todos");
+                       }
+                     }} 
+                     className={getHistorySidebarClass(showLatestOnly)}
+                     title="Ver y guardar las últimas películas detectadas por la base de datos"
+                   >
+                     <DatabaseBackup className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-amber-400 shrink-0 text-amber-400" /> 
+                     <span>{t("ÚLTIMAS GUARDADAS")}</span>
+                     <span className="ml-auto text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-extrabold border border-amber-500/30">
+                       {latestSavedCount}
+                     </span>
+                   </button>
                 </div>
              </div>
 
@@ -2404,6 +2496,15 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                    <div className="flex flex-col gap-1">
                       <span className="text-[10px] uppercase tracking-[0.12em] text-white/[0.28] font-bold px-5 mb-1 mt-5 select-none block">Gestión</span>
                       <div className="flex flex-col gap-1">
+                         <button 
+                           id="btn-guardar-catalogo-maestro"
+                           onClick={() => setShowMasterSyncModal(true)} 
+                           className={getSidebarItemClass(false)}
+                           title="Guardar todo el catálogo completo de este dispositivo como copia maestra en la base de datos"
+                         >
+                           <DatabaseBackup className="w-5 h-5 transition-colors group-hover:text-amber-400 text-amber-400" /> 
+                           <span className="text-amber-300 font-extrabold">{t("RESPALDAR CATÁLOGO MAESTRO BD")}</span>
+                         </button>
                          <button 
                            onClick={() => { setPasteTargetSection(activeExploreTab === 'series' ? 'series' : activeExploreTab === 'centauro' ? 'centauro' : 'peliculas'); setShowPasteModal(true); }} 
                            disabled={batchProgress.active} 
@@ -2618,6 +2719,81 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             >
               Entendido, volver al catálogo
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GUARDAR CATÁLOGO MAESTRO COMPLETO EN BASE DE DATOS */}
+      {showMasterSyncModal && (
+        <div 
+          id="modal-master-sync"
+          className="fixed inset-0 bg-black/85 backdrop-blur-md z-[450] flex items-center justify-center p-4 animate-in fade-in duration-300 font-sans"
+          onClick={() => { if (!isSyncingMaster) setShowMasterSyncModal(false); }}
+        >
+          <div 
+            className="bg-[#0c0c0e] border border-amber-500/40 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-[0_25px_80px_rgba(0,0,0,0.95),0_0_50px_rgba(245,158,11,0.2)] text-white relative flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              type="button" 
+              disabled={isSyncingMaster}
+              onClick={() => setShowMasterSyncModal(false)} 
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-30"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-4 shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+              <DatabaseBackup size={32} />
+            </div>
+
+            <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-2">
+              Guardar Catálogo Completo en BD
+            </h3>
+
+            <p className="text-xs sm:text-sm text-zinc-300 font-medium leading-relaxed mb-4">
+              Estás a punto de registrar las <strong className="text-amber-300 font-bold">{movies.length} obras</strong> actualmente visibles en este dispositivo como la <strong className="text-white font-bold">copia maestra y autoritativa</strong> en la base de datos.
+            </p>
+
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 mb-6 text-left text-xs text-amber-200/90 leading-relaxed space-y-1">
+              <div className="font-extrabold uppercase text-[10px] tracking-wider text-amber-400 flex items-center gap-1.5 mb-1">
+                <AlertTriangle size={13} /> Sincronización Maestra Dispositivo → BD
+              </div>
+              <p>
+                Utiliza esta opción cuando este equipo posea la información correcta. La base de datos (Firestore y servidor central) se actualizará de inmediato para sincronizar a todos los demás dispositivos.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              <button
+                type="button"
+                disabled={isSyncingMaster}
+                onClick={() => setShowMasterSyncModal(false)}
+                className="flex-1 py-3 px-4 rounded-xl border border-white/10 hover:bg-white/5 text-zinc-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                id="btn-confirm-master-sync"
+                disabled={isSyncingMaster || movies.length === 0}
+                onClick={handlePushMasterCatalog}
+                className="flex-1 py-3 px-5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(245,158,11,0.4)] cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2"
+              >
+                {isSyncingMaster ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Guardando en BD...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} />
+                    <span>Confirmar y Guardar</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2899,6 +3075,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       {!isDirectorFilterActive && !isFavoriteOfMonthActive && (
         <div className={`relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-2 ${selectedGenre !== "Todos" ? "category-section-view" : "archivo-section-view"}`}>
         
+        {masterSyncSuccess && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-950/90 border border-amber-500/50 text-amber-200 text-xs font-extrabold flex items-center gap-3 animate-in fade-in slide-in-from-top-3 duration-300 shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+            <CheckCircle2 size={22} className="text-amber-400 shrink-0" />
+            <span>{masterSyncSuccess}</span>
+          </div>
+        )}
+        
         {activeExploreTab === 'series' && filteredMovies.length === 0 && !searchTerm && selectedGenre === "Todos" && !selectedLetter && !selectedYearRange && !showHistoryOnly && !showReviewOnly && (
           <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 animate-in fade-in duration-500 my-12">
             <div className="w-20 h-20 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] group">
@@ -2927,8 +3110,48 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           </div>
         )}
 
-        {(activeExploreTab === 'peliculas' || filteredMovies.length > 0 || searchTerm || selectedGenre !== "Todos" || selectedLetter || selectedYearRange || showHistoryOnly || showReviewOnly) && (
+        {(activeExploreTab === 'peliculas' || filteredMovies.length > 0 || searchTerm || selectedGenre !== "Todos" || selectedLetter || selectedYearRange || showHistoryOnly || showReviewOnly || showLatestOnly) && (
           <>
+            {/* ENCABEZADO DE SECCIÓN ÚLTIMAS PELÍCULAS GUARDADAS */}
+            {showLatestOnly && (
+              <div className="bg-gradient-to-r from-amber-950/60 via-zinc-900/90 to-black border border-amber-500/30 rounded-2xl p-6 mb-8 shadow-[0_15px_40px_rgba(245,158,11,0.15)] flex flex-col md:flex-row items-center justify-between gap-6 font-sans animate-in fade-in duration-300">
+                <div className="flex items-center gap-4">
+                  <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-400 shrink-0 shadow-lg">
+                    <DatabaseBackup size={32} />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Base de Datos Activa</span>
+                    </div>
+                    <h2 className="text-2xl md:text-3xl font-black uppercase text-white tracking-wide">
+                      Últimas Películas Guardadas
+                    </h2>
+                    <p className="text-xs text-zinc-300 font-medium leading-relaxed">
+                      La base de datos detectó <strong className="text-amber-300 font-bold">{filteredMovies.length} película(s)</strong> guardadas recientemente.
+                    </p>
+                  </div>
+                </div>
+                
+                <button
+                  id="btn-guardar-ultimas-bd"
+                  onClick={handleSaveLatestBatch}
+                  disabled={isSavingLatestBatch || movies.length === 0}
+                  className="px-6 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-widest shadow-[0_0_25px_rgba(245,158,11,0.4)] transition-all active:scale-95 flex items-center gap-2.5 shrink-0 cursor-pointer disabled:opacity-50"
+                  title="Guardar y confirmar las últimas películas en la base de datos"
+                >
+                  {isSavingLatestBatch ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  <span>{isSavingLatestBatch ? "Guardando en BD..." : "Guardar en Base de Datos"}</span>
+                </button>
+              </div>
+            )}
+
+            {latestNotice && (
+              <div className="mb-6 p-4 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-extrabold flex items-center gap-3 animate-in fade-in slide-in-from-top-3 duration-300 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+                <CheckCircle2 size={20} className="text-emerald-400 shrink-0" />
+                <span>{latestNotice}</span>
+              </div>
+            )}
             {/* ENCABEZADO DE SECCIÓN CENTAURO */}
             {/* Removido según solicitud de usuario */}
 
@@ -3006,6 +3229,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     {movie.year < 1980 && !movie.needsReview && (
                       <div className="absolute top-3 left-3 bg-white/10 backdrop-blur-md border border-white/20 px-2 py-1.5 rounded-md text-[9px] font-black text-white uppercase tracking-widest flex items-center gap-1 z-30">
                          <Landmark size={10}/> CLÁSICO
+                      </div>
+                    )}
+                    {movie.isLatestSaved && !movie.needsReview && movie.year >= 1980 && (
+                      <div className="absolute top-3 left-3 bg-amber-500/90 backdrop-blur-md px-2 py-1.5 rounded-md text-[9px] font-black text-black uppercase tracking-widest flex items-center gap-1 shadow-[0_0_15px_rgba(245,158,11,0.5)] z-30">
+                         <DatabaseBackup size={10}/> RECIENTE
                       </div>
                     )}
                   </div>

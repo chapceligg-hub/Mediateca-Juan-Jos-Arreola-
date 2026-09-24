@@ -49,13 +49,10 @@ export const recordGoogleAuth = async (email: string) => {
 
 export const CLOUD_RUN_CENTRAL_URL = "https://ais-pre-xyitmmdapgw2fr37dyjkrh-452282047905.us-west2.run.app";
 
-let isFirestoreQuotaExhaustedSession = false;
-
-export const markFirestoreQuotaExhausted = () => {
-  isFirestoreQuotaExhaustedSession = true;
-};
-
 export const getApiUrl = (endpoint: string): string => {
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    return `${CLOUD_RUN_CENTRAL_URL}${endpoint}`;
+  }
   return endpoint;
 };
 
@@ -602,61 +599,57 @@ export const subscribeToMovies = (
 
   // 4. Suscripción delta pasiva en tiempo real (0 lecturas iniciales, solo novedades futuras)
   let unsubscribeFirestore = () => {};
-  if (!isFirestoreQuotaExhaustedSession) {
-    try {
-      const listenFromTime = new Date().toISOString();
-      const qDeltaRealtime = query(
-        collection(db, 'movies'),
-        where('updatedAt', '>', listenFromTime)
-      );
-      
-      unsubscribeFirestore = onSnapshot(
-        qDeltaRealtime,
-        async (snapshot) => {
-          if (snapshot.empty) return;
-          const removedIds: string[] = [];
-          snapshot.docChanges().forEach(change => {
-            if (change.type === 'removed' && change.doc && change.doc.id) {
-              removedIds.push(change.doc.id);
-            }
-          });
-
-          if (removedIds.length > 0) {
-            fetch(getApiUrl('/api/movies/deleted'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ids: removedIds })
-            }).catch(() => {});
+  try {
+    const listenFromTime = new Date().toISOString();
+    const qDeltaRealtime = query(
+      collection(db, 'movies'),
+      where('updatedAt', '>', listenFromTime)
+    );
+    
+    unsubscribeFirestore = onSnapshot(
+      qDeltaRealtime,
+      async (snapshot) => {
+        if (snapshot.empty) return;
+        const removedIds: string[] = [];
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'removed' && change.doc && change.doc.id) {
+            removedIds.push(change.doc.id);
           }
+        });
 
-          let deletedIds = await syncDeletedMovieIds();
-          if (removedIds.length > 0) {
-            deletedIds = Array.from(new Set([...deletedIds, ...removedIds]));
-            await set("videoteca_deleted_ids", deletedIds.slice(-1000));
-          }
-
-          const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          const existing = await getCachedMovies() || [];
-          const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
-          const cleanMerged = merged.filter(m => m && m.id && !deletedIds.includes(m.id));
-
-          await setCachedMovies(cleanMerged, true);
-          notifyMovieSubscribers(cleanMerged);
-        },
-        (err: any) => {
-          const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted');
-          if (isQuota) {
-            isFirestoreQuotaExhaustedSession = true;
-            try { unsubscribeFirestore(); } catch (_) {}
-            console.log("[Firebase] Cuota agotada detectada: operando 100% con servidor central y caché local.");
-          } else {
-            console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
-            if (onError) onError(err);
-          }
+        if (removedIds.length > 0) {
+          fetch(getApiUrl('/api/movies/deleted'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: removedIds })
+          }).catch(() => {});
         }
-      );
-    } catch (_) {}
-  }
+
+        let deletedIds = await syncDeletedMovieIds();
+        if (removedIds.length > 0) {
+          deletedIds = Array.from(new Set([...deletedIds, ...removedIds]));
+          await set("videoteca_deleted_ids", deletedIds.slice(-1000));
+        }
+
+        const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const existing = await getCachedMovies() || [];
+        const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
+        const cleanMerged = merged.filter(m => m && m.id && !deletedIds.includes(m.id));
+
+        await setCachedMovies(cleanMerged, true);
+        notifyMovieSubscribers(cleanMerged);
+      },
+      (err: any) => {
+        const isQuota = err?.message?.includes('Quota limit exceeded') || err?.code === 'resource-exhausted';
+        if (!isQuota) {
+          console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
+          if (onError) onError(err);
+        } else {
+          console.log("[Firebase] Operando con catálogo en caché y servidor central (cuota protegida).");
+        }
+      }
+    );
+  } catch (_) {}
 
   return () => {
     movieSubscribers.delete(callback);
@@ -830,29 +823,24 @@ export const subscribeToPrimarySuperAdmin = (callback: (primaryEmail: string) =>
 
   // 2. Suscribirse a cambios en Firestore de _primary_config en tiempo real
   let unsubscribeFirestore = () => {};
-  if (!isFirestoreQuotaExhaustedSession) {
-    try {
-      const primaryDocRef = doc(db, 'admins', '_primary_config');
-      unsubscribeFirestore = onSnapshot(primaryDocRef, (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data && typeof data.email === 'string' && data.email.trim()) {
-            const clean = data.email.toLowerCase().trim();
-            try { localStorage.setItem("videoteca_primary_superadmin", clean); } catch (_) {}
-            notifyPrimarySuperAdminSubscribers(clean);
-          }
+  try {
+    const primaryDocRef = doc(db, 'admins', '_primary_config');
+    unsubscribeFirestore = onSnapshot(primaryDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && typeof data.email === 'string' && data.email.trim()) {
+          const clean = data.email.toLowerCase().trim();
+          try { localStorage.setItem("videoteca_primary_superadmin", clean); } catch (_) {}
+          notifyPrimarySuperAdminSubscribers(clean);
         }
-      }, (err) => {
-        const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted');
-        if (isQuota) {
-          isFirestoreQuotaExhaustedSession = true;
-          try { unsubscribeFirestore(); } catch (_) {}
-        } else {
-          console.warn("[Firebase] Aviso en onSnapshot de primary super admin:", err);
-        }
-      });
-    } catch (_) {}
-  }
+      }
+    }, (err) => {
+      const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+      if (!isQuota) {
+        console.warn("[Firebase] Aviso en onSnapshot de primary super admin:", err);
+      }
+    });
+  } catch (_) {}
 
   return () => {
     primaryAdminSubscribers.delete(callback);
@@ -1004,59 +992,54 @@ export const subscribeToAdmins = (
 
   // 4. Suscripción en tiempo real a Firestore de la colección 'admins'
   let unsubscribeFirestore = () => {};
-  if (!isFirestoreQuotaExhaustedSession) {
-    try {
-      const q = collection(db, 'admins');
-      unsubscribeFirestore = onSnapshot(q, (snapshot) => {
-        const activeAdmins: any[] = [];
-        const removedEmails: string[] = [];
+  try {
+    const q = collection(db, 'admins');
+    unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+      const activeAdmins: any[] = [];
+      const removedEmails: string[] = [];
 
-        snapshot.docChanges().forEach(change => {
-          if (change.type === 'removed') {
-            const docId = change.doc.id;
-            if (docId && !docId.startsWith('_')) {
-              removedEmails.push(docId.toLowerCase().trim());
-            }
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'removed') {
+          const docId = change.doc.id;
+          if (docId && !docId.startsWith('_')) {
+            removedEmails.push(docId.toLowerCase().trim());
           }
-        });
-
-        if (removedEmails.length > 0) {
-          removedEmails.forEach(e => recordDeletedAdmin(e));
-        }
-
-        snapshot.docs.forEach(docSnap => {
-          const id = docSnap.id;
-          if (!id.startsWith('_')) {
-            const data = docSnap.data();
-            const email = (data.email || id).toLowerCase().trim();
-            activeAdmins.push({
-              id: email,
-              email,
-              name: data.name || '',
-              role: data.role || 'editor',
-              createdAt: data.createdAt || new Date().toISOString(),
-              updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
-              photoURL: data.photoURL || '',
-              ...data
-            });
-          }
-        });
-
-        if (activeAdmins.length > 0) {
-          notifyAdminSubscribers(activeAdmins);
-        }
-      }, (err) => {
-        const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted' || err?.message?.includes('resource-exhausted');
-        if (isQuota) {
-          isFirestoreQuotaExhaustedSession = true;
-          try { unsubscribeFirestore(); } catch (_) {}
-        } else {
-          console.warn("[Firebase] Aviso en onSnapshot de admins:", err);
-          if (onError) onError(err);
         }
       });
-    } catch (_) {}
-  }
+
+      if (removedEmails.length > 0) {
+        removedEmails.forEach(e => recordDeletedAdmin(e));
+      }
+
+      snapshot.docs.forEach(docSnap => {
+        const id = docSnap.id;
+        if (!id.startsWith('_')) {
+          const data = docSnap.data();
+          const email = (data.email || id).toLowerCase().trim();
+          activeAdmins.push({
+            id: email,
+            email,
+            name: data.name || '',
+            role: data.role || 'editor',
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
+            photoURL: data.photoURL || '',
+            ...data
+          });
+        }
+      });
+
+      if (activeAdmins.length > 0) {
+        notifyAdminSubscribers(activeAdmins);
+      }
+    }, (err) => {
+      const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+      if (!isQuota) {
+        console.warn("[Firebase] Aviso en onSnapshot de admins:", err);
+        if (onError) onError(err);
+      }
+    });
+  } catch (_) {}
 
   return () => {
     adminSubscribers.delete(callback);
@@ -1259,6 +1242,8 @@ export const upsertMovie = async (movie: any) => {
   const movieData = { 
     ...movie, 
     id: movieId,
+    isLatestSaved: movie.isLatestSaved !== undefined ? movie.isLatestSaved : true,
+    latestSavedAt: movie.latestSavedAt || nowIso,
     createdAt: movie.createdAt || nowIso,
     updatedAt: nowIso
   };
@@ -1401,6 +1386,104 @@ export const deleteMovie = async (id: string) => {
   } catch (err) {
     console.warn("Aviso al eliminar en Firestore (eliminado en backend y caché local):", err);
   }
+};
+
+export const markLatestMoviesInDB = async (targetIds: string[]) => {
+  const nowIso = new Date().toISOString();
+  const offlineData = (await getCachedMovies()) || [];
+  if (offlineData.length === 0) return [];
+
+  const targetSet = new Set(targetIds);
+  const updatedList = offlineData.map((m: any) => {
+    if (targetSet.has(m.id)) {
+      return {
+        ...m,
+        isLatestSaved: true,
+        latestSavedAt: nowIso,
+        updatedAt: nowIso
+      };
+    } else {
+      return {
+        ...m,
+        isLatestSaved: false
+      };
+    }
+  });
+
+  await setCachedMovies(updatedList, true);
+  notifyMovieSubscribers(updatedList);
+  if (movieBroadcastChannel) {
+    movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: updatedList });
+  }
+
+  // Persistir en servidor backend y Firestore
+  try {
+    fetch(getApiUrl('/api/movies/sync'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedList)
+    }).catch(() => {});
+  } catch (_) {}
+
+  // Actualizar por lote en Firestore
+  for (const id of targetIds) {
+    try {
+      updateDoc(doc(db, 'movies', id), { isLatestSaved: true, latestSavedAt: nowIso, updatedAt: nowIso }).catch(() => {});
+    } catch (_) {}
+  }
+
+  return updatedList;
+};
+
+export const forcePushMasterCatalogToDB = async (masterCatalog: any[]) => {
+  if (!Array.isArray(masterCatalog) || masterCatalog.length === 0) {
+    throw new Error("El catálogo maestro a guardar está vacío.");
+  }
+
+  const nowIso = new Date().toISOString();
+  
+  // Asignar updatedAt actualizado a todas las obras para que prevalezcan como la versión autoritativa
+  const updatedList = masterCatalog.map((m: any) => ({
+    ...m,
+    updatedAt: nowIso
+  }));
+
+  // 1. Guardar en memoria e IndexedDB local de inmediato
+  await setCachedMovies(updatedList, true);
+  notifyMovieSubscribers(updatedList);
+  if (movieBroadcastChannel) {
+    movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: updatedList });
+  }
+
+  // 2. Limpiar IDs eliminados que pertenezcan al catálogo maestro
+  const masterIds = new Set(updatedList.map(m => m.id).filter(Boolean));
+  try {
+    const deletedList: string[] = (await get("videoteca_deleted_ids")) || [];
+    const cleanedDeleted = deletedList.filter(id => !masterIds.has(id));
+    await set("videoteca_deleted_ids", cleanedDeleted);
+  } catch (_) {}
+
+  // 3. Enviar copia maestra forzada al servidor central backend
+  try {
+    await fetch(getApiUrl('/api/movies/force-master'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedList)
+    });
+  } catch (err) {
+    console.warn("Aviso al enviar catálogo maestro a /api/movies/force-master:", err);
+  }
+
+  // 4. Sincronizar en lotes hacia Firestore
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < updatedList.length; i += CHUNK_SIZE) {
+    const chunk = updatedList.slice(i, i + CHUNK_SIZE);
+    await Promise.all(
+      chunk.map(m => setDoc(doc(db, 'movies', m.id), m, { merge: true }).catch(() => {}))
+    );
+  }
+
+  return updatedList;
 };
 
 export const upsertAdmin = async (admin: any) => {

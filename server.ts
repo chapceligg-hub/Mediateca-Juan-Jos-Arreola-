@@ -803,6 +803,45 @@ app.post("/api/movies/sync", (req, res) => {
   res.json({ success: true, count: merged.length, movies: merged });
 });
 
+app.post("/api/movies/force-master", (req, res) => {
+  const masterMovies = req.body;
+  if (!Array.isArray(masterMovies)) {
+    return res.status(400).json({ error: "Se esperaba un array de películas" });
+  }
+
+  const nowIso = new Date().toISOString();
+  const masterIds = new Set(masterMovies.map(m => m && m.id).filter(Boolean));
+
+  // Quitar de deleted-movies cualquier película presente en el catálogo maestro enviado
+  let deletedIds = loadDeletedMovieIds();
+  deletedIds = deletedIds.filter(id => !masterIds.has(id));
+  saveDeletedMovieIds(deletedIds);
+
+  const updatedMovies = masterMovies.map(m => ({
+    ...m,
+    updatedAt: m.updatedAt || nowIso
+  }));
+
+  updatedMovies.sort((a, b) => {
+    const timeA = a.createdAt || a.updatedAt || "";
+    const timeB = b.createdAt || b.updatedAt || "";
+    return timeB.localeCompare(timeA);
+  });
+
+  saveServerMovies(updatedMovies);
+  broadcastMoviesUpdate("movies_update", { count: updatedMovies.length, isMaster: true });
+
+  if (IS_VERCEL) {
+    fetch(`${CLOUD_RUN_CENTRAL_URL}/api/movies/force-master`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(masterMovies)
+    }).catch(() => {});
+  }
+
+  res.json({ success: true, count: updatedMovies.length, movies: updatedMovies });
+});
+
 app.delete("/api/movies/:id", (req, res) => {
   const id = req.params.id;
   if (!id) return res.status(400).json({ error: "ID requerido" });
