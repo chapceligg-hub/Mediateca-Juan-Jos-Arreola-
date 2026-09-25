@@ -510,15 +510,35 @@ export default function App() {
   };
 
   const handlePushMasterCatalog = async () => {
-    if (movies.length === 0) return;
+    // 1. Obtener la mejor lista disponible (rescueReport, movies del estado o caché directa de IndexedDB)
+    let catalogToPush = (rescueReport?.bestCatalog && rescueReport.bestCatalog.length > movies.length)
+      ? rescueReport.bestCatalog
+      : (movies.length > 0 ? movies : (rescueReport?.bestCatalog || []));
+
+    if (catalogToPush.length === 0) {
+      try {
+        const direct = await getCachedMovies();
+        if (direct && direct.length > 0) {
+          catalogToPush = direct;
+        }
+      } catch (_) {}
+    }
+
+    if (catalogToPush.length === 0) {
+      alert("No se detectaron películas en la memoria local para fijar como catálogo maestro. Puedes cargar tu copia previa usando el botón 'Restaurar desde un Archivo JSON'.");
+      return;
+    }
+
     setIsSyncingMaster(true);
     playClapSound();
 
     try {
-      await forcePushMasterCatalogToDB(movies);
-      setMasterSyncSuccess(`¡Catálogo completo guardado exitosamente en la base de datos! Se registraron ${movies.length} obras como la copia maestra y correcta.`);
+      const savedList = await forcePushMasterCatalogToDB(catalogToPush);
+      setMovies(savedList);
+      setMasterSyncSuccess(`¡Catálogo maestro fijado exitosamente! Se guardaron ${savedList.length} obras como la verdad oficial y permanente en la base de datos.`);
+      setShowCacheRescueModal(false);
       setShowMasterSyncModal(false);
-      setTimeout(() => setMasterSyncSuccess(null), 7000);
+      setTimeout(() => setMasterSyncSuccess(null), 8000);
     } catch (err: any) {
       console.error("Error guardando catálogo maestro:", err);
       alert("Error al guardar catálogo maestro: " + (err.message || "Error desconocido"));
@@ -2907,25 +2927,41 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               </button>
 
               {/* Botón 2: Forzar esta versión en la Base de Datos */}
-              <button
-                type="button"
-                id="btn-restaurar-como-maestro"
-                disabled={isSyncingMaster || movies.length === 0}
-                onClick={handlePushMasterCatalog}
-                className="w-full py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(245,158,11,0.3)] cursor-pointer flex items-center justify-center gap-2.5 disabled:opacity-40"
-              >
-                {isSyncingMaster ? (
-                  <>
-                    <Loader2 size={17} className="animate-spin" />
-                    <span>Guardando como Maestra en la Base de Datos...</span>
-                  </>
-                ) : (
-                  <>
-                    <DatabaseBackup size={17} />
-                    <span>Fijar Esta Caché como Verdad Oficial en Base de Datos</span>
-                  </>
-                )}
-              </button>
+              {(() => {
+                const countAvailable = (rescueReport?.bestCatalog && rescueReport.bestCatalog.length > 0)
+                  ? rescueReport.bestCatalog.length
+                  : (movies.length > 0 ? movies.length : (rescueReport?.primaryCount || rescueReport?.backupRescueCount || 0));
+
+                return (
+                  <button
+                    type="button"
+                    id="btn-restaurar-como-maestro"
+                    disabled={isSyncingMaster || countAvailable === 0}
+                    onClick={handlePushMasterCatalog}
+                    className="w-full py-4 px-4 sm:px-5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-zinc-950 font-black text-xs uppercase tracking-wider transition-all duration-200 shadow-[0_0_30px_rgba(245,158,11,0.35)] hover:shadow-[0_0_40px_rgba(245,158,11,0.55)] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2.5 sm:gap-3 disabled:opacity-40 disabled:cursor-not-allowed border border-amber-300/50 relative overflow-hidden group"
+                    title="Fijar esta memoria como la copia autoritativa y maestra en la base de datos y en todos los dispositivos"
+                  >
+                    {isSyncingMaster ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin text-zinc-950 shrink-0" />
+                        <span className="font-extrabold tracking-wide truncate">Fijando y Protegiendo Catálogo en Base de Datos...</span>
+                      </>
+                    ) : (
+                      <>
+                        <DatabaseBackup size={18} className="text-zinc-950 shrink-0 transition-transform group-hover:scale-110" />
+                        <div className="flex items-center gap-2 flex-wrap justify-center min-w-0">
+                          <span className="font-black tracking-wide">Fijar Esta Caché como Verdad Oficial en Base de Datos</span>
+                          {countAvailable > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-black/20 text-zinc-950 text-[10px] font-black border border-black/10 shrink-0">
+                              {countAvailable} obras
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
 
               {/* Botón 3: Cargar / Restaurar desde archivo JSON externo */}
               <label 

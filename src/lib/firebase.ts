@@ -482,19 +482,29 @@ const initMovieRealtimeStream = () => {
       }
     });
 
-    globalMovieEventSource.addEventListener('movies_update', async () => {
+    globalMovieEventSource.addEventListener('movies_update', async (e: MessageEvent) => {
       try {
+        let isMaster = false;
+        try {
+          if (e && e.data) {
+            const parsed = JSON.parse(e.data);
+            isMaster = Boolean(parsed?.data?.isMaster || parsed?.isMaster);
+          }
+        } catch (_) {}
+
         const current = (await getCachedMovies()) || [];
-        if (current.length > 0) {
-          // Protección activa: No sobreescribir la memoria local de este dispositivo
+        // Si no es sincronización maestra oficial y ya hay obras en este dispositivo, preservar la caché local
+        if (!isMaster && current.length > 0) {
           return;
         }
         const res = await fetch(getApiUrl('/api/movies'));
         if (res.ok) {
           const serverMovies = await res.json();
           if (Array.isArray(serverMovies) && serverMovies.length > 0) {
-            await setCachedMovies(serverMovies, true);
-            notifyMovieSubscribers(serverMovies);
+            if (isMaster || current.length === 0 || serverMovies.length >= current.length) {
+              await setCachedMovies(serverMovies, true);
+              notifyMovieSubscribers(serverMovies);
+            }
           }
         }
       } catch (_) {}
@@ -1391,11 +1401,17 @@ export const forcePushMasterCatalogToDB = async (masterCatalog: any[]) => {
   // Asignar updatedAt actualizado a todas las obras para que prevalezcan como la versión autoritativa
   const updatedList = masterCatalog.map((m: any) => ({
     ...m,
-    updatedAt: nowIso
+    updatedAt: m.updatedAt || nowIso
   }));
 
-  // 1. Guardar en memoria e IndexedDB local de inmediato
+  // 1. Guardar en memoria e IndexedDB local de inmediato (clave primaria y copia inmutable de rescate)
   await setCachedMovies(updatedList, true);
+  try {
+    await set("videoteca_movies_cache_pre_json_rescue", updatedList);
+    localStorage.setItem("videoteca_cache_rescue_count", String(updatedList.length));
+    localStorage.setItem("videoteca_cache_rescue_time", nowIso);
+  } catch (_) {}
+
   notifyMovieSubscribers(updatedList);
   if (movieBroadcastChannel) {
     movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: updatedList });
@@ -1411,23 +1427,30 @@ export const forcePushMasterCatalogToDB = async (masterCatalog: any[]) => {
 
   // 3. Enviar copia maestra forzada al servidor central backend
   try {
-    await fetch(getApiUrl('/api/movies/force-master'), {
+    const res = await fetch(getApiUrl('/api/movies/force-master'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedList)
     });
+    if (!res.ok) {
+      console.warn("Aviso al enviar catálogo maestro a /api/movies/force-master:", res.status);
+    }
   } catch (err) {
     console.warn("Aviso al enviar catálogo maestro a /api/movies/force-master:", err);
   }
 
-  // 4. Sincronizar en lotes hacia Firestore
-  const CHUNK_SIZE = 50;
-  for (let i = 0; i < updatedList.length; i += CHUNK_SIZE) {
-    const chunk = updatedList.slice(i, i + CHUNK_SIZE);
-    await Promise.all(
-      chunk.map(m => setDoc(doc(db, 'movies', m.id), m, { merge: true }).catch(() => {}))
-    );
-  }
+  // 4. Sincronizar hacia Firestore en segundo plano (sin bloquear al usuario si hay límites de cuota)
+  (async () => {
+    try {
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < updatedList.length; i += CHUNK_SIZE) {
+        const chunk = updatedList.slice(i, i + CHUNK_SIZE);
+        await Promise.all(
+          chunk.map(m => setDoc(doc(db, 'movies', m.id), m, { merge: true }).catch(() => {}))
+        );
+      }
+    } catch (_) {}
+  })();
 
   return updatedList;
 };
