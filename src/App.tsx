@@ -8,14 +8,15 @@ import {
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
   Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table,
-  Mail, RotateCcw, Crown, Save, BookmarkCheck, CheckCircle2
+  Mail, RotateCcw, Crown, Save, BookmarkCheck, CheckCircle2, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import { 
   getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin, markLatestMoviesInDB, forcePushMasterCatalogToDB,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
-  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS, getApiUrl
+  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS, getApiUrl,
+  inspectAndRescueAllCaches, CacheRescueReport, setCachedMovies
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -426,6 +427,87 @@ export default function App() {
   const [showMasterSyncModal, setShowMasterSyncModal] = useState(false);
   const [isSyncingMaster, setIsSyncingMaster] = useState(false);
   const [masterSyncSuccess, setMasterSyncSuccess] = useState<string | null>(null);
+
+  const [showCacheRescueModal, setShowCacheRescueModal] = useState(false);
+  const [rescueReport, setRescueReport] = useState<CacheRescueReport | null>(null);
+  const [isScanningRescue, setIsScanningRescue] = useState(false);
+
+  const handleScanAndRescueCaches = async () => {
+    setIsScanningRescue(true);
+    try {
+      const rep = await inspectAndRescueAllCaches();
+      setRescueReport(rep);
+      if (rep.bestCatalog && rep.bestCatalog.length > movies.length) {
+        setMovies(rep.bestCatalog);
+        playClapSound();
+        setMasterSyncSuccess(`¡Caché ampliada recuperada con éxito! Se restauraron ${rep.bestCatalog.length} obras desde la capa ${rep.source}.`);
+        setTimeout(() => setMasterSyncSuccess(null), 7000);
+      }
+    } catch (e: any) {
+      console.warn("Aviso escaneando caché:", e);
+    } finally {
+      setIsScanningRescue(false);
+    }
+  };
+
+  const handleDownloadCacheJson = () => {
+    try {
+      const listToDownload = (rescueReport?.bestCatalog && rescueReport.bestCatalog.length > movies.length) 
+        ? rescueReport.bestCatalog 
+        : movies;
+      if (listToDownload.length === 0) {
+        alert("No hay películas en memoria local para descargar.");
+        return;
+      }
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(listToDownload, null, 2));
+      const downloadAnchor = document.createElement('a');
+      const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `videoteca_respaldo_cache_recuperada_${listToDownload.length}_obras_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      playClapSound();
+      setMasterSyncSuccess(`¡Copia de seguridad descargada exitosamente (${listToDownload.length} obras guardadas en archivo JSON)!`);
+      setTimeout(() => setMasterSyncSuccess(null), 6000);
+    } catch (e: any) {
+      alert("Error al descargar archivo JSON: " + (e.message || "Error desconocido"));
+    }
+  };
+
+  const handleImportBackupJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+        let listToRestore: any[] = [];
+        if (Array.isArray(parsed)) {
+          listToRestore = parsed;
+        } else if (parsed && Array.isArray(parsed.movies)) {
+          listToRestore = parsed.movies;
+        } else {
+          throw new Error("El archivo JSON no contiene un arreglo de películas.");
+        }
+
+        if (listToRestore.length === 0) {
+          throw new Error("El archivo contiene 0 películas.");
+        }
+
+        await setCachedMovies(listToRestore, true);
+        setMovies(listToRestore);
+        playClapSound();
+        setMasterSyncSuccess(`¡Respaldo importado con éxito! Se cargaron ${listToRestore.length} obras. Toda sincronización destructiva está bloqueada.`);
+        setTimeout(() => setMasterSyncSuccess(null), 8000);
+      } catch (err: any) {
+        alert("Error importando archivo JSON: " + (err.message || "Formato no válido"));
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
 
   const handlePushMasterCatalog = async () => {
     if (movies.length === 0) return;
@@ -1666,9 +1748,11 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     // RECUPERACIÓN DE MEMORIA CACHÉ GUARDADA (Capa 1: IndexedDB -> Capa 2: Servidor Central /api/movies)
     (async () => {
       try {
-        const offlineData = await getCachedMovies();
-        if (offlineData && offlineData.length > 0) {
-          setMovies(offlineData);
+        const report = await inspectAndRescueAllCaches();
+        setRescueReport(report);
+        if (report.bestCatalog && report.bestCatalog.length > 0) {
+          setMovies(report.bestCatalog);
+          console.log(`[Cache Shield] Memoria protegida inicial cargada (${report.bestCatalog.length} obras desde ${report.source}). Delta sync bloqueado.`);
         } else {
           // Si la memoria local está vacía (modo incógnito o nuevo dispositivo), cargar de inmediato del servidor central (0 lecturas Firestore)
           try {
@@ -2484,6 +2568,24 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        {latestSavedCount}
                      </span>
                    </button>
+                   <button 
+                     id="btn-sidebar-rescate-cache"
+                     onClick={() => { 
+                       setShowCacheRescueModal(true); 
+                       handleScanAndRescueCaches(); 
+                     }} 
+                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-200 transition-all group font-sans text-left my-0.5 shadow-[0_0_15px_rgba(16,185,129,0.1)] cursor-pointer"
+                     title="Recuperar la caché antigua, proteger contra delta sync y descargar respaldo JSON"
+                   >
+                     <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 group-hover:scale-125 transition-transform" /> 
+                     <div className="flex flex-col min-w-0">
+                       <span className="text-[11px] font-black uppercase tracking-wider text-emerald-300 leading-tight">Rescate de Caché</span>
+                       <span className="text-[9px] text-emerald-400/80 font-mono truncate">{movies.length} obras protegidas</span>
+                     </div>
+                     <span className="ml-auto text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 font-bold border border-emerald-400/40 shrink-0">
+                       ESCUDO
+                     </span>
+                   </button>
                 </div>
              </div>
 
@@ -2719,6 +2821,139 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             >
               Entendido, volver al catálogo
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CENTRO DE RESCATE Y RESTAURACIÓN DE CACHÉ HISTÓRICA */}
+      {showCacheRescueModal && (
+        <div 
+          id="modal-cache-rescue"
+          className="fixed inset-0 bg-black/90 backdrop-blur-lg z-[460] flex items-center justify-center p-4 animate-in fade-in duration-300 font-sans"
+          onClick={() => setShowCacheRescueModal(false)}
+        >
+          <div 
+            className="bg-[#0b0c10] border border-emerald-500/40 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-[0_25px_90px_rgba(0,0,0,0.95),0_0_60px_rgba(16,185,129,0.2)] text-white relative flex flex-col items-center animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              type="button" 
+              onClick={() => setShowCacheRescueModal(false)} 
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mb-3.5 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+              <ShieldCheck size={34} />
+            </div>
+
+            <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mb-1.5 text-center">
+              Centro de Rescate y Recuperación de Caché
+            </h3>
+
+            {/* Escudo Informativo */}
+            <div className="w-full bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-4 mb-5 text-left">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[11px] font-black uppercase tracking-wider text-emerald-300">
+                  Escudo Anti-Sobreescritura Activado
+                </span>
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                  DELTA SYNC BLOQUEADO
+                </span>
+              </div>
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                El sistema ha <strong className="text-emerald-300 font-semibold">bloqueado automáticamente todas las consultas delta y sincronizaciones destructivas</strong> para garantizar que el catálogo de este dispositivo permanezca seguro e inalterado.
+              </p>
+            </div>
+
+            {/* Desglose de Capas de Memoria */}
+            <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-5 text-center">
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-3 flex flex-col items-center">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 mb-1">Caché IndexedDB</span>
+                <span className="text-xl font-black text-emerald-400">
+                  {rescueReport?.primaryCount !== undefined ? rescueReport.primaryCount : movies.length}
+                </span>
+                <span className="text-[9px] text-zinc-500 font-medium">obras en memoria</span>
+              </div>
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-3 flex flex-col items-center">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 mb-1">Respaldo Congelado</span>
+                <span className="text-xl font-black text-cyan-400">
+                  {rescueReport?.backupRescueCount !== undefined ? rescueReport.backupRescueCount : movies.length}
+                </span>
+                <span className="text-[9px] text-zinc-500 font-medium">copia inmutable</span>
+              </div>
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-3 flex flex-col items-center">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 mb-1">Firestore Offline</span>
+                <span className="text-xl font-black text-amber-400">
+                  {rescueReport?.firestoreCacheCount !== undefined ? rescueReport.firestoreCacheCount : '0'}
+                </span>
+                <span className="text-[9px] text-zinc-500 font-medium">obras persistidas</span>
+              </div>
+            </div>
+
+            {/* Acciones de Rescate */}
+            <div className="w-full flex flex-col gap-2.5 mb-2">
+              {/* Botón 1: Descargar archivo JSON físico inmediato */}
+              <button
+                type="button"
+                id="btn-descargar-cache-json"
+                onClick={handleDownloadCacheJson}
+                className="w-full py-3.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(16,185,129,0.35)] cursor-pointer flex items-center justify-center gap-2.5"
+              >
+                <Download size={17} strokeWidth={2.5} />
+                <span>Descargar Copia de Seguridad JSON Ahora (.json)</span>
+              </button>
+
+              {/* Botón 2: Forzar esta versión en la Base de Datos */}
+              <button
+                type="button"
+                id="btn-restaurar-como-maestro"
+                disabled={isSyncingMaster || movies.length === 0}
+                onClick={handlePushMasterCatalog}
+                className="w-full py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(245,158,11,0.3)] cursor-pointer flex items-center justify-center gap-2.5 disabled:opacity-40"
+              >
+                {isSyncingMaster ? (
+                  <>
+                    <Loader2 size={17} className="animate-spin" />
+                    <span>Guardando como Maestra en la Base de Datos...</span>
+                  </>
+                ) : (
+                  <>
+                    <DatabaseBackup size={17} />
+                    <span>Fijar Esta Caché como Verdad Oficial en Base de Datos</span>
+                  </>
+                )}
+              </button>
+
+              {/* Botón 3: Cargar / Restaurar desde archivo JSON externo */}
+              <label 
+                htmlFor="input-restore-json"
+                className="w-full py-3 px-4 rounded-xl border border-white/15 hover:border-white/30 bg-white/5 hover:bg-white/10 text-zinc-200 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 text-center"
+              >
+                <Upload size={16} />
+                <span>Restaurar desde un Archivo JSON de tu Equipo</span>
+                <input 
+                  id="input-restore-json" 
+                  type="file" 
+                  accept=".json,application/json" 
+                  onChange={handleImportBackupJson} 
+                  className="hidden" 
+                />
+              </label>
+
+              {/* Botón 4: Re-escanear capas */}
+              <button
+                type="button"
+                disabled={isScanningRescue}
+                onClick={handleScanAndRescueCaches}
+                className="w-full py-2.5 px-4 rounded-xl text-zinc-400 hover:text-white text-xs font-semibold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+              >
+                <RefreshCw size={14} className={isScanningRescue ? "animate-spin" : ""} />
+                <span>{isScanningRescue ? "Escaneando memorias locales..." : "Re-escanear y combinar memorias locales"}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3081,6 +3316,50 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             <span>{masterSyncSuccess}</span>
           </div>
         )}
+
+        {/* BANNER PROTECTOR DE RESCATE DE CACHÉ */}
+        <div className="mb-6 p-4 rounded-2xl bg-[#081711] border border-emerald-500/40 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-[0_10px_35px_rgba(0,0,0,0.7),0_0_30px_rgba(16,185,129,0.15)] animate-in fade-in duration-300">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
+              <ShieldCheck size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                  Escudo de Caché Activo
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 font-bold font-mono">
+                  {movies.length} Obras en Memoria
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-300 font-medium">
+                Delta sync desactivado de forma segura. Tu catálogo local no puede ser sobreescrito ni eliminado por el servidor.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+            <button
+              type="button"
+              onClick={handleDownloadCacheJson}
+              className="flex-1 md:flex-none py-2 px-3.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+              title="Descargar archivo JSON con el catálogo de este dispositivo"
+            >
+              <Download size={14} strokeWidth={2.5} />
+              <span>Bajar JSON</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCacheRescueModal(true);
+                handleScanAndRescueCaches();
+              }}
+              className="flex-1 md:flex-none py-2 px-3.5 rounded-lg border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-200 font-extrabold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Shield size={14} />
+              <span>Opciones de Rescate</span>
+            </button>
+          </div>
+        </div>
         
         {activeExploreTab === 'series' && filteredMovies.length === 0 && !searchTerm && selectedGenre === "Todos" && !selectedLetter && !selectedYearRange && !showHistoryOnly && !showReviewOnly && (
           <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 animate-in fade-in duration-500 my-12">
