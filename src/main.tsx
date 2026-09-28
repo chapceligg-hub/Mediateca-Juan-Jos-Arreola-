@@ -11,15 +11,25 @@ if (typeof window !== 'undefined') {
     return (
       str.includes('INTERNAL ASSERTION FAILED') ||
       str.includes('Unexpected state (ID:') ||
-      str.includes('ve":-1')
+      str.includes('ve":-1') ||
+      str.includes('INTERNAL UNHANDLED ERROR')
     );
+  };
+
+  const originalConsoleError = console.error;
+  console.error = function (...args: any[]) {
+    for (let i = 0; i < args.length; i++) {
+      if (isFirestoreAssertionError(args[i])) {
+        return;
+      }
+    }
+    return originalConsoleError.apply(console, args);
   };
 
   window.addEventListener('error', (event) => {
     if (isFirestoreAssertionError(event?.error) || isFirestoreAssertionError(event?.message)) {
       event.preventDefault();
       event.stopPropagation();
-      console.warn('[Firestore] Error interno de aserción interceptado y neutralizado:', event.error?.message || event.message);
       return true;
     }
   }, true);
@@ -28,7 +38,6 @@ if (typeof window !== 'undefined') {
     if (isFirestoreAssertionError(event?.reason)) {
       event.preventDefault();
       event.stopPropagation();
-      console.warn('[Firestore] Rechazo asíncrono de aserción interceptado y neutralizado:', event.reason?.message || event.reason);
       return true;
     }
   }, true);
