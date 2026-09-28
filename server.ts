@@ -261,42 +261,35 @@ function loadServerAdmins(): any[] {
   deletedSet.delete(primary);
 
   const map = new Map<string, any>();
+  let hasLoadedFromFile = false;
 
-  // 1. Cargar administradores base predeterminados (garantía anti-pérdida)
-  for (const def of DEFAULT_PERSISTENT_ADMINS) {
-    const key = def.email.toLowerCase().trim();
-    if (!deletedSet.has(key)) {
-      map.set(key, { ...def });
-    }
-  }
-
-  // 2. Cargar y combinar archivo admins-registry.json si existe
+  // 1. Cargar archivo admins-registry.json si existe (fuente fidedigna guardada)
   try {
     if (fs.existsSync(ADMINS_FILE)) {
       const raw = fs.readFileSync(ADMINS_FILE, "utf-8");
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        hasLoadedFromFile = true;
         for (const item of parsed) {
           const key = (item.email || item.id || "").toLowerCase().trim();
           if (key && !deletedSet.has(key)) {
-            const existing = map.get(key);
-            if (!existing) {
-              map.set(key, { ...item, id: key, email: key });
-            } else {
-              const itemTime = item.updatedAt || item.createdAt || "";
-              const existTime = existing.updatedAt || existing.createdAt || "";
-              const base = itemTime >= existTime ? { ...existing, ...item } : { ...item, ...existing };
-              const existingName = (existing.name || "").trim();
-              const incomingName = (item.name || "").trim();
-              const finalName = incomingName || existingName;
-              map.set(key, { ...base, id: key, email: key, name: finalName });
-            }
+            map.set(key, { ...item, id: key, email: key });
           }
         }
       }
     }
   } catch (e) {
     console.warn("Error leyendo admins-registry.json:", e);
+  }
+
+  // 2. Solo si admins-registry.json no existe o está vacío, sembrar con DEFAULT_PERSISTENT_ADMINS
+  if (!hasLoadedFromFile) {
+    for (const def of DEFAULT_PERSISTENT_ADMINS) {
+      const key = def.email.toLowerCase().trim();
+      if (!deletedSet.has(key)) {
+        map.set(key, { ...def });
+      }
+    }
   }
 
   // Asegurar que el Administrador Principal siempre tenga rol admin
@@ -341,6 +334,7 @@ function broadcastAdminsUpdate() {
     type: "admins_update",
     admins: active,
     primarySuperAdmin: loadPrimarySuperAdmin(),
+    deletedIds: loadDeletedAdminIds(),
     timestamp: new Date().toISOString()
   });
 
@@ -368,7 +362,13 @@ app.get("/api/admins/stream", (req, res) => {
 
   // Enviar estado actual de inmediato al conectar
   const active = getActiveAdminsList();
-  res.write(`event: admins_update\ndata: ${JSON.stringify({ type: "admins_update", admins: active, primarySuperAdmin: loadPrimarySuperAdmin(), timestamp: new Date().toISOString() })}\n\n`);
+  res.write(`event: admins_update\ndata: ${JSON.stringify({ 
+    type: "admins_update", 
+    admins: active, 
+    primarySuperAdmin: loadPrimarySuperAdmin(), 
+    deletedIds: loadDeletedAdminIds(),
+    timestamp: new Date().toISOString() 
+  })}\n\n`);
 
   adminStreamClients.add(res);
 
@@ -499,15 +499,14 @@ app.post("/api/admins", (req, res) => {
   const admins = loadServerAdmins();
   const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
   const existingName = (idx > -1 ? (admins[idx].name || "") : "").trim();
-  const incomingName = (adminData.name !== undefined ? String(adminData.name) : "").trim();
-  const finalName = incomingName || existingName;
+  const incomingName = adminData.name !== undefined ? String(adminData.name).trim() : existingName;
 
   const updatedEntry = {
     ...(idx > -1 ? admins[idx] : {}),
     ...adminData,
     id: email,
     email: email,
-    name: finalName,
+    name: incomingName,
     role: adminData.role || (idx > -1 ? admins[idx].role : "editor"),
     updatedAt: new Date().toISOString()
   };

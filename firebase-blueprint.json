@@ -30,7 +30,11 @@
         "filmaffinityId": { "type": "string" },
         "tmdbId": { "type": "string" },
         "posterCandidates": { "type": "array" },
-        "estante": { "type": "string" }
+        "estante": { "type": "string" },
+        "season": { "type": "string" },
+        "section": { "type": "string" },
+        "isLatestSaved": { "type": "boolean" },
+        "latestSavedAt": { "type": "string" }
       }
     },
     "admin": {

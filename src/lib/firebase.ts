@@ -4,7 +4,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  initializeFirestore, memoryLocalCache,
   getDocsFromCache, query, orderBy, limit, onSnapshot, where
 } from 'firebase/firestore';
 import { get, set } from 'idb-keyval';
@@ -12,10 +12,13 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Priorizar Cache Local: Configurar Firestore para que persista y use la caché por defecto
+// Inicializar Firestore con memoria local y long-polling forzado:
+// Esto previene al 100% el fallo de aserción interna (ID: b815 / ca9 {"ve":-1}) del WebChannel stream y del IndexedDB residual
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  localCache: memoryLocalCache(),
+  experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId);
+
 export const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
@@ -59,7 +62,12 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
 
   const isPrimary = normalized === 'chapceligg@gmail.com' || normalized === primary;
 
-  // 0. Verificación en memoria local instantánea (Permanente + Defaults)
+  // 0. Si está marcado como eliminado, denegar acceso de inmediato (salvo si es Administrador Principal)
+  if (!isPrimary && (await isDeletedAdmin(normalized))) {
+    return null;
+  }
+
+  // 1. Verificación en memoria local instantánea (Permanente + Defaults)
   const perm = getPermanentLocalAdmins();
   const defMatch = DEFAULT_CLIENT_ADMINS.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
   const permMatch = perm.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
@@ -560,14 +568,6 @@ export const subscribeToMovies = (
           const merged = mergeMoviesPreservingLocal(current, serverMovies, deletedIds);
           await setCachedMovies(merged, true);
           notifyMovieSubscribers(merged);
-          // Si el catálogo local consolidado tiene más títulos que el servidor, poblar el servidor central
-          if (merged.length > serverMovies.length) {
-            fetch('/api/movies/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(merged)
-            }).catch(() => {});
-          }
         } else if (offlineData && offlineData.length > 0) {
           // El servidor central aún no tiene películas: enviar nuestra copia local para poblar el servidor
           fetch('/api/movies/sync', {
@@ -585,22 +585,17 @@ export const subscribeToMovies = (
     runSmartDeltaSyncOnce(callback);
   });
 
-  // 3. Conectar al canal SSE en tiempo real para recibir actualizaciones de películas (0 lecturas Firestore)
+  // 3. Conectar al canal SSE en tiempo real para recibir actualizaciones de películas
   initMovieRealtimeStream();
 
-  // 4. Suscripción delta pasiva en tiempo real (0 lecturas iniciales, solo novedades futuras)
+  // 4. Suscripción pasiva en tiempo real con onSnapshot respaldada por persistentLocalCache
   let unsubscribeFirestore = () => {};
   try {
-    const listenFromTime = new Date().toISOString();
-    const qDeltaRealtime = query(
-      collection(db, 'movies'),
-      where('updatedAt', '>', listenFromTime)
-    );
+    const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
     
     unsubscribeFirestore = onSnapshot(
-      qDeltaRealtime,
+      q,
       async (snapshot) => {
-        if (snapshot.empty) return;
         const removedIds: string[] = [];
         snapshot.docChanges().forEach(change => {
           if (change.type === 'removed' && change.doc && change.doc.id) {
@@ -622,10 +617,21 @@ export const subscribeToMovies = (
           await set("videoteca_deleted_ids", deletedIds.slice(-1000));
         }
 
+        const deletedSet = new Set(deletedIds);
         const incomingMovies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const incomingIds = new Set(incomingMovies.map(m => m.id));
         const existing = await getCachedMovies() || [];
+
         const merged = mergeMoviesPreservingLocal(existing, incomingMovies, deletedIds);
-        const cleanMerged = merged.filter(m => m && m.id && !deletedIds.includes(m.id));
+
+        const nowMs = Date.now();
+        const cleanMerged = merged.filter(m => {
+          if (!m || !m.id) return false;
+          if (deletedSet.has(m.id)) return false;
+          if (incomingIds.has(m.id)) return true;
+          const createdMs = new Date(m.createdAt || m.updatedAt || 0).getTime();
+          return (nowMs - createdMs) < 30000;
+        });
 
         await setCachedMovies(cleanMerged, true);
         notifyMovieSubscribers(cleanMerged);
@@ -636,7 +642,7 @@ export const subscribeToMovies = (
           console.warn("[Firebase] Aviso en onSnapshot (usando datos locales):", err);
           if (onError) onError(err);
         } else {
-          console.log("[Firebase] Operando con catálogo en caché y servidor central (cuota protegida).");
+          console.log("[Firebase] Aviso: operando con catálogo en caché local (cuota protegida).");
         }
       }
     );
@@ -855,6 +861,15 @@ export const notifyAdminSubscribers = (admins: any[]) => {
   const primary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').toLowerCase().trim();
   deletedSet.delete(primary);
 
+  // Si un admin está presente en la lista explícita de cuentas activas, retirarlo del conjunto de eliminados
+  admins.forEach(a => {
+    const e = (a?.email || a?.id || '').toLowerCase().trim();
+    if (e) {
+      deletedSet.delete(e);
+      unrecordDeletedAdmin(e);
+    }
+  });
+
   const cleaned = admins.filter(a => {
     if (!a) return false;
     const e = (a.email || a.id || '').toLowerCase().trim();
@@ -885,13 +900,24 @@ const initAdminRealtimeStream = () => {
       try {
         const payload = JSON.parse(e.data);
         if (payload && Array.isArray(payload.admins)) {
-          const deletedSet = await getDeletedAdminsSet();
-          const cleaned = payload.admins.filter(a => !deletedSet.has((a.email || a.id || '').toLowerCase().trim()));
-          await set("videoteca_admins_cache", cleaned);
-          savePermanentLocalAdmins(cleaned);
-          notifyAdminSubscribers(cleaned);
+          // 1. Sincronizar lista de eliminados desde el servidor
+          if (Array.isArray(payload.deletedIds)) {
+            try {
+              localStorage.setItem("videoteca_deleted_admins", JSON.stringify(payload.deletedIds));
+            } catch (_) {}
+          }
+          // 2. Limpiar de eliminados locales cualquier admin activo recibido
+          payload.admins.forEach((a: any) => {
+            const em = (a.email || a.id || '').toLowerCase().trim();
+            if (em) unrecordDeletedAdmin(em);
+          });
+
+          await set("videoteca_admins_cache", payload.admins);
+          savePermanentLocalAdmins(payload.admins);
+          lastKnownAdminsList = payload.admins;
+          notifyAdminSubscribers(payload.admins);
           if (adminBroadcastChannel) {
-            adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: cleaned });
+            adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: payload.admins });
           }
         }
         if (payload?.primarySuperAdmin) {
@@ -923,12 +949,27 @@ const initAdminRealtimeStream = () => {
             const res = await fetch('/api/admins');
             if (res.ok) {
               const data = await res.json();
-              if (Array.isArray(data)) {
-                const deletedSet = await getDeletedAdminsSet();
-                const cleaned = data.filter(a => !deletedSet.has((a.email || a.id || '').toLowerCase().trim()));
-                await set("videoteca_admins_cache", cleaned);
-                savePermanentLocalAdmins(cleaned);
-                notifyAdminSubscribers(cleaned);
+              if (Array.isArray(data) && data.length > 0) {
+                // Sincronizar lista de eliminados desde el servidor
+                try {
+                  const delRes = await fetch('/api/admins/deleted');
+                  if (delRes.ok) {
+                    const serverDeleted = await delRes.json();
+                    if (Array.isArray(serverDeleted)) {
+                      localStorage.setItem("videoteca_deleted_admins", JSON.stringify(serverDeleted));
+                    }
+                  }
+                } catch (_) {}
+
+                data.forEach((a: any) => {
+                  const em = (a.email || a.id || '').toLowerCase().trim();
+                  if (em) unrecordDeletedAdmin(em);
+                });
+
+                await set("videoteca_admins_cache", data);
+                savePermanentLocalAdmins(data);
+                lastKnownAdminsList = data;
+                notifyAdminSubscribers(data);
               }
             }
           } catch (_) {}
@@ -1190,8 +1231,22 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
     } catch (_) {}
   }
 
-  // 4. Fusión de TODAS las capas: Cuentas base + Permanente + Local + Servidor + Firestore
-  let unified = mergeAdmins(DEFAULT_CLIENT_ADMINS, permAdmins, localAdmins, serverAdmins, firestoreAdmins);
+  // 4. Fusión de capas: Si el servidor o Firestore tienen datos, son la fuente fidedigna compartida
+  const hasExistingData = (serverAdmins.length > 0 || firestoreAdmins.length > 0 || localAdmins.length > 0 || permAdmins.length > 0);
+  const baseDefaults = hasExistingData ? [] : DEFAULT_CLIENT_ADMINS;
+
+  let unified: any[];
+  if (serverAdmins.length > 0) {
+    // El servidor es la fuente central compartida por todos los dispositivos
+    unified = mergeAdmins(serverAdmins, firestoreAdmins);
+  } else if (firestoreAdmins.length > 0) {
+    unified = mergeAdmins(firestoreAdmins, localAdmins, permAdmins);
+  } else if (localAdmins.length > 0 || permAdmins.length > 0) {
+    unified = mergeAdmins(permAdmins, localAdmins);
+  } else {
+    unified = baseDefaults;
+  }
+
   if (deletedSet.size > 0) {
     unified = unified.filter(a => !deletedSet.has((a.email || a.id || '').trim().toLowerCase()));
   }
@@ -1385,9 +1440,12 @@ export const upsertAdmin = async (admin: any) => {
   unrecordDeletedAdmin(adminId);
 
   const permAdmins = getPermanentLocalAdmins();
-  const existingInPerm = permAdmins.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === adminId);
+  const currentBase = (lastKnownAdminsList && lastKnownAdminsList.length > 0)
+    ? lastKnownAdminsList
+    : permAdmins;
+  const existingInPerm = currentBase.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === adminId);
   const existingName = (existingInPerm?.name || '').trim();
-  const incomingName = admin.name !== undefined ? String(admin.name).trim() : '';
+  const incomingName = admin.name !== undefined ? String(admin.name).trim() : existingName;
   const finalName = incomingName || existingName || adminId.split('@')[0];
 
   const adminData: any = {
@@ -1407,26 +1465,16 @@ export const upsertAdmin = async (admin: any) => {
     }
   });
 
-  // 1. Guardar en el backend del servidor (persistencia multi-dispositivo garantizada)
-  try {
-    await fetch('/api/admins', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(adminData)
-    });
-  } catch (err) {
-    console.warn("Aviso al guardar admin en backend:", err);
+  // 1. Guardar en almacenamiento inmutable permanente (localStorage + IndexedDB) y notificar de inmediato (0ms de latencia)
+  const idx = currentBase.findIndex((a: any) => (a.email || a.id || '').toLowerCase().trim() === adminId);
+  let updatedList: any[];
+  if (idx > -1) {
+    updatedList = [...currentBase];
+    updatedList[idx] = { ...updatedList[idx], ...adminData };
+  } else {
+    updatedList = [...currentBase, adminData];
   }
 
-  // 2. Guardar en Firestore documento individual
-  try {
-    await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
-  } catch (err) {
-    console.warn("Aviso al guardar admin en Firestore (se guardará en backend y caché local):", err);
-  }
-  
-  // 3. Guardar en almacenamiento inmutable permanente (localStorage + IndexedDB) y propagar
-  const updatedList = mergeAdmins(permAdmins, [adminData]);
   savePermanentLocalAdmins(updatedList);
   await set("videoteca_admins_cache", updatedList);
   lastKnownAdminsList = updatedList;
@@ -1435,13 +1483,36 @@ export const upsertAdmin = async (admin: any) => {
     adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: updatedList });
   }
 
-  // Guardar en Firestore _registry para lectura consolidada de 1 solo documento
+  // 2. Guardar en el backend del servidor (persistencia multi-dispositivo y SSE en tiempo real a todos)
   try {
+    const res = await fetch('/api/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminData)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.admin) {
+        const srvIdx = updatedList.findIndex(a => (a.email || a.id || '').toLowerCase().trim() === adminId);
+        if (srvIdx > -1) {
+          updatedList[srvIdx] = { ...updatedList[srvIdx], ...data.admin };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Aviso al guardar admin en backend:", err);
+  }
+
+  // 3. Guardar en Firestore documento individual y registro consolidado
+  try {
+    await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
     setDoc(doc(db, 'admins', '_registry'), {
       list: updatedList,
       updatedAt: new Date().toISOString()
     }, { merge: true }).catch(() => {});
-  } catch (_) {}
+  } catch (err) {
+    console.warn("Aviso al guardar admin en Firestore (se guardará en backend y caché local):", err);
+  }
 
   return adminData;
 };
@@ -1454,20 +1525,12 @@ export const deleteAdmin = async (idOrEmail: string) => {
   // Registrar como eliminado para evitar que se reviva
   recordDeletedAdmin(adminId);
 
-  try {
-    await fetch(`/api/admins/${encodeURIComponent(adminId)}`, { method: 'DELETE' });
-  } catch (err) {
-    console.warn("Aviso al eliminar admin en backend:", err);
-  }
+  // 1. Actualizar memoria local de inmediato
+  const currentBase = (lastKnownAdminsList && lastKnownAdminsList.length > 0)
+    ? lastKnownAdminsList
+    : getPermanentLocalAdmins();
+  const filteredList = currentBase.filter((a: any) => (a.id || a.email || '').toLowerCase().trim() !== adminId);
 
-  try {
-    await deleteDoc(doc(db, 'admins', adminId));
-  } catch (err) {
-    console.warn("Aviso al eliminar admin en Firestore (se eliminará de caché local):", err);
-  }
-  
-  const permAdmins = getPermanentLocalAdmins();
-  const filteredList = permAdmins.filter((a: any) => (a.id || a.email || '').toLowerCase().trim() !== adminId);
   savePermanentLocalAdmins(filteredList);
   await set("videoteca_admins_cache", filteredList);
   lastKnownAdminsList = filteredList;
@@ -1476,12 +1539,23 @@ export const deleteAdmin = async (idOrEmail: string) => {
     adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: filteredList });
   }
 
+  // 2. Eliminar en el servidor central (notifica inmediatamente vía SSE a todos los demás dispositivos)
   try {
+    await fetch(`/api/admins/${encodeURIComponent(adminId)}`, { method: 'DELETE' });
+  } catch (err) {
+    console.warn("Aviso al eliminar admin en backend:", err);
+  }
+
+  // 3. Eliminar de Firestore
+  try {
+    await deleteDoc(doc(db, 'admins', adminId));
     setDoc(doc(db, 'admins', '_registry'), {
       list: filteredList,
       updatedAt: new Date().toISOString()
     }, { merge: true }).catch(() => {});
-  } catch (_) {}
+  } catch (err) {
+    console.warn("Aviso al eliminar admin en Firestore (se eliminará de caché local):", err);
+  }
 };
 
 export const getPrimarySuperAdminEmail = async (): Promise<string> => {

@@ -29,6 +29,8 @@ export interface Movie {
   estante?: string;
   season?: string;
   section?: 'peliculas' | 'centauro' | 'series';
+  isLatestSaved?: boolean;
+  latestSavedAt?: string;
 }
 
 export interface Quote {
