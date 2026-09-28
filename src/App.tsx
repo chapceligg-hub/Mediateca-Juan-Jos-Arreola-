@@ -1095,7 +1095,7 @@ export default function App() {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const moviesPerPage = 24;
 
-  const isArchiveActive = activeExploreTab === 'peliculas' && !selectedLetter && !selectedYearRange && selectedGenre === "Todos" && !showReviewOnly && !showHistoryOnly && !isDirectorFilterActive && !isFavoriteOfMonthActive;
+  const isArchiveActive = activeExploreTab === 'peliculas' && !isDirectorFilterActive && !isFavoriteOfMonthActive;
 
   const getSidebarItemClass = (isActive: boolean) => {
     return isActive 
@@ -2332,7 +2332,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <div className="flex flex-col gap-1">
                    {/* Películas */}
                    <button 
-                     className={getArchiveSidebarClass(activeExploreTab === 'peliculas' && !isDirectorFilterActive && !isFavoriteOfMonthActive)} 
+                     className={getArchiveSidebarClass(isArchiveActive)} 
                      onClick={() => {
                        setActiveExploreTab('peliculas');
                        clearFiltersAndSearch();
@@ -3053,31 +3053,65 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
         {(activeExploreTab === 'peliculas' || filteredMovies.length > 0 || searchTerm || selectedGenre !== "Todos" || selectedLetter || selectedYearRange || showHistoryOnly || showReviewOnly) && (
           <>
-            {/* ENCABEZADO DE SECCIÓN CENTAURO */}
-            {/* Removido según solicitud de usuario */}
-
-        {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
-        {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
-          <div id="category-header-section" key={selectedGenre} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
-
-            <h2 className="relative z-10 text-[36px] md:text-[64px] flex items-center gap-4 text-white drop-shadow-[0_10px_20px_rgba(0,0,0,0.95)]">
-              {/* Dynamic elegant filmmaker laser beam with a non-distracting slow shimmer */}
-              <div className="relative flex items-center shrink-0 self-stretch py-1">
-                <span className="w-[5px] h-full bg-gradient-to-b from-[#ff4d4d] via-[#b41d1d] to-[#450a0a] rounded-full shadow-[0_0_20px_rgba(239,68,68,0.75)] animate-beam-subtle" />
-                <span className="absolute inset-0 w-full h-[60%] bg-[#ef4444] rounded-full blur-[2px] opacity-15" />
+            {/* ENCABEZADO DE FILTRO ALFABÉTICO */}
+            {!searchTerm && !showHistoryOnly && !showReviewOnly && selectedLetter && selectedGenre === "Todos" && !selectedYearRange && (
+              <div id="alphabet-header-section" key={selectedLetter} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
+                <h2 className="relative z-10 text-[36px] md:text-[64px] flex items-center gap-4 text-white drop-shadow-[0_10px_20px_rgba(0,0,0,0.95)]">
+                  <div className="relative flex items-center shrink-0 self-stretch py-1">
+                    <span className="w-[5px] h-full bg-gradient-to-b from-[#ff4d4d] via-[#b41d1d] to-[#450a0a] rounded-full shadow-[0_0_20px_rgba(239,68,68,0.75)] animate-beam-subtle" />
+                    <span className="absolute inset-0 w-full h-[60%] bg-[#ef4444] rounded-full blur-[2px] opacity-15" />
+                  </div>
+                  <span className="stranger-title-text animate-stranger-reveal inline-block hover:scale-[1.01] transition-transform duration-500">
+                    "{selectedLetter}"
+                  </span>
+                </h2>
+                <p className="relative z-10 text-[10px] md:text-xs text-zinc-400 font-extrabold tracking-[0.35em] uppercase ml-6 mt-2 animate-cinematic-subtitle drop-shadow-md flex items-center gap-2">
+                  <span className="text-[#ef4444] font-black">•</span>
+                  <span>{filteredMovies.length} {filteredMovies.length === 1 ? "obra" : "obras"} en exhibición</span>
+                </p>
               </div>
-              
-              <span className="stranger-title-text animate-stranger-reveal inline-block hover:scale-[1.01] transition-transform duration-500">
-                {selectedGenre}
-              </span>
-            </h2>
+            )}
 
-            <p className="relative z-10 text-[10px] md:text-xs text-zinc-400 font-extrabold tracking-[0.35em] uppercase ml-6 mt-2 animate-cinematic-subtitle drop-shadow-md flex items-center gap-2">
-              <span className="text-[#ef4444] font-black">•</span>
-              <span>{filteredMovies.length} {filteredMovies.length === 1 ? "obra" : "obras"} en exhibición</span>
-            </p>
-          </div>
-        )}
+            {/* ENCABEZADO DE ÉPOCAS */}
+            {!searchTerm && !showHistoryOnly && !showReviewOnly && selectedYearRange && selectedGenre === "Todos" && !selectedLetter && (
+              <div id="eras-header-section" key={selectedYearRange.label} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
+                <h2 className="relative z-10 text-[36px] md:text-[64px] flex items-center gap-4 text-white drop-shadow-[0_10px_20px_rgba(0,0,0,0.95)]">
+                  <div className="relative flex items-center shrink-0 self-stretch py-1">
+                    <span className="w-[5px] h-full bg-gradient-to-b from-[#ff4d4d] via-[#b41d1d] to-[#450a0a] rounded-full shadow-[0_0_20px_rgba(239,68,68,0.75)] animate-beam-subtle" />
+                    <span className="absolute inset-0 w-full h-[60%] bg-[#ef4444] rounded-full blur-[2px] opacity-15" />
+                  </div>
+                  <span className="stranger-title-text animate-stranger-reveal inline-block hover:scale-[1.01] transition-transform duration-500">
+                    {selectedYearRange.label}
+                  </span>
+                </h2>
+                <p className="relative z-10 text-[10px] md:text-xs text-zinc-400 font-extrabold tracking-[0.35em] uppercase ml-6 mt-2 animate-cinematic-subtitle drop-shadow-md flex items-center gap-2">
+                  <span className="text-[#ef4444] font-black">•</span>
+                  <span>{filteredMovies.length} {filteredMovies.length === 1 ? "obra" : "obras"} en exhibición</span>
+                </p>
+              </div>
+            )}
+
+            {/* ENCABEZADO DE CATEGORÍA CINEASTA */}
+            {!searchTerm && !showHistoryOnly && !showReviewOnly && (!selectedLetter || selectedLetter === "Todos") && selectedGenre !== "Todos" && (
+              <div id="category-header-section" key={selectedGenre} className="mb-10 flex flex-col gap-1 relative pt-4 select-none">
+                <h2 className="relative z-10 text-[36px] md:text-[64px] flex items-center gap-4 text-white drop-shadow-[0_10px_20px_rgba(0,0,0,0.95)]">
+                  {/* Dynamic elegant filmmaker laser beam with a non-distracting slow shimmer */}
+                  <div className="relative flex items-center shrink-0 self-stretch py-1">
+                    <span className="w-[5px] h-full bg-gradient-to-b from-[#ff4d4d] via-[#b41d1d] to-[#450a0a] rounded-full shadow-[0_0_20px_rgba(239,68,68,0.75)] animate-beam-subtle" />
+                    <span className="absolute inset-0 w-full h-[60%] bg-[#ef4444] rounded-full blur-[2px] opacity-15" />
+                  </div>
+                  
+                  <span className="stranger-title-text animate-stranger-reveal inline-block hover:scale-[1.01] transition-transform duration-500">
+                    {selectedGenre}
+                  </span>
+                </h2>
+
+                <p className="relative z-10 text-[10px] md:text-xs text-zinc-400 font-extrabold tracking-[0.35em] uppercase ml-6 mt-2 animate-cinematic-subtitle drop-shadow-md flex items-center gap-2">
+                  <span className="text-[#ef4444] font-black">•</span>
+                  <span>{filteredMovies.length} {filteredMovies.length === 1 ? "obra" : "obras"} en exhibición</span>
+                </p>
+              </div>
+            )}
 
         {paginatedMovies.length > 0 ? (
           <>

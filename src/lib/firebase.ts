@@ -659,6 +659,52 @@ export const savePermanentLocalAdmins = (admins: any[]) => {
   } catch (_) {}
 };
 
+export const getCachedAdmins = async (): Promise<any[] | null> => {
+  try {
+    const cache = await get("videoteca_admins_cache");
+    if (cache) {
+      const parsed = typeof cache === 'string' ? JSON.parse(cache) : cache;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("Aviso leyendo caché IndexedDB de cuentas:", e);
+  }
+  const perm = getPermanentLocalAdmins();
+  if (Array.isArray(perm) && perm.length > 0) {
+    return perm;
+  }
+  return null;
+};
+
+export const setCachedAdmins = async (newAdmins: any[], bypassIntegrity = false) => {
+  try {
+    if (!Array.isArray(newAdmins) || newAdmins.length === 0) return;
+    const valid = newAdmins.filter(a => a && (a.email || a.id));
+    savePermanentLocalAdmins(valid);
+    await set("videoteca_admins_cache", valid);
+    lastKnownAdminsList = valid;
+
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      localStorage.setItem("videoteca_admins_cached_date", today);
+      localStorage.setItem("videoteca_admins_last_update", new Date().toISOString());
+    } catch (_) {}
+
+    // Respaldar en servidor backend en segundo plano (0 lecturas Firestore, multi-dispositivo)
+    try {
+      fetch('/api/admins/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(valid)
+      }).catch(() => {});
+    } catch (_) {}
+  } catch (e) {
+    console.error("Error al guardar en caché local de cuentas:", e);
+  }
+};
+
 export const getDeletedAdminsSet = async (): Promise<Set<string>> => {
   const setObj = new Set<string>();
 
@@ -904,25 +950,113 @@ if (adminBroadcastChannel) {
   };
 }
 
+let hasRunDailyAdminSync = false;
+
+export const runDailyAdminsSyncOnce = async (callback?: (admins: any[]) => void) => {
+  if (hasRunDailyAdminSync) return;
+  hasRunDailyAdminSync = true;
+
+  const today = new Date().toISOString().slice(0, 10);
+  let lastSyncDay = "";
+  try {
+    lastSyncDay = localStorage.getItem("videoteca_admins_last_firestore_sync_day") || "";
+  } catch (_) {}
+
+  // Si ya se sincronizó con Firestore hoy, respetamos la cuota y NO consumimos lecturas adicionales
+  if (lastSyncDay === today) {
+    console.log(`[Cuentas Cache] Sincronización diaria ya realizada hoy (${today}). 0 lecturas consumidas, operando desde la memoria caché segura.`);
+    return;
+  }
+
+  // Es un nuevo día ("al siguiente día se actualizan"): consultar Firestore de forma controlada
+  try {
+    console.log(`[Cuentas Cache] Nuevo día detectado (${today}). Actualizando cuentas desde el servidor central / Firestore...`);
+    const regDoc = await getDoc(doc(db, 'admins', '_registry'));
+    if (regDoc.exists()) {
+      const data = regDoc.data();
+      if (Array.isArray(data?.list) && data.list.length > 0) {
+        const deletedSet = await getDeletedAdminsSet();
+        const currentCached = (await getCachedAdmins()) || [];
+        const merged = mergeAdmins(currentCached, data.list).filter(a => {
+          const em = (a.email || a.id || '').toLowerCase().trim();
+          return em && !deletedSet.has(em);
+        });
+
+        await setCachedAdmins(merged, true);
+        try {
+          localStorage.setItem("videoteca_admins_last_firestore_sync_day", today);
+        } catch (_) {}
+
+        notifyAdminSubscribers(merged);
+        if (callback) callback(merged);
+        console.log(`[Cuentas Cache] Cuentas sincronizadas exitosamente para hoy (${merged.length} cuentas activas).`);
+        return;
+      }
+    }
+  } catch (err: any) {
+    const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+    if (isQuota) {
+      console.log(`[Cuentas Cache] Límite de lecturas Firestore alcanzado para hoy (${today}). Cuentas 100% aseguradas en caché local. Se actualizarán automáticamente al siguiente día.`);
+      try {
+        localStorage.setItem("videoteca_admins_last_firestore_sync_day", today);
+      } catch (_) {}
+    } else {
+      console.warn("Aviso al sincronizar cuentas en el nuevo día:", err);
+    }
+  }
+};
+
 export const subscribeToAdmins = (
   callback: (admins: any[]) => void, 
   onError?: (err: any) => void
 ) => {
   adminSubscribers.add(callback);
 
-  // 1. Notificar de inmediato si ya tenemos lista en memoria
-  if (lastKnownAdminsList && lastKnownAdminsList.length > 0) {
-    callback(lastKnownAdminsList);
-  }
-
-  // 2. Cargar siempre del servidor para asegurar que todos los registrados estén sincronizados
-  fetchAdminsOptimized().then(serverOrCachedAdmins => {
-    if (serverOrCachedAdmins && serverOrCachedAdmins.length > 0) {
-      callback(serverOrCachedAdmins);
+  // 1. Cargar instantáneamente de la caché local (IndexedDB + localStorage) -> 0ms de latencia, 0 lecturas Firestore
+  getCachedAdmins().then(async (offlineAdmins) => {
+    const deletedSet = await getDeletedAdminsSet();
+    if (offlineAdmins && offlineAdmins.length > 0) {
+      const cleaned = offlineAdmins.filter(a => {
+        const em = (a.email || a.id || '').toLowerCase().trim();
+        return em && !deletedSet.has(em);
+      });
+      callback(cleaned);
+    } else if (lastKnownAdminsList && lastKnownAdminsList.length > 0) {
+      callback(lastKnownAdminsList);
     }
-  }).catch(() => {});
 
-  // 3. Conectar al canal SSE en tiempo real para recibir actualizaciones de cualquier dispositivo
+    // 2. Sincronizar de inmediato con el servidor central multi-dispositivo (/api/admins) -> 0 lecturas Firestore
+    try {
+      const res = await fetch('/api/admins');
+      if (res.ok) {
+        const serverAdmins = await res.json();
+        if (Array.isArray(serverAdmins) && serverAdmins.length > 0) {
+          const current = (await getCachedAdmins()) || [];
+          const merged = mergeAdmins(current, serverAdmins).filter(a => {
+            const em = (a.email || a.id || '').toLowerCase().trim();
+            return em && !deletedSet.has(em);
+          });
+          await setCachedAdmins(merged, true);
+          notifyAdminSubscribers(merged);
+        } else if (offlineAdmins && offlineAdmins.length > 0) {
+          // El servidor aún no tiene cuentas: sincronizar nuestra caché con el servidor
+          fetch('/api/admins/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(offlineAdmins)
+          }).catch(() => {});
+        }
+      }
+    } catch (_) {}
+
+    // 3. Verificación diaria controlada de Firestore ("que al siguiente día se actualicen")
+    runDailyAdminsSyncOnce(callback);
+  }).catch((e) => {
+    console.warn("Error leyendo respaldo inicial de caché de cuentas:", e);
+    runDailyAdminsSyncOnce(callback);
+  });
+
+  // 4. Conectar al canal SSE en tiempo real para recibir actualizaciones multi-dispositivo sin lecturas Firestore
   initAdminRealtimeStream();
 
   return () => {
@@ -1012,7 +1146,19 @@ export const mergeAdmins = (...lists: any[][]): any[] => {
 };
 
 export const fetchAdminsOptimized = async (forceServer = false) => {
-  // 1. Consultar servidor central (fuente de verdad multi-dispositivo)
+  // 1. Carga instantánea desde caché local (IndexedDB + localStorage) (0 lecturas Firestore)
+  const offlineAdmins = await getCachedAdmins();
+  const today = new Date().toISOString().slice(0, 10);
+  const lastSyncDay = (() => {
+    try { return localStorage.getItem("videoteca_admins_last_firestore_sync_day"); } catch (_) { return ""; }
+  })();
+
+  // Si no se fuerza el servidor y ya contamos con caché para el día de hoy, devolverla inmediatamente
+  if (!forceServer && offlineAdmins && offlineAdmins.length > 0 && lastSyncDay === today) {
+    return offlineAdmins;
+  }
+
+  // 2. Consultar servidor central backend (0 lecturas Firestore, multi-dispositivo)
   try {
     const resAdmins = await fetch('/api/admins');
     if (resAdmins.ok) {
@@ -1035,9 +1181,7 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
           if (em) unrecordDeletedAdmin(em);
         });
 
-        savePermanentLocalAdmins(serverAdmins);
-        await set("videoteca_admins_cache", serverAdmins);
-        lastKnownAdminsList = serverAdmins;
+        await setCachedAdmins(serverAdmins, true);
         return serverAdmins;
       }
     }
@@ -1045,14 +1189,32 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
     console.warn("Aviso al consultar /api/admins:", err);
   }
 
-  // 2. Respaldo en Firestore si el servidor no responde
+  // Si no se fuerza servidor y tenemos datos en caché, devolverlos sin gastar cuota de Firestore
+  if (!forceServer && offlineAdmins && offlineAdmins.length > 0) {
+    return offlineAdmins;
+  }
+
+  // 3. Respaldo en Firestore únicamente si es necesario o se fuerza explícitamente (al siguiente día)
   let firestoreAdmins: any[] = [];
   try {
     const regDoc = await getDoc(doc(db, 'admins', '_registry'));
     if (regDoc.exists() && Array.isArray(regDoc.data()?.list) && regDoc.data().list.length > 0) {
       firestoreAdmins = regDoc.data().list;
+      try {
+        localStorage.setItem("videoteca_admins_last_firestore_sync_day", today);
+      } catch (_) {}
     }
-  } catch (_) {}
+  } catch (err: any) {
+    const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+    if (isQuota) {
+      console.log(`[Cuentas] Límite diario de lecturas alcanzado hoy. Manteniendo cuentas activas desde la caché segura.`);
+      try {
+        localStorage.setItem("videoteca_admins_last_firestore_sync_day", today);
+      } catch (_) {}
+    } else {
+      console.warn("Aviso al consultar admins de Firestore:", err);
+    }
+  }
 
   if (firestoreAdmins.length === 0 && forceServer) {
     try {
@@ -1062,35 +1224,22 @@ export const fetchAdminsOptimized = async (forceServer = false) => {
         .filter(docSnap => !docSnap.id.startsWith('_'))
         .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
     } catch (err) {
-      console.warn("Aviso al consultar admins de Firestore:", err);
+      console.warn("Aviso al consultar admins individuales de Firestore:", err);
     }
   }
 
   if (firestoreAdmins.length > 0) {
-    savePermanentLocalAdmins(firestoreAdmins);
-    await set("videoteca_admins_cache", firestoreAdmins);
-    lastKnownAdminsList = firestoreAdmins;
-    return firestoreAdmins;
+    const merged = mergeAdmins(offlineAdmins || [], firestoreAdmins);
+    await setCachedAdmins(merged, true);
+    return merged;
   }
 
-  // 3. Respaldo en memoria local si no hay conexión
-  const permAdmins = getPermanentLocalAdmins();
-  let localAdmins: any[] = [];
-  try {
-    const offlineAdmins = await get("videoteca_admins_cache");
-    if (offlineAdmins) {
-      const parsed = typeof offlineAdmins === 'string' ? JSON.parse(offlineAdmins) : offlineAdmins;
-      if (Array.isArray(parsed) && parsed.length > 0) localAdmins = parsed;
-    }
-  } catch (e) {}
-
-  const cached = mergeAdmins(permAdmins, localAdmins);
-  if (cached.length > 0) {
-    lastKnownAdminsList = cached;
-    return cached;
+  if (offlineAdmins && offlineAdmins.length > 0) {
+    return offlineAdmins;
   }
 
-  return DEFAULT_CLIENT_ADMINS;
+  const cached = mergeAdmins(getPermanentLocalAdmins(), DEFAULT_CLIENT_ADMINS);
+  return cached.length > 0 ? cached : DEFAULT_CLIENT_ADMINS;
 };
 
 export const generateMovieId = () => {
