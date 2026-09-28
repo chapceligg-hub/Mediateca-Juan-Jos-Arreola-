@@ -174,20 +174,6 @@ let currentPriorityModel = "gemini-2.5-flash";
 
 export const app = express();
 
-const CLOUD_RUN_CENTRAL_URL = process.env.CENTRAL_SERVER_URL || "https://ais-pre-xyitmmdapgw2fr37dyjkrh-452282047905.us-west2.run.app";
-const IS_VERCEL = Boolean(process.env.VERCEL || process.env.NOW_REGION);
-
-// Habilitar CORS para que Vercel y clientes externos puedan comunicarse directamente con Cloud Run
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
-});
-
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -678,28 +664,8 @@ app.get("/api/movies/stream", (req, res) => {
   });
 });
 
-app.get("/api/movies", async (req, res) => {
+app.get("/api/movies", (req, res) => {
   const active = getActiveMoviesList();
-  if (active.length > 0) {
-    return res.json(active);
-  }
-
-  // En Vercel Serverless (o si el archivo local está vacío), consultar al servidor persistente de Cloud Run
-  if (IS_VERCEL) {
-    try {
-      const response = await fetch(`${CLOUD_RUN_CENTRAL_URL}/api/movies`, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(6000)
-      });
-      if (response.ok) {
-        const remoteMovies = await response.json();
-        if (Array.isArray(remoteMovies) && remoteMovies.length > 0) {
-          return res.json(remoteMovies);
-        }
-      }
-    } catch (_) {}
-  }
-
   res.json(active);
 });
 
@@ -729,16 +695,6 @@ app.post("/api/movies", (req, res) => {
 
   saveServerMovies(movies);
   broadcastMoviesUpdate("movie_upsert", updatedMovie);
-
-  // Si estamos en Vercel, reenviar de inmediato al servidor central de Cloud Run para persistencia permanente
-  if (IS_VERCEL) {
-    fetch(`${CLOUD_RUN_CENTRAL_URL}/api/movies`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedMovie)
-    }).catch(() => {});
-  }
-
   res.json({ success: true, movie: updatedMovie });
 });
 
@@ -790,56 +746,7 @@ app.post("/api/movies/sync", (req, res) => {
   if (updatedCount > 0) {
     broadcastMoviesUpdate("movies_update", { count: merged.length });
   }
-
-  // Si estamos en Vercel, propagar automáticamente al servidor central de Cloud Run
-  if (IS_VERCEL) {
-    fetch(`${CLOUD_RUN_CENTRAL_URL}/api/movies/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(clientMovies)
-    }).catch(() => {});
-  }
-
   res.json({ success: true, count: merged.length, movies: merged });
-});
-
-app.post("/api/movies/force-master", (req, res) => {
-  const masterMovies = req.body;
-  if (!Array.isArray(masterMovies)) {
-    return res.status(400).json({ error: "Se esperaba un array de películas" });
-  }
-
-  const nowIso = new Date().toISOString();
-  const masterIds = new Set(masterMovies.map(m => m && m.id).filter(Boolean));
-
-  // Quitar de deleted-movies cualquier película presente en el catálogo maestro enviado
-  let deletedIds = loadDeletedMovieIds();
-  deletedIds = deletedIds.filter(id => !masterIds.has(id));
-  saveDeletedMovieIds(deletedIds);
-
-  const updatedMovies = masterMovies.map(m => ({
-    ...m,
-    updatedAt: m.updatedAt || nowIso
-  }));
-
-  updatedMovies.sort((a, b) => {
-    const timeA = a.createdAt || a.updatedAt || "";
-    const timeB = b.createdAt || b.updatedAt || "";
-    return timeB.localeCompare(timeA);
-  });
-
-  saveServerMovies(updatedMovies);
-  broadcastMoviesUpdate("movies_update", { count: updatedMovies.length, isMaster: true });
-
-  if (IS_VERCEL) {
-    fetch(`${CLOUD_RUN_CENTRAL_URL}/api/movies/force-master`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(masterMovies)
-    }).catch(() => {});
-  }
-
-  res.json({ success: true, count: updatedMovies.length, movies: updatedMovies });
 });
 
 app.delete("/api/movies/:id", (req, res) => {
@@ -855,14 +762,6 @@ app.delete("/api/movies/:id", (req, res) => {
   const movies = loadServerMovies().filter(m => m && m.id !== id);
   saveServerMovies(movies);
   broadcastMoviesUpdate("movie_deleted", { id });
-
-  // Si estamos en Vercel, propagar eliminación a Cloud Run
-  if (IS_VERCEL) {
-    fetch(`${CLOUD_RUN_CENTRAL_URL}/api/movies/${encodeURIComponent(id)}`, {
-      method: 'DELETE'
-    }).catch(() => {});
-  }
-
   res.json({ success: true });
 });
 
