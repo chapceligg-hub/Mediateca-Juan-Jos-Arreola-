@@ -5131,12 +5131,33 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
       {/* ADMINS MODAL */}
       {showAdminsModal && (
-        <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 sm:p-7 w-full max-w-xl shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <button onClick={() => setShowAdminsModal(false)} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"><X size={20}/></button>
-            <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2 mb-2"><Users className="text-brand-light" size={24} /> Gestionar Administradores</h3>
-            <p className="text-xs text-zinc-400 mb-6 font-medium leading-relaxed">Agrega administradores o editores autorizados para colaborar en la mediateca. Registra sus correos electrónicos para habilitar su acceso a la plataforma.</p>
-            <AdminManager currentUser={user} userRole={userRole} />
+        <div className={`fixed inset-0 backdrop-blur-md z-50 flex items-center justify-center p-4 transition-colors duration-300 ${
+          isDayMode ? 'bg-black/60' : 'bg-black/95'
+        }`}>
+          <div className={`rounded-2xl p-6 sm:p-7 w-full max-w-xl shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar font-sans transition-colors duration-300 ${
+            isDayMode 
+              ? 'bg-white border border-zinc-200 text-zinc-900' 
+              : 'bg-[#0a0a0a] border border-white/10 text-white'
+          }`}>
+            <button 
+              onClick={() => setShowAdminsModal(false)} 
+              className={`absolute top-5 right-5 p-1 rounded-lg transition-colors cursor-pointer ${
+                isDayMode ? 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100' : 'text-zinc-500 hover:text-white'
+              }`}
+            >
+              <X size={20}/>
+            </button>
+            <h3 className={`text-xl font-black uppercase tracking-tighter flex items-center gap-2 mb-2 ${
+              isDayMode ? 'text-zinc-900' : 'text-white'
+            }`}>
+              <Users className="text-brand-light" size={24} /> Gestionar Administradores
+            </h3>
+            <p className={`text-xs mb-6 font-medium leading-relaxed ${
+              isDayMode ? 'text-zinc-600' : 'text-zinc-400'
+            }`}>
+              Agrega administradores o editores autorizados para colaborar en la mediateca. Registra sus correos electrónicos para habilitar su acceso a la plataforma.
+            </p>
+            <AdminManager currentUser={user} userRole={userRole} isDayMode={isDayMode} />
           </div>
         </div>
       )}
@@ -5145,59 +5166,77 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       {showExportModal && (
         <div 
           id="modal-export-catalog"
-          className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300"
+          className={`fixed inset-0 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300 ${
+            isDayMode ? 'bg-black/60' : 'bg-black/95'
+          }`}
           onClick={(e) => {
             if (e.target === e.currentTarget) setShowExportModal(false);
           }}
         >
-          <div className="bg-[#09090b] border border-white/10 rounded-2xl w-full max-w-xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] relative flex flex-col font-sans">
+          <div className={`rounded-2xl w-full max-w-xl overflow-hidden relative flex flex-col font-sans transition-colors duration-300 ${
+            isDayMode 
+              ? 'bg-white border border-zinc-200 shadow-2xl text-zinc-900' 
+              : 'bg-[#09090b] border border-white/10 shadow-[0_25px_80px_rgba(0,0,0,0.95)] text-white'
+          }`}>
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-[#0e0e11]">
+            <div className={`flex items-center justify-between px-6 py-5 border-b transition-colors duration-300 ${
+              isDayMode ? 'bg-zinc-100/90 border-zinc-200' : 'bg-[#0e0e11] border-white/10'
+            }`}>
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white shrink-0">
+                <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${
+                  isDayMode ? 'bg-zinc-200/80 border-zinc-300 text-zinc-800' : 'bg-white/5 border-white/10 text-white'
+                }`}>
                   <FileSpreadsheet size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-black uppercase tracking-wider text-white">Exportar Catálogo</h3>
-                  <p className="text-xs text-zinc-400">Documento organizado por pestañas y secciones independientes</p>
+                  <h3 className={`text-base font-black uppercase tracking-wider ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
+                    Exportar Catálogo
+                  </h3>
+                  <p className={`text-xs ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                    Documento organizado por pestañas y secciones independientes
+                  </p>
                 </div>
               </div>
               <button 
                 id="btn-close-export-modal"
                 onClick={() => setShowExportModal(false)} 
-                className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                }`}
                 title="Cerrar"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 flex flex-col gap-5 bg-[#09090b]">
+            <div className={`p-6 flex flex-col gap-5 transition-colors duration-300 ${isDayMode ? 'bg-white' : 'bg-[#09090b]'}`}>
               {/* Distribución por pestañas */}
               <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 block">
+                <span className={`text-[10px] font-black uppercase tracking-[0.2em] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
                   Estructura de pestañas en el documento
                 </span>
-                <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 grid grid-cols-5 divide-x divide-white/5 text-center">
+                <div className={`rounded-xl p-3 grid grid-cols-5 divide-x text-center ${
+                  isDayMode ? 'bg-zinc-100 border border-zinc-200 divide-zinc-200' : 'bg-white/[0.02] border border-white/5 divide-white/5'
+                }`}>
                   <div className="px-1.5">
-                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Películas</span>
-                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.peliculas}</span>
+                    <span className={`text-[10px] uppercase tracking-widest block font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Películas</span>
+                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>{exportSummary.peliculas}</span>
                   </div>
                   <div className="px-1.5">
-                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Series</span>
-                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.series}</span>
+                    <span className={`text-[10px] uppercase tracking-widest block font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Series</span>
+                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>{exportSummary.series}</span>
                   </div>
                   <div className="px-1.5">
-                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Centauro</span>
-                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.centauro}</span>
+                    <span className={`text-[10px] uppercase tracking-widest block font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Centauro</span>
+                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>{exportSummary.centauro}</span>
                   </div>
                   <div className="px-1.5">
                     <span className="text-[10px] text-amber-500 uppercase tracking-widest block font-bold">Revisión</span>
-                    <span className="text-amber-400 font-extrabold text-sm mt-0.5 block">{exportSummary.revision}</span>
+                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-amber-600' : 'text-amber-400'}`}>{exportSummary.revision}</span>
                   </div>
                   <div className="px-1.5">
-                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest block font-bold">Total</span>
-                    <span className="text-white font-extrabold text-sm mt-0.5 block">{exportSummary.total}</span>
+                    <span className={`text-[10px] uppercase tracking-widest block font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Total</span>
+                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>{exportSummary.total}</span>
                   </div>
                 </div>
               </div>
@@ -5259,18 +5298,22 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         setIsExporting(false);
                       }
                     }}
-                    className={`flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
+                    className={`flex-1 rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${
+                      isDayMode 
+                        ? 'bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 border border-zinc-300 text-zinc-800 hover:text-zinc-950' 
+                        : 'bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white'
+                    } ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <Table size={16} className="text-zinc-400 group-hover:text-white shrink-0" />
+                      <Table size={16} className={`shrink-0 ${isDayMode ? 'text-zinc-700 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
                       <div>
-                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-200 group-hover:text-white block">
+                        <span className={`text-xs font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900 group-hover:text-black' : 'text-zinc-200 group-hover:text-white'}`}>
                           CSV Completo (.csv)
                         </span>
-                        <span className="text-[10px] text-zinc-400 block">Texto plano UTF-8 BOM</span>
+                        <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Texto plano UTF-8 BOM</span>
                       </div>
                     </div>
-                    <Download size={15} className="text-zinc-400 group-hover:text-white shrink-0 ml-2" />
+                    <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
                   </button>
 
                   {filteredMovies.length > 0 && filteredMovies.length !== movies.length && (
@@ -5288,18 +5331,22 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                           setIsExporting(false);
                         }
                       }}
-                      className={`flex-1 bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
+                      className={`flex-1 rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${
+                        isDayMode 
+                          ? 'bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 border border-zinc-300 text-zinc-800 hover:text-zinc-950' 
+                          : 'bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white'
+                      } ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <Download size={16} className="text-amber-400 shrink-0" />
+                        <Download size={16} className={`shrink-0 ${isDayMode ? 'text-amber-600' : 'text-amber-400'}`} />
                         <div>
-                          <span className="text-xs font-bold uppercase tracking-wider text-zinc-200 group-hover:text-amber-300 block">
+                          <span className={`text-xs font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900 group-hover:text-amber-700' : 'text-zinc-200 group-hover:text-amber-300'}`}>
                             CSV Vista Filtrada ({filteredMovies.length})
                           </span>
-                          <span className="text-[10px] text-zinc-400 block">Solo registros filtrados</span>
+                          <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Solo registros filtrados</span>
                         </div>
                       </div>
-                      <Download size={15} className="text-zinc-400 group-hover:text-white shrink-0 ml-2" />
+                      <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
                     </button>
                   )}
                 </div>
@@ -5308,7 +5355,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   type="button"
                   id="btn-cancel-export-modal"
                   onClick={() => setShowExportModal(false)}
-                  className="w-full mt-1 py-2.5 text-zinc-400 hover:text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-colors hover:bg-white/5 cursor-pointer text-center"
+                  className={`w-full mt-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-colors cursor-pointer text-center ${
+                    isDayMode 
+                      ? 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100' 
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  }`}
                 >
                   Cerrar
                 </button>
@@ -5409,7 +5460,7 @@ const TechItem = ({ label, value, className = "", icon = null }: any) => (
   </div>
 );
 
-const AdminManager = ({ currentUser, userRole }: any) => {
+const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
   const [admins, setAdmins] = useState<any[]>(DEFAULT_CLIENT_ADMINS);
   const [primarySuperAdmin, setPrimarySuperAdmin] = useState<string>("chapceligg@gmail.com");
   const [newEmail, setNewEmail] = useState("");
@@ -5721,11 +5772,15 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   if (!isSuper) {
     return (
       <div className="flex flex-col items-center justify-center p-8 text-center gap-3">
-        <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300 shadow-sm">
-          <Shield size={24} strokeWidth={1.75} className="text-zinc-300" />
+        <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shadow-sm ${
+          isDayMode ? 'bg-zinc-100 border-zinc-300 text-zinc-800' : 'bg-white/5 border-white/10 text-zinc-300'
+        }`}>
+          <Shield size={24} strokeWidth={1.75} className={isDayMode ? 'text-zinc-700' : 'text-zinc-300'} />
         </div>
-        <p className="text-sm font-bold text-white">Acceso Exclusivo para Administradores</p>
-        <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
+        <p className={`text-sm font-bold ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
+          Acceso Exclusivo para Administradores
+        </p>
+        <p className={`text-xs max-w-xs leading-relaxed ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
           Tu cuenta tiene rol de Editor. Solo los Administradores pueden gestionar los roles y permisos de la videoteca.
         </p>
       </div>
@@ -5737,15 +5792,25 @@ const AdminManager = ({ currentUser, userRole }: any) => {
   return (
     <div className="flex flex-col gap-5 w-full font-sans">
       {/* FORMULARIO AGREGAR CUENTA - DISEÑO COMPACTO Y OPTIMIZADO */}
-      <form id="form-add-admin" onSubmit={handleAdd} className="flex flex-col gap-4 w-full bg-[#121215] border border-white/[0.08] p-4 sm:p-5 rounded-2xl shadow-sm transition-all">
+      <form id="form-add-admin" onSubmit={handleAdd} className={`flex flex-col gap-4 w-full p-4 sm:p-5 rounded-2xl shadow-sm transition-all border ${
+        isDayMode ? 'bg-zinc-50 border-zinc-200 text-zinc-900' : 'bg-[#121215] border-white/[0.08] text-white'
+      }`}>
         {/* Cabecera limpia y estilizada */}
-        <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+        <div className={`flex items-center justify-between pb-3 border-b ${
+          isDayMode ? 'border-zinc-200' : 'border-white/[0.06]'
+        }`}>
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-zinc-300">
+            <div className={`w-7 h-7 rounded-lg border flex items-center justify-center ${
+              isDayMode ? 'bg-zinc-200/80 border-zinc-300 text-zinc-800' : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+            }`}>
               <Users size={14} />
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-100">Registrar Nuevo Acceso</span>
+              <span className={`text-xs font-bold uppercase tracking-wider ${
+                isDayMode ? 'text-zinc-900' : 'text-zinc-100'
+              }`}>
+                Registrar Nuevo Acceso
+              </span>
             </div>
           </div>
         </div>
@@ -5754,10 +5819,12 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 w-full pt-0.5">
           {/* Campo Correo Electrónico */}
           <div className="sm:col-span-7 flex flex-col min-w-0">
-            <label htmlFor="input-new-admin-email" className="text-[11px] font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
-              <Mail size={12} className="text-zinc-400" />
+            <label htmlFor="input-new-admin-email" className={`text-[11px] font-semibold mb-1.5 flex items-center gap-1.5 ${
+              isDayMode ? 'text-zinc-700' : 'text-zinc-300'
+            }`}>
+              <Mail size={12} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
               <span>Correo electrónico</span>
-              <span className="text-red-400 text-xs">*</span>
+              <span className="text-red-500 text-xs">*</span>
             </label>
             <input 
               id="input-new-admin-email"
@@ -5766,16 +5833,22 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               value={newEmail} 
               onChange={(e) => setNewEmail(e.target.value)}
               required
-              className="w-full bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black rounded-xl px-3.5 py-2 text-xs text-white placeholder:text-zinc-600 outline-none transition-all h-10"
+              className={`w-full rounded-xl px-3.5 py-2 text-xs outline-none transition-all h-10 ${
+                isDayMode 
+                  ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600 placeholder:text-zinc-400' 
+                  : 'bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black text-white placeholder:text-zinc-600'
+              }`}
             />
           </div>
 
           {/* Campo Nombre */}
           <div className="sm:col-span-5 flex flex-col min-w-0">
-            <label htmlFor="input-new-admin-name" className="text-[11px] font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
-              <User size={12} className="text-zinc-400" />
+            <label htmlFor="input-new-admin-name" className={`text-[11px] font-semibold mb-1.5 flex items-center gap-1.5 ${
+              isDayMode ? 'text-zinc-700' : 'text-zinc-300'
+            }`}>
+              <User size={12} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
               <span>Nombre</span>
-              <span className="text-zinc-500 font-normal text-[10px]">(Opcional)</span>
+              <span className={`font-normal text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>(Opcional)</span>
             </label>
             <input 
               id="input-new-admin-name"
@@ -5783,7 +5856,11 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               placeholder="ej. Carlos Pérez" 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)}
-              className="w-full bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black rounded-xl px-3.5 py-2 text-xs text-white placeholder:text-zinc-600 outline-none transition-all h-10"
+              className={`w-full rounded-xl px-3.5 py-2 text-xs outline-none transition-all h-10 ${
+                isDayMode 
+                  ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600 placeholder:text-zinc-400' 
+                  : 'bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black text-white placeholder:text-zinc-600'
+              }`}
             />
           </div>
         </div>
@@ -5792,8 +5869,10 @@ const AdminManager = ({ currentUser, userRole }: any) => {
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 w-full items-end">
           {/* Selector de Rol */}
           <div className="sm:col-span-7 flex flex-col min-w-0">
-            <label htmlFor="select-new-admin-role" className="text-[11px] font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
-              <Shield size={12} className="text-zinc-400" />
+            <label htmlFor="select-new-admin-role" className={`text-[11px] font-semibold mb-1.5 flex items-center gap-1.5 ${
+              isDayMode ? 'text-zinc-700' : 'text-zinc-300'
+            }`}>
+              <Shield size={12} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
               <span>Rol asignado</span>
             </label>
             <div className="relative">
@@ -5801,12 +5880,18 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                 id="select-new-admin-role"
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
-                className="w-full bg-[#0a0a0c] border border-white/10 focus:border-white/30 rounded-xl pl-3.5 pr-8 py-2 text-xs font-semibold text-zinc-200 outline-none cursor-pointer h-10 transition-colors appearance-none"
+                className={`w-full rounded-xl pl-3.5 pr-8 py-2 text-xs font-semibold outline-none cursor-pointer h-10 transition-colors appearance-none ${
+                  isDayMode 
+                    ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' 
+                    : 'bg-[#0a0a0c] border border-white/10 focus:border-white/30 text-zinc-200'
+                }`}
               >
-                <option value="editor" className="bg-[#121215] text-white py-1">Editor (Catalogación y Edición)</option>
-                <option value="admin" className="bg-[#121215] text-white py-1">Administrador (Control Total)</option>
+                <option value="editor" className={isDayMode ? 'bg-white text-zinc-900' : 'bg-[#121215] text-white py-1'}>Editor (Catalogación y Edición)</option>
+                <option value="admin" className={isDayMode ? 'bg-white text-zinc-900' : 'bg-[#121215] text-white py-1'}>Administrador (Control Total)</option>
               </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+              <ChevronDown size={14} className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${
+                isDayMode ? 'text-zinc-500' : 'text-zinc-400'
+              }`} />
             </div>
           </div>
 
@@ -5816,10 +5901,14 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               id="btn-add-admin"
               disabled={loading || !newEmail.trim()} 
               type="submit" 
-              className="bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-950 font-bold text-xs px-5 rounded-xl transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white h-10 w-full"
+              className={`font-bold text-xs px-5 rounded-xl transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed h-10 w-full ${
+                isDayMode 
+                  ? 'bg-zinc-900 hover:bg-black active:bg-zinc-800 text-white' 
+                  : 'bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-950'
+              }`}
               title="Agregar cuenta con permisos"
             >
-              <Plus size={16} strokeWidth={2.5} className="shrink-0 text-zinc-950" />
+              <Plus size={16} strokeWidth={2.5} className="shrink-0" />
               <span className="tracking-wide">Añadir cuenta</span>
             </button>
           </div>
@@ -5827,21 +5916,23 @@ const AdminManager = ({ currentUser, userRole }: any) => {
       </form>
       
       {error && (
-        <div className="text-red-400 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-2.5">
-          <AlertTriangle size={15} className="shrink-0 text-red-400" />
+        <div className="text-red-500 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-2.5">
+          <AlertTriangle size={15} className="shrink-0 text-red-500" />
           <span>{error}</span>
         </div>
       )}
 
       {transferSuccess && (
-        <div className="bg-emerald-950/40 border border-emerald-500/20 text-emerald-300 text-xs font-medium px-3.5 py-2.5 rounded-xl flex items-center gap-2.5 animate-in fade-in duration-150 shadow-sm">
-          <Check size={14} className="shrink-0 text-emerald-400" />
+        <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-xs font-medium px-3.5 py-2.5 rounded-xl flex items-center gap-2.5 animate-in fade-in duration-150 shadow-sm">
+          <Check size={14} className="shrink-0 text-emerald-600" />
           <span>{transferSuccess}</span>
         </div>
       )}
 
       <div className="flex items-center justify-between pt-1">
-        <span className="text-[11px] font-black uppercase tracking-widest text-zinc-400">
+        <span className={`text-[11px] font-black uppercase tracking-widest ${
+          isDayMode ? 'text-zinc-600' : 'text-zinc-400'
+        }`}>
           Cuentas Registradas ({additionalAdmins.length + 1})
         </span>
         <button
@@ -5850,7 +5941,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           onClick={() => loadAdmins(true)}
           disabled={loading}
           title="Recargar lista desde Firestore"
-          className="text-zinc-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] font-medium"
+          className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-[11px] font-medium ${
+            isDayMode ? 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+          }`}
         >
           <RotateCcw size={12} className={loading ? "animate-spin text-red-500" : ""} />
           <span>Sincronizar</span>
@@ -5867,18 +5960,28 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           const isEditingPrimary = editingEmail === primarySuperAdmin.toLowerCase().trim();
 
           return (
-            <div key={primarySuperAdmin} className="flex flex-col bg-zinc-900 rounded-xl border border-white/10 w-full overflow-hidden transition-all hover:border-white/20">
+            <div key={primarySuperAdmin} className={`flex flex-col rounded-xl border w-full overflow-hidden transition-all ${
+              isDayMode ? 'bg-zinc-50 border-zinc-200 hover:border-zinc-300' : 'bg-zinc-900 border-white/10 hover:border-white/20'
+            }`}>
               {isEditingPrimary ? (
-                <div className="p-4 bg-black/95 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Edit2 size={13} className="text-red-400" />
+                <div className={`p-4 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200 ${
+                  isDayMode ? 'bg-zinc-100' : 'bg-black/95'
+                }`}>
+                  <div className={`flex items-center justify-between border-b pb-2 ${
+                    isDayMode ? 'border-zinc-200' : 'border-white/5'
+                  }`}>
+                    <span className={`text-xs font-bold flex items-center gap-1.5 ${
+                      isDayMode ? 'text-zinc-900' : 'text-white'
+                    }`}>
+                      <Edit2 size={13} className="text-red-500" />
                       <span>Editar Administrador Principal</span>
                     </span>
                     <button 
                       type="button"
                       onClick={cancelEditing}
-                      className="text-zinc-500 hover:text-white p-1 rounded-md transition-colors cursor-pointer"
+                      className={`p-1 rounded-md transition-colors cursor-pointer ${
+                        isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-500 hover:text-white'
+                      }`}
                       title="Cancelar edición"
                     >
                       <X size={15} />
@@ -5887,23 +5990,29 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="flex flex-col min-w-0">
-                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
-                        <Mail size={11} className="text-zinc-400" />
+                      <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
+                        isDayMode ? 'text-zinc-600' : 'text-zinc-400'
+                      }`}>
+                        <Mail size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
                         <span>Correo electrónico</span>
-                        <span className="text-red-400 font-bold">*</span>
+                        <span className="text-red-500 font-bold">*</span>
                       </label>
                       <input 
                         type="email"
                         value={editEmailValue}
                         onChange={(e) => setEditEmailValue(e.target.value)}
                         placeholder="correo@dominio.com"
-                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                        className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
+                          isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
+                        }`}
                       />
                     </div>
 
                     <div className="flex flex-col min-w-0">
-                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
-                        <User size={11} className="text-zinc-400" />
+                      <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
+                        isDayMode ? 'text-zinc-600' : 'text-zinc-400'
+                      }`}>
+                        <User size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
                         <span>Nombre (Opcional)</span>
                       </label>
                       <input 
@@ -5911,16 +6020,22 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         value={editNameValue}
                         onChange={(e) => setEditNameValue(e.target.value)}
                         placeholder="ej. Carlos Pérez"
-                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                        className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
+                          isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
+                        }`}
                       />
                     </div>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-white/5">
+                  <div className={`flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t ${
+                    isDayMode ? 'border-zinc-200' : 'border-white/5'
+                  }`}>
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium text-zinc-400">Rol:</span>
-                      <span className="text-[11px] font-medium text-zinc-200 bg-white/[0.04] border border-white/10 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 shadow-sm">
-                        <Crown size={12} className="text-amber-400/90" />
+                      <span className={`text-[11px] font-medium ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Rol:</span>
+                      <span className={`text-[11px] font-medium px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 shadow-sm border ${
+                        isDayMode ? 'bg-white border-zinc-300 text-zinc-900' : 'bg-white/[0.04] border-white/10 text-zinc-200'
+                      }`}>
+                        <Crown size={12} className="text-amber-500" />
                         <span>Administrador Principal</span>
                       </span>
                     </div>
@@ -5930,7 +6045,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={() => handleSaveEdit(primarySuperAdmin.toLowerCase().trim())}
                         disabled={editSaving}
-                        className="flex-1 sm:flex-none bg-white hover:bg-zinc-200 text-black px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                        className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
+                          isDayMode ? 'bg-zinc-900 hover:bg-black text-white' : 'bg-white hover:bg-zinc-200 text-black'
+                        }`}
                       >
                         {editSaving ? <RotateCcw size={13} className="animate-spin" /> : <Check size={13} />}
                         <span>Guardar cambios</span>
@@ -5939,7 +6056,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={cancelEditing}
                         disabled={editSaving}
-                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white rounded-lg text-xs font-medium transition-colors cursor-pointer border border-white/10"
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${
+                          isDayMode ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
+                        }`}
                       >
                         Cancelar
                       </button>
@@ -5949,19 +6068,19 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               ) : (
                 <div className="flex items-center justify-between p-3.5 gap-3">
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-sm font-bold text-white truncate" title={displayName}>
+                    <span className={`text-sm font-bold truncate ${isDayMode ? 'text-zinc-900' : 'text-white'}`} title={displayName}>
                       {displayName}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5 min-w-0">
                       {hasCustomName && (
                         <>
-                          <span className="text-xs text-zinc-400 font-normal truncate" title={primarySuperAdmin}>
+                          <span className={`text-xs font-normal truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={primarySuperAdmin}>
                             {primarySuperAdmin}
                           </span>
-                          <span className="text-[10px] text-zinc-500">•</span>
+                          <span className={`text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>•</span>
                         </>
                       )}
-                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
+                      <span className={`text-[10px] uppercase font-bold tracking-wider ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
                         Administrador Principal
                       </span>
                     </div>
@@ -5972,7 +6091,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={() => startEditing(primaryAdminObj)}
                         disabled={loading}
-                        className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs"
+                        className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs ${
+                          isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                        }`}
                         title="Editar nombre o correo del Administrador Principal"
                       >
                         <Edit2 size={15} />
@@ -5982,10 +6103,12 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                       <button
                         type="button"
                         onClick={() => { setTargetTransferEmail(""); setTransferError(""); setShowTransferModal(true); }}
-                        className="text-xs bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0"
+                        className={`text-xs border px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0 ${
+                          isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 hover:text-zinc-950 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border-white/10'
+                        }`}
                         title="Ceder el puesto de Administrador Principal a otro correo"
                       >
-                        <Crown size={14} className="text-zinc-400" />
+                        <Crown size={14} className={isDayMode ? 'text-amber-600' : 'text-amber-400'} />
                         <span className="hidden sm:inline">Traspasar</span>
                       </button>
                     )}
@@ -6006,19 +6129,29 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           const isSelf = aEmail === currentEmail;
 
           return (
-            <div key={aEmail} className="flex flex-col bg-zinc-900 rounded-xl border border-white/10 w-full overflow-hidden transition-all hover:border-white/20">
+            <div key={aEmail} className={`flex flex-col rounded-xl border w-full overflow-hidden transition-all ${
+              isDayMode ? 'bg-zinc-50 border-zinc-200 hover:border-zinc-300' : 'bg-zinc-900 border-white/10 hover:border-white/20'
+            }`}>
               {/* MODO EDICIÓN INLINE */}
               {isEditingThis ? (
-                <div className="p-4 bg-black/95 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Edit2 size={13} className="text-red-400" />
+                <div className={`p-4 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200 ${
+                  isDayMode ? 'bg-zinc-100' : 'bg-black/95'
+                }`}>
+                  <div className={`flex items-center justify-between border-b pb-2 ${
+                    isDayMode ? 'border-zinc-200' : 'border-white/5'
+                  }`}>
+                    <span className={`text-xs font-bold flex items-center gap-1.5 ${
+                      isDayMode ? 'text-zinc-900' : 'text-white'
+                    }`}>
+                      <Edit2 size={13} className="text-red-500" />
                       <span>Editar datos de la cuenta</span>
                     </span>
                     <button 
                       type="button"
                       onClick={cancelEditing}
-                      className="text-zinc-500 hover:text-white p-1 rounded-md transition-colors cursor-pointer"
+                      className={`p-1 rounded-md transition-colors cursor-pointer ${
+                        isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-500 hover:text-white'
+                      }`}
                       title="Cancelar edición"
                     >
                       <X size={15} />
@@ -6027,23 +6160,29 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="flex flex-col min-w-0">
-                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
-                        <Mail size={11} className="text-zinc-400" />
+                      <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
+                        isDayMode ? 'text-zinc-600' : 'text-zinc-400'
+                      }`}>
+                        <Mail size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
                         <span>Correo electrónico</span>
-                        <span className="text-red-400 font-bold">*</span>
+                        <span className="text-red-500 font-bold">*</span>
                       </label>
                       <input 
                         type="email"
                         value={editEmailValue}
                         onChange={(e) => setEditEmailValue(e.target.value)}
                         placeholder="correo@dominio.com"
-                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                        className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
+                          isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
+                        }`}
                       />
                     </div>
 
                     <div className="flex flex-col min-w-0">
-                      <label className="text-[10px] font-bold text-zinc-400 mb-1 flex items-center gap-1">
-                        <User size={11} className="text-zinc-400" />
+                      <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
+                        isDayMode ? 'text-zinc-600' : 'text-zinc-400'
+                      }`}>
+                        <User size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
                         <span>Nombre (Opcional)</span>
                       </label>
                       <input 
@@ -6051,19 +6190,25 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         value={editNameValue}
                         onChange={(e) => setEditNameValue(e.target.value)}
                         placeholder="ej. Carlos Pérez"
-                        className="w-full bg-zinc-900 border border-white/15 focus:border-red-500 rounded-lg px-3 py-2 text-xs text-white outline-none transition-colors"
+                        className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
+                          isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
+                        }`}
                       />
                     </div>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-white/5">
+                  <div className={`flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t ${
+                    isDayMode ? 'border-zinc-200' : 'border-white/5'
+                  }`}>
                     <div className="flex items-center gap-2">
-                      <label className="text-[10px] font-bold text-zinc-400">Rol:</label>
+                      <label className={`text-[10px] font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Rol:</label>
                       <select 
                         value={editRoleValue}
                         onChange={(e) => setEditRoleValue(e.target.value)}
                         disabled={isSelf}
-                        className="bg-zinc-900 text-xs font-bold text-white border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer disabled:opacity-50"
+                        className={`text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer disabled:opacity-50 ${
+                          isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 text-white border border-white/15 focus:border-red-500'
+                        }`}
                       >
                         <option value="editor">Editor</option>
                         <option value="admin">Administrador</option>
@@ -6075,7 +6220,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={() => handleSaveEdit(aEmail)}
                         disabled={editSaving}
-                        className="flex-1 sm:flex-none bg-white hover:bg-zinc-200 text-black px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                        className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
+                          isDayMode ? 'bg-zinc-900 hover:bg-black text-white' : 'bg-white hover:bg-zinc-200 text-black'
+                        }`}
                       >
                         {editSaving ? <RotateCcw size={13} className="animate-spin" /> : <Check size={13} />}
                         <span>Guardar cambios</span>
@@ -6084,7 +6231,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={cancelEditing}
                         disabled={editSaving}
-                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white rounded-lg text-xs font-medium transition-colors cursor-pointer border border-white/10"
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${
+                          isDayMode ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
+                        }`}
                       >
                         Cancelar
                       </button>
@@ -6093,19 +6242,25 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                 </div>
               ) : isDeletingThis ? (
                 /* MODO CONFIRMACIÓN DE ELIMINACIÓN */
-                <div className="p-4 bg-black/95 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200">
+                <div className={`p-4 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200 ${
+                  isDayMode ? 'bg-zinc-100' : 'bg-black/95'
+                }`}>
                   <div className="flex items-start gap-2.5">
-                    <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 shrink-0 mt-0.5">
+                    <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 shrink-0 mt-0.5">
                       <AlertTriangle size={14} />
                     </div>
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-xs font-bold text-white tracking-tight">¿Revocar permisos de edición?</span>
-                      <span className="text-[11px] text-zinc-400 break-words mt-0.5" title={aEmail}>
-                        Se retirará el acceso a <span className="text-zinc-200 font-medium">{displayName}</span> ({aEmail})
+                      <span className={`text-xs font-bold tracking-tight ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
+                        ¿Revocar permisos de edición?
+                      </span>
+                      <span className={`text-[11px] break-words mt-0.5 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`} title={aEmail}>
+                        Se retirará el acceso a <span className={`font-medium ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>{displayName}</span> ({aEmail})
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                  <div className={`flex items-center justify-end gap-2 pt-2 border-t ${
+                    isDayMode ? 'border-zinc-200' : 'border-white/5'
+                  }`}>
                     <button 
                       type="button"
                       onClick={confirmDelete} 
@@ -6119,7 +6274,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                       type="button"
                       onClick={() => setUserToDelete(null)} 
                       disabled={loading} 
-                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 active:scale-[0.98] text-zinc-400 hover:text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-all cursor-pointer border border-white/10"
+                      className={`px-3 py-1.5 active:scale-[0.98] text-xs font-semibold rounded-lg disabled:opacity-50 transition-all cursor-pointer border ${
+                        isDayMode ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
+                      }`}
                     >
                       Cancelar
                     </button>
@@ -6129,15 +6286,15 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                 /* MODO VISTA NORMAL */
                 <div className="flex items-center justify-between p-3.5 gap-3">
                   <div className="flex flex-col flex-1 min-w-0">
-                    <span className="text-sm font-bold text-white truncate" title={displayName}>
+                    <span className={`text-sm font-bold truncate ${isDayMode ? 'text-zinc-900' : 'text-white'}`} title={displayName}>
                       {displayName}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                      <span className="text-xs text-zinc-400 font-normal truncate" title={aEmail}>
+                      <span className={`text-xs font-normal truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={aEmail}>
                         {aEmail}
                       </span>
-                      <span className="text-[10px] text-zinc-500">•</span>
-                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider shrink-0">
+                      <span className={`text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>•</span>
+                      <span className={`text-[10px] uppercase font-bold tracking-wider shrink-0 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
                         {roleLabel}
                       </span>
                     </div>
@@ -6150,7 +6307,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={() => startEditing(a)}
                         disabled={loading}
-                        className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs"
+                        className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs ${
+                          isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                        }`}
                         title="Editar nombre o correo"
                       >
                         <Edit2 size={15} />
@@ -6163,7 +6322,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={() => { setTargetTransferEmail(aEmail); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
                         disabled={loading} 
-                        className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
+                        className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer ${
+                          isDayMode ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-100' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                        }`}
                         title={`Traspasar puesto de Administrador Principal a ${aEmail}`}
                       >
                         <Crown size={15} />
@@ -6176,7 +6337,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         value={a.role || 'editor'}
                         onChange={(e) => handleRoleChange(aEmail, e.target.value)}
                         disabled={loading}
-                        className="text-[10px] font-black uppercase tracking-widest bg-black/50 text-zinc-300 border border-white/15 rounded-lg px-2.5 py-1.5 outline-none focus:border-red-500 cursor-pointer"
+                        className={`text-[10px] font-black uppercase tracking-widest rounded-lg px-2.5 py-1.5 outline-none cursor-pointer ${
+                          isDayMode ? 'bg-white text-zinc-800 border border-zinc-300 focus:border-red-600' : 'bg-black/50 text-zinc-300 border border-white/15 focus:border-red-500'
+                        }`}
                       >
                         <option value="editor">Editor</option>
                         <option value="admin">Administrador</option>
@@ -6189,7 +6352,9 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                         type="button"
                         onClick={() => handleRemove(aEmail)} 
                         disabled={loading} 
-                        className="text-zinc-400 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 shrink-0 cursor-pointer"
+                        className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer ${
+                          isDayMode ? 'text-zinc-400 hover:text-red-600 hover:bg-red-50' : 'text-zinc-400 hover:text-red-400 hover:bg-white/5'
+                        }`}
                         title="Eliminar permiso"
                       >
                         <Trash2 size={16} />
@@ -6202,7 +6367,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           );
         })}
         {additionalAdmins.length === 0 && (
-          <p className="text-zinc-500 text-xs italic text-center py-5">
+          <p className={`text-xs italic text-center py-5 ${isDayMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
             No hay editores adicionales registrados aún. Añade correos arriba para habilitar su acceso.
           </p>
         )}
@@ -6210,40 +6375,62 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
       {/* MODAL TRASPASAR ADMINISTRADOR PRINCIPAL */}
       {showTransferModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-[#0e0e0e] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative">
+        <div className={`fixed inset-0 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200 ${
+          isDayMode ? 'bg-black/60' : 'bg-black/85'
+        }`}>
+          <div className={`rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative font-sans transition-colors duration-300 ${
+            isDayMode 
+              ? 'bg-white border border-zinc-200 text-zinc-900' 
+              : 'bg-[#0e0e0e] border border-white/10 text-white'
+          }`}>
             <button 
               onClick={() => { setShowTransferModal(false); setTransferError(""); setConfirmPhrase(""); }}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+              className={`absolute top-4 right-4 p-1 rounded-lg transition-colors cursor-pointer ${
+                isDayMode ? 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100' : 'text-zinc-500 hover:text-white'
+              }`}
             >
               <X size={18} />
             </button>
             <div className="flex items-center gap-2.5">
-              <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 text-zinc-300">
+              <div className={`p-2.5 rounded-xl border ${
+                isDayMode ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-white/5 border-white/10 text-zinc-300'
+              }`}>
                 <Crown size={20} />
               </div>
               <div>
-                <h4 className="text-base font-bold text-white">Traspasar Administrador Principal</h4>
-                <p className="text-[11px] text-zinc-400">Cede la titularidad principal de la videoteca</p>
+                <h4 className={`text-base font-bold ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
+                  Traspasar Administrador Principal
+                </h4>
+                <p className={`text-[11px] ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  Cede la titularidad principal de la videoteca
+                </p>
               </div>
             </div>
 
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Como <strong className="text-white">Administrador Principal</strong> actual ({primarySuperAdmin}), puedes ceder tu puesto a otro correo. Tu cuenta conservará el rol de <strong className="text-white">Administrador</strong> y el nuevo correo asumirá la titularidad principal.
+            <p className={`text-xs leading-relaxed ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
+              Como <strong className={isDayMode ? 'text-zinc-900' : 'text-white'}>Administrador Principal</strong> actual ({primarySuperAdmin}), puedes ceder tu puesto a otro correo. Tu cuenta conservará el rol de <strong className={isDayMode ? 'text-zinc-900' : 'text-white'}>Administrador</strong> y el nuevo correo asumirá la titularidad principal.
             </p>
 
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-zinc-300">Correo del nuevo Administrador Principal:</label>
+              <label className={`text-xs font-semibold ${isDayMode ? 'text-zinc-700' : 'text-zinc-300'}`}>
+                Correo del nuevo Administrador Principal:
+              </label>
               <input 
                 type="email"
                 placeholder="nuevo.admin@gmail.com"
                 value={targetTransferEmail}
                 onChange={(e) => setTargetTransferEmail(e.target.value)}
-                className="bg-zinc-900 border border-white/15 rounded-xl px-4 py-2.5 text-sm focus:border-white/40 outline-none text-white w-full"
+                className={`rounded-xl px-4 py-2.5 text-sm outline-none w-full ${
+                  isDayMode 
+                    ? 'bg-zinc-50 border border-zinc-300 text-zinc-900 focus:border-red-600 placeholder:text-zinc-400' 
+                    : 'bg-zinc-900 border border-white/15 text-white focus:border-white/40'
+                }`}
               />
               {additionalAdmins.length > 0 && (
                 <div className="flex flex-col gap-1 mt-1">
-                  <span className="text-[10px] text-zinc-500">O elige entre las cuentas registradas:</span>
+                  <span className={`text-[10px] ${isDayMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                    O elige entre las cuentas registradas:
+                  </span>
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                     {additionalAdmins.map(adm => {
                       const emailStr = (adm.email || adm.id || '').toLowerCase().trim();
@@ -6253,7 +6440,11 @@ const AdminManager = ({ currentUser, userRole }: any) => {
                           key={emailStr}
                           type="button"
                           onClick={() => setTargetTransferEmail(emailStr)}
-                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${isSelected ? 'bg-white/15 border-white/30 text-white font-bold' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'}`}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                            isSelected 
+                              ? (isDayMode ? 'bg-zinc-900 border-zinc-900 text-white font-bold' : 'bg-white/15 border-white/30 text-white font-bold') 
+                              : (isDayMode ? 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:text-zinc-950 hover:bg-zinc-200' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white')
+                          }`}
                         >
                           {emailStr}
                         </button>
@@ -6264,27 +6455,35 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               )}
             </div>
 
-            <div className="bg-zinc-900 border border-white/10 p-3.5 rounded-xl flex flex-col gap-2.5">
-              <p className="text-[11px] text-zinc-300 leading-tight">
+            <div className={`p-3.5 rounded-xl flex flex-col gap-2.5 border ${
+              isDayMode ? 'bg-amber-50/80 border-amber-200 text-amber-950' : 'bg-zinc-900 border-white/10 text-zinc-300'
+            }`}>
+              <p className={`text-[11px] leading-tight ${isDayMode ? 'text-amber-900' : 'text-zinc-300'}`}>
                 ⚠️ <strong>Confirmación de seguridad requerida:</strong> Esta acción es irreversible. El nuevo titular será la única persona autorizada para gestionar la titularidad principal en el futuro.
               </p>
-              <div className="flex flex-col gap-1.5 pt-1.5 border-t border-white/5">
-                <label className="text-[11px] font-medium text-zinc-400">
-                  Escribe <span className="text-white font-black tracking-widest font-mono">TRANSFERIR</span> para desbloquear la confirmación:
+              <div className={`flex flex-col gap-1.5 pt-1.5 border-t ${
+                isDayMode ? 'border-amber-200/60' : 'border-white/5'
+              }`}>
+                <label className={`text-[11px] font-medium ${isDayMode ? 'text-amber-800' : 'text-zinc-400'}`}>
+                  Escribe <span className={`font-black tracking-widest font-mono ${isDayMode ? 'text-amber-950' : 'text-white'}`}>TRANSFERIR</span> para desbloquear la confirmación:
                 </label>
                 <input 
                   type="text"
                   placeholder="TRANSFERIR"
                   value={confirmPhrase}
                   onChange={(e) => setConfirmPhrase(e.target.value)}
-                  className="bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono tracking-wider focus:border-white/40 outline-none text-white w-full uppercase"
+                  className={`rounded-lg px-3 py-2 text-xs font-mono tracking-wider outline-none w-full uppercase ${
+                    isDayMode 
+                      ? 'bg-white border border-amber-300 text-amber-950 focus:border-amber-600' 
+                      : 'bg-black/60 border border-white/15 text-white focus:border-white/40'
+                  }`}
                 />
               </div>
             </div>
 
             {transferError && (
-              <div className="text-red-400 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl flex items-center gap-2">
-                <AlertTriangle size={14} className="shrink-0 text-red-400" />
+              <div className="text-red-500 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                <AlertTriangle size={14} className="shrink-0 text-red-500" />
                 <span>{transferError}</span>
               </div>
             )}
@@ -6293,7 +6492,11 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               <button
                 onClick={handleConfirmTransfer}
                 disabled={transferLoading || !targetTransferEmail.trim() || confirmPhrase.trim().toUpperCase() !== 'TRANSFERIR'}
-                className="flex-1 bg-white hover:bg-zinc-200 text-black text-xs font-bold py-2.5 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg"
+                className={`flex-1 text-xs font-bold py-2.5 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg ${
+                  isDayMode 
+                    ? 'bg-zinc-900 hover:bg-black text-white' 
+                    : 'bg-white hover:bg-zinc-200 text-black'
+                }`}
               >
                 {transferLoading ? <RotateCcw size={14} className="animate-spin" /> : <Crown size={14} />}
                 <span>Confirmar Traspaso</span>
@@ -6301,7 +6504,11 @@ const AdminManager = ({ currentUser, userRole }: any) => {
               <button
                 onClick={() => { setShowTransferModal(false); setTransferError(""); setConfirmPhrase(""); }}
                 disabled={transferLoading}
-                className="flex-1 bg-white/10 hover:bg-white/20 text-white text-xs font-bold py-2.5 rounded-xl disabled:opacity-50 transition-colors cursor-pointer"
+                className={`flex-1 text-xs font-bold py-2.5 rounded-xl disabled:opacity-50 transition-colors cursor-pointer ${
+                  isDayMode 
+                    ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-300' 
+                    : 'bg-white/10 hover:bg-white/20 text-white'
+                }`}
               >
                 Cancelar
               </button>
