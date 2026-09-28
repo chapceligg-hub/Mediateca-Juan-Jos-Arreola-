@@ -577,164 +577,278 @@ export default function App() {
     setIsClapping(false);
 
     try {
-      const isStrictMatch = (m: Movie) => {
+      // Helper normalizers for robust field matching
+      const normCuratorGenre = normalizeText(curatorGenero);
+      const isAnyGenre = !curatorGenero || curatorGenero === 'Todos' || curatorGenero === 'Cualquier género';
+      const isAnyEpoch = !curatorEpoca || curatorEpoca === 'Todas' || curatorEpoca === 'Cualquier época';
+      const matchedEpochRange = isAnyEpoch ? null : YEAR_RANGES.find(r => r.label === curatorEpoca);
+
+      const checkSectionMatch = (m: Movie) => {
         const sec = String(m.section || 'peliculas').toLowerCase().trim();
         if (curatorContentType === 'series') {
-          if (sec !== 'series') return false;
-        } else {
-          // curatorContentType === 'peliculas' unifies 'peliculas' and 'centauro'
-          if (sec === 'series') return false;
+          return sec === 'series' || sec === 'serie' || !!m.season;
         }
-
-        const movieGenreUpper = getNormalizedGenres(m.genre).map(g => g.toUpperCase());
-        const movieGenreStrRaw = (Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || '')).toUpperCase();
-        
-        let matchesGenre = true;
-        if (curatorGenero !== 'Todos' && curatorGenero !== 'Cualquier género') {
-          const genUpper = curatorGenero.toUpperCase();
-          if (genUpper === "SUSPENSE" || genUpper === "SUSPENSO") {
-            matchesGenre = movieGenreUpper.includes("SUSPENSO") || movieGenreUpper.includes("SUSPENSE") || movieGenreStrRaw.includes("INTRIGA");
-          } else {
-            matchesGenre = movieGenreUpper.includes(genUpper);
-          }
-        }
-
-        let matchesEpoch = true;
-        if (curatorEpoca !== 'Todas' && curatorEpoca !== 'Cualquier época') {
-          const matchedRange = YEAR_RANGES.find(r => r.label === curatorEpoca);
-          if (matchedRange) {
-            const mYear = m.year ? parseInt(String(m.year)) : 0;
-            matchesEpoch = mYear >= matchedRange.start && mYear < matchedRange.end;
-          } else {
-            matchesEpoch = false;
-          }
-        }
-
-        let matchesTone = false;
-        const toneToMatch = curatorTono || 'Trama';
-        if (toneToMatch === 'Ligero') {
-          matchesTone = movieGenreUpper.some(g => ['COMEDIA', 'ANIMACIÓN', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'MUSICAL'].includes(g));
-        } else if (toneToMatch === 'Trama') {
-          matchesTone = movieGenreUpper.some(g => ['DRAMA', 'MISTERIO', 'HISTORIA', 'ROMANCE', 'DOCUMENTAL', 'BIOGRAFÍA'].includes(g)) || movieGenreStrRaw.includes('INTRIGA');
-        } else if (toneToMatch === 'Intenso') {
-          matchesTone = movieGenreUpper.some(g => ['TERROR', 'THRILLER', 'CRIMEN', 'ACCIÓN', 'SUSPENSO', 'BÉLICO'].includes(g));
-        }
-
-        let matchesSala = false;
-        const salaToMatch = curatorSala || 'Solo';
-        if (salaToMatch === 'Solo') {
-          matchesSala = movieGenreUpper.some(g => ['DRAMA', 'DOCUMENTAL', 'MISTERIO', 'THRILLER', 'SCI-FI', 'BIOGRAFÍA', 'SUSPENSO'].includes(g)) || movieGenreStrRaw.includes('INDIE');
-        } else if (salaToMatch === 'Dúo') {
-          matchesSala = movieGenreUpper.some(g => ['ROMANCE', 'COMEDIA', 'TERROR', 'SUSPENSO', 'THRILLER', 'MUSICAL', 'DRAMA'].includes(g));
-        } else if (salaToMatch === 'Grupo') {
-          matchesSala = movieGenreUpper.some(g => ['ACCIÓN', 'COMEDIA', 'TERROR', 'AVENTURAS', 'FAMILIA', 'FANTASÍA', 'ANIMACIÓN', 'SCI-FI'].includes(g));
-        }
-
-        return matchesGenre && matchesEpoch && matchesTone && matchesSala;
+        // Películas and Centauro are unified in peliculas mode
+        return sec !== 'series' && sec !== 'serie';
       };
 
-      const strictlyMatchingMovies = movies.filter(isStrictMatch);
+      const checkGenreMatch = (m: Movie) => {
+        if (isAnyGenre) return true;
 
-      if (strictlyMatchingMovies.length === 0) {
-        setCurationError(curatorContentType === 'series'
-          ? "El Director no encontró series que cumplan exactamente con esos parámetros en el catálogo."
-          : "El Director no encontró películas que cumplan exactamente con esos parámetros en el catálogo.");
-        setIsCurating(false);
-        return;
+        const movieNormGenres = getNormalizedGenres(m.genre).map(g => normalizeText(g));
+        const movieRawGenre = normalizeText(Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || ''));
+        const movieCountry = normalizeText(m.country || '');
+        const movieSynopsis = normalizeText(m.synopsis || (m as any).description || '');
+        const rawYear = String(m.year || '');
+        const years = rawYear.match(/\d{4}/g)?.map(n => parseInt(n, 10)) || [];
+        const movieYear = years[0] || Number(m.year) || 0;
+
+        // Specialized genre rules
+        if (normCuratorGenre.includes('clasic')) {
+          return movieNormGenres.some(g => g.includes('clasic')) || movieRawGenre.includes('clasic') || (movieYear > 0 && movieYear < 1980);
+        }
+        if (normCuratorGenre.includes('mexican')) {
+          return movieNormGenres.some(g => g.includes('mexican') || g.includes('mexic')) || movieRawGenre.includes('mexic') || movieCountry.includes('mexic');
+        }
+        if (normCuratorGenre === 'suspenso' || normCuratorGenre === 'suspense') {
+          return movieNormGenres.some(g => ['suspenso', 'suspense', 'thriller', 'misterio'].includes(g)) || movieRawGenre.includes('intriga') || movieRawGenre.includes('suspens') || movieRawGenre.includes('misterio');
+        }
+        if (normCuratorGenre === 'sci-fi' || normCuratorGenre.includes('ciencia')) {
+          return movieNormGenres.some(g => g === 'sci-fi' || g.includes('ciencia') || g === 'scifi') || movieRawGenre.includes('sci-fi') || movieRawGenre.includes('ciencia');
+        }
+        if (normCuratorGenre.includes('belic') || normCuratorGenre.includes('guerra')) {
+          return movieNormGenres.some(g => g.includes('belic') || g.includes('guerra')) || movieRawGenre.includes('belic') || movieRawGenre.includes('guerra') || movieRawGenre.includes('war');
+        }
+
+        // Standard comparison with fuzzy containment across normalized genres, raw genre string and synopsis
+        return movieNormGenres.some(g => g === normCuratorGenre || g.includes(normCuratorGenre) || normCuratorGenre.includes(g)) || 
+               movieRawGenre.includes(normCuratorGenre) ||
+               (movieNormGenres.length === 0 && movieSynopsis.includes(normCuratorGenre));
+      };
+
+      const checkEpochMatch = (m: Movie) => {
+        if (isAnyEpoch) return true;
+        if (!matchedEpochRange) return true;
+        const rawYear = String(m.year || '');
+        const years = rawYear.match(/\d{4}/g)?.map(n => parseInt(n, 10)) || [];
+        if (years.length === 0) {
+          const num = Number(m.year) || 0;
+          if (num > 0) years.push(num);
+        }
+        if (years.length === 0) return false;
+        return years.some(y => y >= matchedEpochRange.start && y <= matchedEpochRange.end);
+      };
+
+      const checkToneMatch = (m: Movie) => {
+        if (!curatorTono) return true;
+        const normGenres = getNormalizedGenres(m.genre).map(g => normalizeText(g));
+        const rawGenre = normalizeText(Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || ''));
+        const rawDesc = normalizeText(m.synopsis || (m as any).description || '');
+
+        if (curatorTono === 'Ligero') {
+          return normGenres.some(g => ['comedia', 'animacion', 'aventuras', 'familia', 'fantasia', 'musical', 'romance'].includes(g)) ||
+            rawGenre.includes('comedia') || rawGenre.includes('humor') || rawGenre.includes('animacion') || rawGenre.includes('familiar') || rawDesc.includes('comedia') || rawDesc.includes('humor') || rawDesc.includes('divertida');
+        }
+        if (curatorTono === 'Trama') {
+          return normGenres.some(g => ['drama', 'misterio', 'historia', 'romance', 'documental', 'biografia', 'suspenso', 'crimen', 'western'].includes(g)) ||
+            rawGenre.includes('drama') || rawGenre.includes('intriga') || rawGenre.includes('historia') || rawGenre.includes('misterio') || rawDesc.includes('drama') || rawDesc.includes('intriga') || rawDesc.includes('secreto') || rawDesc.includes('misterio');
+        }
+        if (curatorTono === 'Intenso') {
+          return normGenres.some(g => ['terror', 'thriller', 'crimen', 'accion', 'suspenso', 'belico', 'sci-fi', 'western'].includes(g)) ||
+            rawGenre.includes('terror') || rawGenre.includes('accion') || rawGenre.includes('thriller') || rawGenre.includes('belico') || rawDesc.includes('terror') || rawDesc.includes('peligro') || rawDesc.includes('lucha') || rawDesc.includes('muerte');
+        }
+        return true;
+      };
+
+      const checkSalaMatch = (m: Movie) => {
+        if (!curatorSala) return true;
+        const normGenres = getNormalizedGenres(m.genre).map(g => normalizeText(g));
+        const rawGenre = normalizeText(Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || ''));
+        const rawDesc = normalizeText(m.synopsis || (m as any).description || '');
+
+        if (curatorSala === 'Solo') {
+          return normGenres.some(g => ['drama', 'documental', 'misterio', 'thriller', 'sci-fi', 'biografia', 'suspenso', 'terror', 'crimen', 'historia', 'clasico', 'western'].includes(g)) ||
+            rawGenre.includes('indie') || rawGenre.includes('autor') || rawGenre.includes('drama') || rawGenre.includes('psicologico');
+        }
+        if (curatorSala === 'Dúo') {
+          return normGenres.some(g => ['romance', 'comedia', 'drama', 'terror', 'suspenso', 'thriller', 'musical', 'misterio', 'fantasia', 'biografia', 'aventuras'].includes(g)) ||
+            rawGenre.includes('romance') || rawGenre.includes('pareja') || rawGenre.includes('comedia') || rawDesc.includes('pareja') || rawDesc.includes('amor');
+        }
+        if (curatorSala === 'Grupo') {
+          return normGenres.some(g => ['accion', 'comedia', 'terror', 'aventuras', 'familia', 'fantasia', 'animacion', 'sci-fi', 'belico', 'western', 'thriller', 'musical'].includes(g)) ||
+            rawGenre.includes('accion') || rawGenre.includes('comedia') || rawGenre.includes('aventura') || rawGenre.includes('familiar');
+        }
+        return true;
+      };
+
+      // 1. Initial pool according to content section (Películas vs Series)
+      let sectionPool = movies.filter(checkSectionMatch);
+      if (sectionPool.length === 0) {
+        sectionPool = movies;
       }
 
-      let availablePool = strictlyMatchingMovies.filter(m => !curatedSessionIds.includes(m.id));
-
-      if (availablePool.length === 0) {
-        const strictMatchIds = strictlyMatchingMovies.map(m => m.id);
-        setCuratedSessionIds(prev => prev.filter(id => !strictMatchIds.includes(id)));
-        availablePool = strictlyMatchingMovies; 
-      }
-
+      // 2. Score every candidate based on how faithfully it fulfills each user field
       const prevIds = curatorRecommendations.map(r => r.id);
-      
-      const candidates = availablePool.map(m => {
-        let finalScore = 0;
-        finalScore += (m.rating || 0) * 10;
 
-        const normalizedTitle = m.title?.toLowerCase().trim() || "";
-        const normalizedOriginal = m.originalTitle?.toLowerCase().trim() || "";
+      const scoredCandidates = sectionPool.map(m => {
+        const gMatch = checkGenreMatch(m);
+        const eMatch = checkEpochMatch(m);
+        const tMatch = checkToneMatch(m);
+        const sMatch = checkSalaMatch(m);
 
-        let titleSeenRecently = false;
-        if (prevIds.some(id => {
+        let score = 0;
+        let matchCount = 0;
+        if (gMatch) { score += isAnyGenre ? 200 : 2500; matchCount++; }
+        if (eMatch) { score += isAnyEpoch ? 150 : 2000; matchCount++; }
+        if (tMatch) { score += !curatorTono ? 100 : 800; matchCount++; }
+        if (sMatch) { score += !curatorSala ? 100 : 600; matchCount++; }
+
+        // Neighbor decade proximity score
+        if (!eMatch && matchedEpochRange) {
+          const rawYear = String(m.year || '');
+          const years = rawYear.match(/\d{4}/g)?.map(n => parseInt(n, 10)) || [];
+          const mYear = years[0] || Number(m.year) || 0;
+          if (mYear > 0) {
+            const dist = Math.min(Math.abs(mYear - matchedEpochRange.start), Math.abs(mYear - matchedEpochRange.end));
+            if (dist <= 10) score += 400;
+          }
+        }
+
+        // Quality rating boost (0 to 150)
+        score += (m.rating || 7) * 15;
+
+        // Variety penalty - gentle so matching items NEVER get overtaken by non-matching items
+        const normTitle = normalizeText(m.title);
+        const normOrig = normalizeText(m.originalTitle);
+        const wasSeenRecently = prevIds.some(id => {
           const pm = movies.find(x => x.id === id);
           if (!pm) return false;
-          const pTitle = pm.title?.toLowerCase().trim() || "";
-          const pOrig = pm.originalTitle?.toLowerCase().trim() || "";
-          return (pTitle && pTitle === normalizedTitle) || (pOrig && pOrig === normalizedOriginal);
-        })) {
-          titleSeenRecently = true;
+          return normalizeText(pm.title) === normTitle || normalizeText(pm.originalTitle) === normOrig;
+        });
+        if (wasSeenRecently) {
+          score -= 300;
         }
 
-        if (titleSeenRecently) {
-          finalScore -= 10000;
+        // Slight rotation bonus for items not visited yet in this session
+        if (!curatedSessionIds.includes(m.id)) {
+          score += 200;
         }
 
-        // Add significant random noise to ensure perfect randomness
-        finalScore += Math.random() * 10000;
+        // Random subtle jitter for refreshing recommendations
+        score += Math.random() * 40;
 
-        return { 
-          movie: m, 
-          score: finalScore
+        const isExactStrict = gMatch && eMatch && tMatch && sMatch;
+
+        return {
+          movie: m,
+          score,
+          matchCount,
+          isExactStrict,
+          gMatch,
+          eMatch,
+          tMatch,
+          sMatch
         };
       });
 
-      const sorted = candidates.sort((a, b) => b.score - a.score);
-      
+      // Strict matches that satisfy ALL criteria provided by the user
+      const strictMatches = scoredCandidates.filter(c => c.isExactStrict).sort((a, b) => b.score - a.score);
+
       const selectedMovies: any[] = [];
       const seenTitles = new Set<string>();
       const seenIds = new Set<string>();
 
-      for (const item of sorted) {
-        if (selectedMovies.length >= 3) break;
-        const m = item.movie;
-        const normalizedTitle = m.title?.toLowerCase().trim() || "";
-        const normalizedOriginal = m.originalTitle?.toLowerCase().trim() || "";
-        
-        if (seenIds.has(m.id)) continue;
-        if (normalizedTitle && seenTitles.has(normalizedTitle)) continue;
-        if (normalizedOriginal && seenTitles.has(normalizedOriginal)) continue;
+      const addMovie = (m: Movie) => {
+        if (!m || !m.id) return false;
+        const normTitle = normalizeText(m.title);
+        const normOrig = normalizeText(m.originalTitle);
+        if (seenIds.has(m.id)) return false;
+        if (normTitle && seenTitles.has(normTitle)) return false;
+        if (normOrig && seenTitles.has(normOrig)) return false;
 
         selectedMovies.push(m);
         seenIds.add(m.id);
-        if (normalizedTitle) seenTitles.add(normalizedTitle);
-        if (normalizedOriginal) seenTitles.add(normalizedOriginal);
+        if (normTitle) seenTitles.add(normTitle);
+        if (normOrig) seenTitles.add(normOrig);
+        return true;
+      };
+
+      // Step 1: Guarantee that all strict matches fulfilling all user criteria are chosen first
+      for (const item of strictMatches) {
+        if (selectedMovies.length >= 3) break;
+        addMovie(item.movie);
+      }
+
+      // Step 2: If we need more to reach 3, fill with top matching candidates respecting user fields
+      if (selectedMovies.length < 3) {
+        const sortedCandidates = scoredCandidates
+          .filter(c => !seenIds.has(c.movie.id))
+          .sort((a, b) => {
+            // Priority to explicit genre requested
+            if (!isAnyGenre) {
+              if (a.gMatch && !b.gMatch) return -1;
+              if (!a.gMatch && b.gMatch) return 1;
+            }
+            // Priority to explicit epoch requested
+            if (!isAnyEpoch) {
+              if (a.eMatch && !b.eMatch) return -1;
+              if (!a.eMatch && b.eMatch) return 1;
+            }
+            // Priority to highest number of matching fields
+            if (b.matchCount !== a.matchCount) {
+              return b.matchCount - a.matchCount;
+            }
+            return b.score - a.score;
+          });
+
+        for (const item of sortedCandidates) {
+          if (selectedMovies.length >= 3) break;
+          addMovie(item.movie);
+        }
+      }
+
+      // Step 3: Library fallback if catalog is small
+      if (selectedMovies.length < 3) {
+        for (const item of scoredCandidates.sort((a, b) => b.score - a.score)) {
+          if (selectedMovies.length >= 3) break;
+          addMovie(item.movie);
+        }
       }
 
       const generatedRecs = selectedMovies.map(m => {
-        const salaLabels = {
+        const salaLabels: Record<string, string> = {
           'Solo': 'en la soledad del cinéfilo',
           'Dúo': 'en la calidez de un dúo cinéfilo',
           'Grupo': 'compartiendo la fascinación colectiva en grupo'
         };
-        const tonoLabels = {
+        const tonoLabels: Record<string, string> = {
           'Ligero': 'divertido, relajado y lleno de vitalidad humorística',
           'Trama': 'interesante, cautivador y de fina intriga dramática',
           'Intenso': 'fuerte, electrizante y de una inmensa emoción cinematográfica'
         };
+
+        const salaText = curatorSala ? salaLabels[curatorSala] : 'tu momento cinéfilo';
+        const tonoText = curatorTono ? tonoLabels[curatorTono] : 'magnífico y cautivador';
+        const genreText = curatorGenero !== 'Todos' ? `del género ${curatorGenero}` : 'del séptimo arte';
+
         const templates = [
-          `Una obra ideal para consagrar ${curatorSala ? salaLabels[curatorSala] : 'tu sesión'}. Su estructura posee un pulso ${curatorTono ? tonoLabels[curatorTono] : 'exquisito'}, que florece con gran madurez visual. Un retrato de inestabilidad y fascinación ordinaria que desafía al conformismo cotidiano.`,
-          `El director compone aquí un viaje existencial de carretera que cruza parajes inhóspitos. Es un lienzo idóneo para ver ${curatorSala ? salaLabels[curatorSala] : 'disfrutar'}, calibrando un compás ${curatorTono ? tonoLabels[curatorTono] : 'magnífico'}, estructurado a la perfección. Puro cine de altísimo nivel.`,
-          `Una gema de incalculable valor estético que brota de la claustrofobia de la vida urbana. Altamente recomendada para ver ${curatorSala ? salaLabels[curatorSala] : 'en tu sala'}; despliega un carácter singular que rompe con la rutina tradicional con su característica destreza.`
+          `Una obra maestra seleccionada por el Director especialmente para disfrutar ${salaText}. Su estructura despliega un compás ${tonoText}, consagrando lo mejor ${genreText} con una maestría visual incomparable.`,
+          `El Director eligió esta joya para tu sesión: equilibra a la perfección un ritmo ${tonoText}, ideal para vivir ${salaText}. Una experiencia cinematográfica imprescindible con actuaciones memorables.`,
+          `Calibrada con gran pulso cinematográfico para disfrutar ${salaText}. Posee una dirección envolvente y un tono ${tonoText}, convirtiéndose en una recomendación predilecta ${genreText}.`
         ];
-        
-        const idx = Math.abs((m.title.length + m.year) % templates.length);
+
+        const idx = Math.abs((String(m.title).length + (Number(m.year) || 0)) % templates.length);
         const reason = templates[idx];
 
         return {
           id: m.id,
           title: m.title,
+          genre: m.genre,
           reason
         };
       });
 
       setCuratorRecommendations(generatedRecs);
-
       setCuratedSessionIds(prev => [...prev, ...selectedMovies.map(sm => sm.id)]);
 
     } catch (err: any) {
@@ -751,6 +865,8 @@ export default function App() {
       setSearchTerm(searchQuery);
       if (searchQuery.trim() !== "") {
         setIsDirectorFilterActive(false);
+        setIsFavoriteOfMonthActive(false);
+        setCurrentPage(1);
       }
     }, 50);
     return () => clearTimeout(timer);
@@ -1667,14 +1783,21 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         const inDirector = normalizeText(m.director).includes(normTerm);
         const isYearExact = String(m.year || "").includes(term);
         const inCast = Array.isArray(m.cast)
-          ? m.cast.some(actor => actor.toLowerCase().includes(term))
-          : String(m.cast || "").toLowerCase().includes(term);
-        return inTitle || inOriginalTitle || inDirector || isYearExact || inCast;
+          ? m.cast.some(actor => normalizeText(actor).includes(normTerm))
+          : normalizeText(m.cast).includes(normTerm);
+        const inGenre = normalizeText(Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || '')).includes(normTerm);
+        const inCountry = normalizeText(m.country).includes(normTerm);
+        const inSynopsis = normalizeText(m.synopsis || (m as any).description || '').includes(normTerm);
+        const inScript = normalizeText(m.script).includes(normTerm);
+        const inCompanies = normalizeText(m.companies).includes(normTerm);
+        const inEstante = normalizeText(m.estante).includes(normTerm);
+        return inTitle || inOriginalTitle || inDirector || isYearExact || inCast || inGenre || inCountry || inSynopsis || inScript || inCompanies || inEstante;
       });
+      const isSearching = searchTerm.trim() !== "";
       const currentGenreLower = (selectedGenre || "").toLowerCase();
-      let matchGenre = selectedGenre === "Todos" || false;
+      let matchGenre = true;
       
-      if (selectedGenre !== "Todos" && selectedGenre !== "Clásico") {
+      if (!isSearching && selectedGenre !== "Todos" && selectedGenre !== "Clásico") {
         const movieNormalizedGenres = getNormalizedGenres(m.genre).map(g => g.toLowerCase());
         if (currentGenreLower === "mexicanas" && (movieNormalizedGenres.includes("mexicana") || movieNormalizedGenres.includes("mexicanas"))) {
           matchGenre = true;
@@ -1683,13 +1806,13 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         }
       }
       
-      if (selectedGenre === "Clásico") {
+      if (!isSearching && selectedGenre === "Clásico") {
         matchGenre = String(m.genre || "").toLowerCase().includes("clásico") || (m.year < 1980);
       }
       
       const movieTitle = String(m.title || "").trim();
       let matchLetter = true;
-      if (selectedLetter) {
+      if (!isSearching && selectedLetter) {
         if (selectedLetter === "#") {
           matchLetter = /^[0-9]/.test(movieTitle);
         } else {
@@ -1698,11 +1821,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       }
       
       const movieYear = m.year || 0;
-      const matchYear = !selectedYearRange || (movieYear >= selectedYearRange.start && movieYear < selectedYearRange.end);
+      const matchYear = isSearching || !selectedYearRange || (movieYear >= selectedYearRange.start && movieYear < selectedYearRange.end);
       const matchReview = showReviewOnly ? !!m.needsReview : true;
 
       const movieSec = String(m.section || 'peliculas').toLowerCase().trim();
-      const isSearching = searchTerm.trim() !== "";
       const matchTab = (isSearching || showHistoryOnly)
         ? true
         : activeExploreTab === 'centauro'
@@ -1721,27 +1843,31 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
         const getScore = (m: Movie) => {
           const normTitle = normalizeText(m.title);
           const normOrig = normalizeText(m.originalTitle);
+          const normDirector = normalizeText(m.director);
 
           // 1. Exact matches (highest priority)
           if (normTitle === normSearch) return 1000;
           if (normOrig === normSearch) return 950;
+          if (normDirector === normSearch) return 900;
           
           // 2. Starts with phrase
-          if (normTitle.startsWith(normSearch)) return 900;
+          if (normTitle.startsWith(normSearch)) return 880;
           if (normOrig.startsWith(normSearch)) return 850;
+          if (normDirector.startsWith(normSearch)) return 820;
 
           // 3. Substring containment of entire phrase
           if (normTitle.includes(normSearch)) return 800;
           if (normOrig.includes(normSearch)) return 750;
+          if (normDirector.includes(normSearch)) return 700;
 
-          // 4. Individual word matching counts on title/original title
+          // 4. Individual word matching counts on title/original title/director
           const searchWords = normSearch.split(/\s+/).filter(Boolean);
           if (searchWords.length > 0) {
             let titleMatchCount = 0;
             searchWords.forEach(w => {
               if (normTitle.includes(w)) titleMatchCount++;
             });
-            if (titleMatchCount === searchWords.length) return 700;
+            if (titleMatchCount === searchWords.length) return 650;
             if (titleMatchCount > 0) return 400 + titleMatchCount * 10;
           }
 
@@ -1754,21 +1880,30 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
             if (origMatchCount > 0) return 300 + origMatchCount * 10;
           }
 
-          // 5. Director containing entire search phrase
-          const normDirector = normalizeText(m.director);
-          if (normDirector.includes(normSearch)) return 200;
+          if (searchWords.length > 0) {
+            let dirMatchCount = 0;
+            searchWords.forEach(w => {
+              if (normDirector.includes(w)) dirMatchCount++;
+            });
+            if (dirMatchCount === searchWords.length) return 550;
+            if (dirMatchCount > 0) return 250 + dirMatchCount * 10;
+          }
 
-          // 6. Year matches
-          const mYear = String(m.year || "");
-          if (mYear === searchTerm.trim() || mYear.includes(searchTerm.trim())) return 150;
-
-          // 7. Cast containing entire search phrase
+          // 5. Cast containing entire search phrase or words
           const inCast = Array.isArray(m.cast)
             ? m.cast.some(actor => normalizeText(actor).includes(normSearch))
             : normalizeText(m.cast).includes(normSearch);
-          if (inCast) return 100;
+          if (inCast) return 300;
 
-          return 0;
+          // 6. Year matches
+          const mYear = String(m.year || "");
+          if (mYear === searchTerm.trim() || mYear.includes(searchTerm.trim())) return 250;
+
+          // 7. Genre matches
+          const rawGenre = normalizeText(Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || ''));
+          if (rawGenre.includes(normSearch)) return 200;
+
+          return 50;
         };
 
         const scoreA = getScore(a);
@@ -2197,7 +2332,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 <div className="flex flex-col gap-1">
                    {/* Películas */}
                    <button 
-                     className={getArchiveSidebarClass(activeExploreTab === 'peliculas' && isArchiveActive)} 
+                     className={getArchiveSidebarClass(activeExploreTab === 'peliculas' && !isDirectorFilterActive && !isFavoriteOfMonthActive)} 
                      onClick={() => {
                        setActiveExploreTab('peliculas');
                        clearFiltersAndSearch();
@@ -2210,7 +2345,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                    {/* Series */}
                    <button 
-                     className={getArchiveSidebarClass(activeExploreTab === 'series')} 
+                     className={getArchiveSidebarClass(activeExploreTab === 'series' && !isDirectorFilterActive && !isFavoriteOfMonthActive)} 
                      onClick={() => {
                        setActiveExploreTab('series');
                        setSelectedLetter(null);
@@ -2232,7 +2367,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
                    {/* Centauro */}
                    <button 
-                     className={getArchiveSidebarClass(activeExploreTab === 'centauro')} 
+                     className={getArchiveSidebarClass(activeExploreTab === 'centauro' && !isDirectorFilterActive && !isFavoriteOfMonthActive)} 
                      onClick={() => {
                        setActiveExploreTab('centauro');
                        setSelectedLetter(null);
@@ -2264,49 +2399,49 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                        </span>
                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isAlphabetOpen ? 'rotate-180' : ''}`} />
                      </button>
-                     <div className={`flex flex-wrap gap-1.5 px-5 overflow-hidden transition-all duration-300 ${isAlphabetOpen ? 'max-h-48 opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
-                       <button onClick={() => { setSelectedLetter(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${!selectedLetter ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{t("Todos")}</button>
-                       {ALPHABET.map(l => (
-                         <button key={l} onClick={() => { setSelectedLetter(l); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all ${selectedLetter === l ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{l}</button>
-                       ))}
-                     </div>
-                   </div>
+                      <div className={`flex flex-wrap gap-1.5 px-5 overflow-hidden transition-all duration-300 ${isAlphabetOpen ? 'max-h-48 opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
+                        <button onClick={() => { setSelectedLetter(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); setSearchQuery(""); setSearchTerm(""); setCurrentPage(1); }} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${!selectedLetter ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{t("Todos")}</button>
+                        {ALPHABET.map(l => (
+                          <button key={l} onClick={() => { setSelectedLetter(l); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); setSearchQuery(""); setSearchTerm(""); setCurrentPage(1); }} className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all ${selectedLetter === l ? 'bg-white text-black shadow-lg shadow-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
 
-                   {/* ÉPOCAS */}
-                   <div>
-                     <button 
-                       className={getAccordionHeaderClass(selectedYearRange !== null)}
-                       onClick={() => setIsErasOpen(!isErasOpen)}
-                     >
-                       <span className="flex items-center gap-4">
-                         <CalendarDays className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
-                         <span>{t("ÉPOCAS")}</span>
-                       </span>
-                       <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isErasOpen ? 'rotate-180' : ''}`} />
-                     </button>
-                     <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isErasOpen ? 'max-h-[800px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
-                       <button onClick={() => { setSelectedYearRange(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${!selectedYearRange ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>Cualquier Año</button>
-                       {YEAR_RANGES.map(range => (
-                         <button key={range.label} onClick={() => { setSelectedYearRange(range); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${selectedYearRange?.label === range.label ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{range.label}</button>
-                       ))}
-                     </div>
-                   </div>
+                    {/* ÉPOCAS */}
+                    <div>
+                      <button 
+                        className={getAccordionHeaderClass(selectedYearRange !== null)}
+                        onClick={() => setIsErasOpen(!isErasOpen)}
+                      >
+                        <span className="flex items-center gap-4">
+                          <CalendarDays className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
+                          <span>{t("ÉPOCAS")}</span>
+                        </span>
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isErasOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isErasOpen ? 'max-h-[800px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
+                        <button onClick={() => { setSelectedYearRange(null); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); setSearchQuery(""); setSearchTerm(""); setCurrentPage(1); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${!selectedYearRange ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>Cualquier Año</button>
+                        {YEAR_RANGES.map(range => (
+                          <button key={range.label} onClick={() => { setSelectedYearRange(range); setShowHistoryOnly(false); setShowReviewOnly(false); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); setSearchQuery(""); setSearchTerm(""); setCurrentPage(1); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${selectedYearRange?.label === range.label ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>{range.label}</button>
+                        ))}
+                      </div>
+                    </div>
 
-                   {/* CATEGORÍAS */}
-                   <div>
-                     <button 
-                       className={getAccordionHeaderClass(selectedGenre !== "Todos")}
-                       onClick={() => setIsCategoriesOpen(!isCategoriesOpen)}
-                     >
-                       <span className="flex items-center gap-4">
-                         <LayoutGrid className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
-                         <span>{t("CATEGORÍAS")}</span>
-                       </span>
-                       <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isCategoriesOpen ? 'rotate-180' : ''}`} />
-                     </button>
-                     <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isCategoriesOpen ? 'max-h-[3000px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
-                       {dynamicGenres.map(g => (
-                         <button key={g} onClick={() => { setSelectedGenre(g); setShowHistoryOnly(false); setShowReviewOnly(false); setCurrentPage(1); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all flex justify-between items-center ${selectedGenre === g ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
+                    {/* CATEGORÍAS */}
+                    <div>
+                      <button 
+                        className={getAccordionHeaderClass(selectedGenre !== "Todos")}
+                        onClick={() => setIsCategoriesOpen(!isCategoriesOpen)}
+                      >
+                        <span className="flex items-center gap-4">
+                          <LayoutGrid className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500" /> 
+                          <span>{t("CATEGORÍAS")}</span>
+                        </span>
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isCategoriesOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      <div className={`flex flex-col gap-1 px-5 overflow-hidden transition-all duration-300 ${isCategoriesOpen ? 'max-h-[3000px] opacity-100 mt-3 mb-2' : 'max-h-0 opacity-0'}`}>
+                        {dynamicGenres.map(g => (
+                          <button key={g} onClick={() => { setSelectedGenre(g); setShowHistoryOnly(false); setShowReviewOnly(false); setCurrentPage(1); setIsMobileMenuOpen(false); setIsDirectorFilterActive(false); setIsFavoriteOfMonthActive(false); setSearchQuery(""); setSearchTerm(""); }} className={`text-left px-4 py-2.5 rounded-lg text-xs font-semibold transition-all flex justify-between items-center ${selectedGenre === g ? 'bg-white text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
                            <span>{g}</span>
                          </button>
                        ))}
