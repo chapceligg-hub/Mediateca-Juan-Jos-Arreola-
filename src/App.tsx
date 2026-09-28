@@ -5404,9 +5404,13 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           addedBy: existingAdmin?.addedBy || currentUser?.email || 'admin',
           photoURL: existingAdmin?.photoURL || ''
         };
+        setAdmins(prev => {
+          const filtered = prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== originalEmail);
+          return [payload, ...filtered];
+        });
         await upsertAdmin(payload);
         setEditingEmail(null);
-        setTransferSuccess("Cambios guardados.");
+        setTransferSuccess("Cambios guardados exitosamente.");
         setTimeout(() => setTransferSuccess(""), 3500);
       } else {
         const payload = {
@@ -5419,6 +5423,17 @@ const AdminManager = ({ currentUser, userRole }: any) => {
           addedBy: existingAdmin?.addedBy || currentUser?.email || 'admin',
           photoURL: existingAdmin?.photoURL || ''
         };
+
+        setAdmins(prev => {
+          const filtered = prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== originalEmail);
+          const existsIdx = filtered.findIndex(a => (a.email || a.id || '').toLowerCase().trim() === newTargetEmail);
+          if (existsIdx > -1) {
+            const next = [...filtered];
+            next[existsIdx] = { ...next[existsIdx], ...payload };
+            return next;
+          }
+          return [...filtered, payload];
+        });
 
         if (newTargetEmail !== originalEmail) {
           await deleteAdmin(originalEmail);
@@ -5453,11 +5468,13 @@ const AdminManager = ({ currentUser, userRole }: any) => {
 
   const confirmDelete = async () => {
     if (!userToDelete) return;
+    const target = userToDelete;
     setLoading(true);
     setError("");
     try {
-      await deleteAdmin(userToDelete);
       setUserToDelete(null);
+      setAdmins(prev => prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== target));
+      await deleteAdmin(target);
     } catch (err: any) {
       setError(err?.message || "Error al eliminar acceso.");
     } finally {
@@ -5488,6 +5505,7 @@ const AdminManager = ({ currentUser, userRole }: any) => {
          name: preservedName,
          updatedAt: new Date().toISOString()
        };
+       setAdmins(prev => prev.map(a => (a.email || a.id || '').toLowerCase().trim() === target ? { ...a, role, updatedAt: updatedPayload.updatedAt } : a));
        await upsertAdmin(updatedPayload);
     } catch (err: any) {
        setError(err?.message || "Error al actualizar rol.");

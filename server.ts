@@ -547,7 +547,7 @@ app.post("/api/admins/sync", (req, res) => {
         const base = itemTime >= existTime ? { ...existing, ...item } : { ...item, ...existing };
         const existingName = (existing.name || "").trim();
         const incomingName = (item.name || "").trim();
-        const finalName = incomingName || existingName;
+        const finalName = item.name !== undefined && String(item.name).trim() ? String(item.name).trim() : (incomingName || existingName);
         map.set(key, { ...base, id: key, email: key, name: finalName });
       }
     }

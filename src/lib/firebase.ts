@@ -1261,7 +1261,7 @@ export const upsertAdmin = async (admin: any) => {
   const existingInPerm = currentBase.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === adminId);
   const existingName = (existingInPerm?.name || '').trim();
   const incomingName = admin.name !== undefined ? String(admin.name).trim() : existingName;
-  const finalName = incomingName || existingName || adminId.split('@')[0];
+  const finalName = admin.name !== undefined ? String(admin.name).trim() : (existingName || adminId.split('@')[0]);
 
   const adminData: any = {
     ...(existingInPerm || {}),
