@@ -180,51 +180,78 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // --- GESTIÓN DE ADMINISTRADORES Y EDITORES EN SERVIDOR (Garantiza acceso multi-dispositivo sin bloqueos por cuota) ---
 const ADMINS_FILE = path.join(process.cwd(), "admins-registry.json");
 const DELETED_ADMINS_FILE = path.join(process.cwd(), "deleted-admins.json");
+const PRIMARY_ADMIN_FILE = path.join(process.cwd(), "primary-admin.json");
+
+const TMP_ADMINS_FILE = path.join("/tmp", "admins-registry.json");
+const TMP_PRIMARY_ADMIN_FILE = path.join("/tmp", "primary-admin.json");
+const TMP_DELETED_ADMINS_FILE = path.join("/tmp", "deleted-admins.json");
+
+let memoryAdminsCache: any[] | null = null;
+let memoryPrimaryAdminCache: string | null = null;
+let memoryDeletedAdminsCache: string[] | null = null;
 
 function loadDeletedAdminIds(): string[] {
+  if (memoryDeletedAdminsCache) return memoryDeletedAdminsCache;
   try {
-    if (fs.existsSync(DELETED_ADMINS_FILE)) {
-      const raw = fs.readFileSync(DELETED_ADMINS_FILE, "utf-8");
+    const fileToRead = fs.existsSync(TMP_DELETED_ADMINS_FILE) ? TMP_DELETED_ADMINS_FILE : (fs.existsSync(DELETED_ADMINS_FILE) ? DELETED_ADMINS_FILE : null);
+    if (fileToRead) {
+      const raw = fs.readFileSync(fileToRead, "utf-8");
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        memoryDeletedAdminsCache = parsed.map((e: any) => String(e).toLowerCase().trim()).filter(Boolean);
+        return memoryDeletedAdminsCache;
+      }
     }
   } catch (e) {
     console.warn("Error leyendo deleted-admins.json:", e);
   }
-  return [];
+  memoryDeletedAdminsCache = [];
+  return memoryDeletedAdminsCache;
 }
 
 function saveDeletedAdminIds(ids: string[]) {
+  const clean = Array.from(new Set(ids.map(e => String(e).toLowerCase().trim()).filter(Boolean)));
+  memoryDeletedAdminsCache = clean;
+  const payload = JSON.stringify(clean, null, 2);
   try {
-    fs.writeFileSync(DELETED_ADMINS_FILE, JSON.stringify(ids, null, 2), "utf-8");
+    fs.writeFileSync(DELETED_ADMINS_FILE, payload, "utf-8");
   } catch (e) {
-    console.warn("Error guardando deleted-admins.json:", e);
+    try {
+      fs.writeFileSync(TMP_DELETED_ADMINS_FILE, payload, "utf-8");
+    } catch (_) {}
   }
 }
 
 // --- REGISTRO DE ADMINISTRADOR PRINCIPAL Y EDITORES (Persistencia y Sincronización) ---
-const PRIMARY_ADMIN_FILE = path.join(process.cwd(), "primary-admin.json");
-
 function loadPrimarySuperAdmin(): string {
+  if (memoryPrimaryAdminCache) return memoryPrimaryAdminCache;
   try {
-    if (fs.existsSync(PRIMARY_ADMIN_FILE)) {
-      const raw = fs.readFileSync(PRIMARY_ADMIN_FILE, "utf-8");
+    const fileToRead = fs.existsSync(TMP_PRIMARY_ADMIN_FILE) ? TMP_PRIMARY_ADMIN_FILE : (fs.existsSync(PRIMARY_ADMIN_FILE) ? PRIMARY_ADMIN_FILE : null);
+    if (fileToRead) {
+      const raw = fs.readFileSync(fileToRead, "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed.email === 'string' && parsed.email.trim()) {
-        return parsed.email.trim().toLowerCase();
+        memoryPrimaryAdminCache = parsed.email.trim().toLowerCase();
+        return memoryPrimaryAdminCache;
       }
     }
   } catch (e) {
     console.warn("Error leyendo primary-admin.json:", e);
   }
-  return "chapceligg@gmail.com";
+  memoryPrimaryAdminCache = "chapceligg@gmail.com";
+  return memoryPrimaryAdminCache;
 }
 
 function savePrimarySuperAdmin(email: string) {
+  const normalized = email.trim().toLowerCase();
+  memoryPrimaryAdminCache = normalized;
+  const payload = JSON.stringify({ email: normalized, updatedAt: new Date().toISOString() }, null, 2);
   try {
-    fs.writeFileSync(PRIMARY_ADMIN_FILE, JSON.stringify({ email: email.trim().toLowerCase(), updatedAt: new Date().toISOString() }, null, 2), "utf-8");
+    fs.writeFileSync(PRIMARY_ADMIN_FILE, payload, "utf-8");
   } catch (e) {
-    console.warn("Error guardando primary-admin.json:", e);
+    try {
+      fs.writeFileSync(TMP_PRIMARY_ADMIN_FILE, payload, "utf-8");
+    } catch (_) {}
   }
 }
 
@@ -240,22 +267,24 @@ const DEFAULT_PERSISTENT_ADMINS: any[] = [
   {
     id: "uriel.cardenas@udgvirtual.udg.mx",
     email: "uriel.cardenas@udgvirtual.udg.mx",
-    role: "editor",
+    role: "admin",
     name: "Uriel Cárdenas",
     createdAt: "2026-09-18T19:36:07.784Z",
     updatedAt: "2026-09-23T16:51:40.205Z"
   },
   {
-    id: "lizbeth.hernandez@udgvirtual.udg.mx",
-    email: "lizbeth.hernandez@udgvirtual.udg.mx",
+    id: "urielcg12@hotmail.com",
+    email: "urielcg12@hotmail.com",
     role: "editor",
-    name: "lizbeth hernandez",
-    createdAt: "2026-09-21T19:28:27.162Z",
-    updatedAt: "2026-09-22T17:37:40.371Z"
+    name: "Uriel CG",
+    createdAt: "2026-09-29T09:00:00.000Z"
   }
 ];
 
 function loadServerAdmins(): any[] {
+  if (memoryAdminsCache && Array.isArray(memoryAdminsCache) && memoryAdminsCache.length > 0) {
+    return memoryAdminsCache;
+  }
   const primary = loadPrimarySuperAdmin();
   const deletedSet = new Set(loadDeletedAdminIds());
   deletedSet.delete(primary);
@@ -263,10 +292,11 @@ function loadServerAdmins(): any[] {
   const map = new Map<string, any>();
   let hasLoadedFromFile = false;
 
-  // 1. Cargar archivo admins-registry.json si existe (fuente fidedigna guardada)
+  // 1. Cargar archivo admins-registry.json si existe en /tmp o en directorio raíz
   try {
-    if (fs.existsSync(ADMINS_FILE)) {
-      const raw = fs.readFileSync(ADMINS_FILE, "utf-8");
+    const fileToRead = fs.existsSync(TMP_ADMINS_FILE) ? TMP_ADMINS_FILE : (fs.existsSync(ADMINS_FILE) ? ADMINS_FILE : null);
+    if (fileToRead) {
+      const raw = fs.readFileSync(fileToRead, "utf-8");
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
         hasLoadedFromFile = true;
@@ -304,14 +334,19 @@ function loadServerAdmins(): any[] {
   map.set(primary, primaryAdmin);
 
   const result = Array.from(map.values());
+  memoryAdminsCache = result;
   return result;
 }
 
 function saveServerAdmins(admins: any[]) {
+  memoryAdminsCache = admins;
+  const payload = JSON.stringify(admins, null, 2);
   try {
-    fs.writeFileSync(ADMINS_FILE, JSON.stringify(admins, null, 2), "utf-8");
+    fs.writeFileSync(ADMINS_FILE, payload, "utf-8");
   } catch (e) {
-    console.warn("Error guardando admins-registry.json:", e);
+    try {
+      fs.writeFileSync(TMP_ADMINS_FILE, payload, "utf-8");
+    } catch (_) {}
   }
 }
 
@@ -515,6 +550,60 @@ app.post("/api/admins", (req, res) => {
   } else {
     admins.push(updatedEntry);
   }
+  saveServerAdmins(admins);
+  broadcastAdminsUpdate();
+  res.json({ success: true, admin: updatedEntry });
+});
+
+app.put("/api/admins/:oldEmail", (req, res) => {
+  const oldEmail = decodeURIComponent(req.params.oldEmail || "").trim().toLowerCase();
+  const updateData = req.body;
+  if (!updateData || (!updateData.email && !updateData.id)) {
+    return res.status(400).json({ error: "Datos incompletos" });
+  }
+  const newEmail = (updateData.email || updateData.id).trim().toLowerCase();
+  
+  const primary = loadPrimarySuperAdmin();
+  if (oldEmail === primary && newEmail !== oldEmail) {
+    savePrimarySuperAdmin(newEmail);
+  }
+
+  // Si cambia de correo, registrar el viejo como eliminado y retirar el nuevo de eliminados
+  let deletedIds = loadDeletedAdminIds().filter(id => id !== newEmail);
+  if (newEmail !== oldEmail && oldEmail !== primary) {
+    if (!deletedIds.includes(oldEmail)) {
+      deletedIds.push(oldEmail);
+    }
+  }
+  saveDeletedAdminIds(deletedIds);
+
+  let admins = loadServerAdmins();
+  const oldIdx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === oldEmail);
+  const updatedEntry = {
+    ...(oldIdx > -1 ? admins[oldIdx] : {}),
+    ...updateData,
+    id: newEmail,
+    email: newEmail,
+    name: updateData.name !== undefined ? String(updateData.name).trim() : (oldIdx > -1 ? admins[oldIdx].name : ""),
+    role: updateData.role || (oldIdx > -1 ? admins[oldIdx].role : "editor"),
+    updatedAt: new Date().toISOString()
+  };
+
+  if (oldIdx > -1) {
+    admins[oldIdx] = updatedEntry;
+  } else {
+    admins.push(updatedEntry);
+  }
+
+  // Evitar duplicados por clave de correo
+  const seen = new Set<string>();
+  admins = admins.filter(a => {
+    const k = (a.email || a.id || "").trim().toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+
   saveServerAdmins(admins);
   broadcastAdminsUpdate();
   res.json({ success: true, admin: updatedEntry });

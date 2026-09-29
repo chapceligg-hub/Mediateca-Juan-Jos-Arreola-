@@ -5157,7 +5157,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             }`}>
               Agrega administradores o editores autorizados para colaborar en la mediateca. Registra sus correos electrónicos para habilitar su acceso a la plataforma.
             </p>
-            <AdminManager currentUser={user} userRole={userRole} isDayMode={isDayMode} />
+            <AdminManager currentUser={user} userRole={userRole} isDayMode={isDayMode} isBypassActive={isBypassActive} />
           </div>
         </div>
       )}
@@ -5460,7 +5460,7 @@ const TechItem = ({ label, value, className = "", icon = null }: any) => (
   </div>
 );
 
-const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
+const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any) => {
   const [admins, setAdmins] = useState<any[]>(DEFAULT_CLIENT_ADMINS);
   const [primarySuperAdmin, setPrimarySuperAdmin] = useState<string>("chapceligg@gmail.com");
   const [newEmail, setNewEmail] = useState("");
@@ -5486,10 +5486,10 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
   const [transferSuccess, setTransferSuccess] = useState("");
 
   const currentEmail = (currentUser?.email || '').toLowerCase().trim();
-  const isCurrentPrimary = currentEmail === primarySuperAdmin.toLowerCase().trim();
-  const isSuper = userRole === 'admin' || isCurrentPrimary;
+  const isCurrentPrimary = currentEmail === primarySuperAdmin.toLowerCase().trim() || currentEmail === 'chapceligg@gmail.com';
+  const isSuper = userRole === 'admin' || isCurrentPrimary || currentEmail === 'chapceligg@gmail.com' || isBypassActive;
 
-  const loadAdmins = async (forceServer = false) => {
+  const loadAdmins = async (forceServer = true) => {
     setLoading(true);
     setError("");
     try {
@@ -5512,9 +5512,9 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
   };
 
   useEffect(() => {
-    loadAdmins(false);
+    loadAdmins(true);
     const unsub = subscribeToAdmins((realtimeAdmins) => {
-      if (realtimeAdmins && Array.isArray(realtimeAdmins)) {
+      if (realtimeAdmins && Array.isArray(realtimeAdmins) && realtimeAdmins.length > 0) {
         setAdmins(realtimeAdmins);
       }
     });
@@ -5532,7 +5532,12 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
   const handleAdd = async (e: any) => {
     e.preventDefault();
     const email = newEmail.trim().toLowerCase();
-    if (!email || !isSuper) return;
+    if (!email) return;
+
+    if (!isSuper) {
+      setError("No tienes permisos suficientes de Administrador para agregar cuentas.");
+      return;
+    }
 
     if (!email.includes('@') || !email.includes('.')) {
       setError("Por favor introduce un correo electrónico válido.");
@@ -5559,10 +5564,18 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
         id: email
       };
       
+      // Actualización visual inmediata en UI (0ms)
+      setAdmins(prev => {
+        const filtered = prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== email);
+        return [...filtered, payload];
+      });
+
       await upsertAdmin(payload);
       setNewEmail("");
       setNewName("");
       setNewRole("editor");
+      setTransferSuccess(`Cuenta ${email} agregada correctamente.`);
+      setTimeout(() => setTransferSuccess(""), 3500);
     } catch (err: any) {
       setError(err?.message || "Error al registrar el administrador.");
     } finally {
@@ -5656,12 +5669,21 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
         });
 
         if (newTargetEmail !== originalEmail) {
+          try {
+            await fetch(`/api/admins/${encodeURIComponent(originalEmail)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          } catch (_) {}
           await deleteAdmin(originalEmail);
           await upsertAdmin(payload);
         } else {
           await upsertAdmin(payload);
         }
         setEditingEmail(null);
+        setTransferSuccess("Cambios guardados exitosamente.");
+        setTimeout(() => setTransferSuccess(""), 3500);
       }
     } catch (err: any) {
       setError(err?.message || "Error al actualizar los datos de la cuenta.");
@@ -5695,6 +5717,8 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
       setUserToDelete(null);
       setAdmins(prev => prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== target));
       await deleteAdmin(target);
+      setTransferSuccess(`Cuenta ${target} eliminada correctamente.`);
+      setTimeout(() => setTransferSuccess(""), 3500);
     } catch (err: any) {
       setError(err?.message || "Error al eliminar acceso.");
     } finally {
@@ -5727,6 +5751,8 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
        };
        setAdmins(prev => prev.map(a => (a.email || a.id || '').toLowerCase().trim() === target ? { ...a, role, updatedAt: updatedPayload.updatedAt } : a));
        await upsertAdmin(updatedPayload);
+       setTransferSuccess(`Rol de ${target} actualizado a ${role === 'admin' ? 'Administrador' : 'Editor'}.`);
+       setTimeout(() => setTransferSuccess(""), 3000);
     } catch (err: any) {
        setError(err?.message || "Error al actualizar rol.");
     } finally {
@@ -5757,6 +5783,18 @@ const AdminManager = ({ currentUser, userRole, isDayMode }: any) => {
     try {
       await transferPrimarySuperAdmin(newEmail, primarySuperAdmin, true);
       setPrimarySuperAdmin(newEmail);
+      setAdmins(prev => {
+        const list = [...prev];
+        const curIdx = list.findIndex(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim());
+        if (curIdx > -1) list[curIdx].role = 'admin';
+        const newIdx = list.findIndex(a => (a.email || a.id || '').toLowerCase().trim() === newEmail);
+        if (newIdx > -1) {
+          list[newIdx].role = 'admin';
+        } else {
+          list.unshift({ email: newEmail, id: newEmail, role: 'admin', name: '', updatedAt: new Date().toISOString() });
+        }
+        return list;
+      });
       setTransferSuccess(`Puesto de Administrador Principal transferido exitosamente a ${newEmail}`);
       setShowTransferModal(false);
       setTargetTransferEmail("");
