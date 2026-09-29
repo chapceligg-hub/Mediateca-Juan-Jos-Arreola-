@@ -15,7 +15,7 @@ import {
   upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
   fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
-  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS
+  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS, getAllMergedAdmins
 } from './lib/firebase';
 import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
@@ -337,7 +337,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [adminsList, setAdminsList] = useState<any[]>(DEFAULT_CLIENT_ADMINS);
+  const [adminsList, setAdminsList] = useState<any[]>(() => getAllMergedAdmins());
   const [primarySuperAdminEmail, setPrimarySuperAdminEmail] = useState<string>("chapceligg@gmail.com");
 
   useEffect(() => {
@@ -5461,7 +5461,7 @@ const TechItem = ({ label, value, className = "", icon = null }: any) => (
 );
 
 const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any) => {
-  const [admins, setAdmins] = useState<any[]>(DEFAULT_CLIENT_ADMINS);
+  const [admins, setAdmins] = useState<any[]>(() => getAllMergedAdmins());
   const [primarySuperAdmin, setPrimarySuperAdmin] = useState<string>("chapceligg@gmail.com");
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
@@ -5489,7 +5489,7 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
   const isCurrentPrimary = currentEmail === primarySuperAdmin.toLowerCase().trim() || currentEmail === 'chapceligg@gmail.com';
   const isSuper = userRole === 'admin' || isCurrentPrimary || currentEmail === 'chapceligg@gmail.com' || isBypassActive;
 
-  const loadAdmins = async (forceServer = true) => {
+  const loadAdmins = async (forceServer = false) => {
     setLoading(true);
     setError("");
     try {
@@ -5498,24 +5498,24 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
         getPrimarySuperAdminEmail()
       ]);
       if (serverOrCachedAdmins && Array.isArray(serverOrCachedAdmins)) {
-        setAdmins(serverOrCachedAdmins);
+        setAdmins(prev => getAllMergedAdmins([...prev, ...serverOrCachedAdmins]));
       }
       if (primaryEmail) {
         setPrimarySuperAdmin(primaryEmail);
       }
     } catch (err: any) {
       console.error("Error al cargar admins:", err);
-      setError("No se pudieron cargar los administradores.");
+      setAdmins(getAllMergedAdmins());
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAdmins(true);
+    loadAdmins(false);
     const unsub = subscribeToAdmins((realtimeAdmins) => {
       if (realtimeAdmins && Array.isArray(realtimeAdmins) && realtimeAdmins.length > 0) {
-        setAdmins(realtimeAdmins);
+        setAdmins(prev => getAllMergedAdmins([...prev, ...realtimeAdmins]));
       }
     });
     const unsubPrimary = subscribeToPrimarySuperAdmin((newPrimary) => {
@@ -5565,16 +5565,14 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
       };
       
       // Actualización visual inmediata en UI (0ms)
-      setAdmins(prev => {
-        const filtered = prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== email);
-        return [...filtered, payload];
-      });
+      setAdmins(prev => getAllMergedAdmins([...prev, payload]));
 
       await upsertAdmin(payload);
+      setAdmins(getAllMergedAdmins());
       setNewEmail("");
       setNewName("");
       setNewRole("editor");
-      setTransferSuccess(`Cuenta ${email} agregada correctamente.`);
+      setTransferSuccess(`Cuenta ${email} guardada y protegida permanentemente.`);
       setTimeout(() => setTransferSuccess(""), 3500);
     } catch (err: any) {
       setError(err?.message || "Error al registrar el administrador.");
@@ -5681,6 +5679,7 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
         } else {
           await upsertAdmin(payload);
         }
+        setAdmins(getAllMergedAdmins());
         setEditingEmail(null);
         setTransferSuccess("Cambios guardados exitosamente.");
         setTimeout(() => setTransferSuccess(""), 3500);
@@ -5717,6 +5716,7 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
       setUserToDelete(null);
       setAdmins(prev => prev.filter(a => (a.email || a.id || '').toLowerCase().trim() !== target));
       await deleteAdmin(target);
+      setAdmins(getAllMergedAdmins());
       setTransferSuccess(`Cuenta ${target} eliminada correctamente.`);
       setTimeout(() => setTransferSuccess(""), 3500);
     } catch (err: any) {
@@ -5751,6 +5751,7 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
        };
        setAdmins(prev => prev.map(a => (a.email || a.id || '').toLowerCase().trim() === target ? { ...a, role, updatedAt: updatedPayload.updatedAt } : a));
        await upsertAdmin(updatedPayload);
+       setAdmins(getAllMergedAdmins());
        setTransferSuccess(`Rol de ${target} actualizado a ${role === 'admin' ? 'Administrador' : 'Editor'}.`);
        setTimeout(() => setTransferSuccess(""), 3000);
     } catch (err: any) {
@@ -5783,18 +5784,7 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
     try {
       await transferPrimarySuperAdmin(newEmail, primarySuperAdmin, true);
       setPrimarySuperAdmin(newEmail);
-      setAdmins(prev => {
-        const list = [...prev];
-        const curIdx = list.findIndex(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim());
-        if (curIdx > -1) list[curIdx].role = 'admin';
-        const newIdx = list.findIndex(a => (a.email || a.id || '').toLowerCase().trim() === newEmail);
-        if (newIdx > -1) {
-          list[newIdx].role = 'admin';
-        } else {
-          list.unshift({ email: newEmail, id: newEmail, role: 'admin', name: '', updatedAt: new Date().toISOString() });
-        }
-        return list;
-      });
+      setAdmins(getAllMergedAdmins());
       setTransferSuccess(`Puesto de Administrador Principal transferido exitosamente a ${newEmail}`);
       setShowTransferModal(false);
       setTargetTransferEmail("");
@@ -5825,7 +5815,31 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
     );
   }
 
-  const additionalAdmins = admins.filter(a => (a.email || a.id || '').toLowerCase().trim() !== primarySuperAdmin.toLowerCase().trim());
+  const uniqueAdmins = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const a of admins) {
+      if (!a) continue;
+      const em = (a.email || a.id || '').toLowerCase().trim();
+      if (!em) continue;
+      const existing = map.get(em);
+      if (!existing) {
+        map.set(em, { ...a, email: em, id: em });
+      } else {
+        const aTime = a.updatedAt || a.createdAt || "";
+        const exTime = existing.updatedAt || existing.createdAt || "";
+        const base = aTime >= exTime ? { ...existing, ...a } : { ...a, ...existing };
+        const name = (a.name !== undefined && String(a.name).trim()) ? String(a.name).trim() : (existing.name || "");
+        const role = a.role || existing.role || "editor";
+        map.set(em, { ...base, email: em, id: em, name, role });
+      }
+    }
+    return Array.from(map.values());
+  }, [admins]);
+
+  const additionalAdmins = useMemo(() => {
+    const primary = (primarySuperAdmin || 'chapceligg@gmail.com').toLowerCase().trim();
+    return uniqueAdmins.filter(a => (a.email || a.id || '').toLowerCase().trim() !== primary);
+  }, [uniqueAdmins, primarySuperAdmin]);
 
   return (
     <div className="flex flex-col gap-5 w-full font-sans">
@@ -5991,7 +6005,7 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
       <div className="flex flex-col gap-3 max-h-[520px] overflow-y-auto p-1 pb-4 custom-scrollbar">
         {/* Administrador Principal Card */}
         {(() => {
-          const primaryAdminObj = admins.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || DEFAULT_CLIENT_ADMINS.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || { email: primarySuperAdmin, name: '', role: 'admin' };
+          const primaryAdminObj = uniqueAdmins.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || DEFAULT_CLIENT_ADMINS.find(a => (a.email || a.id || '').toLowerCase().trim() === primarySuperAdmin.toLowerCase().trim()) || { email: primarySuperAdmin, name: '', role: 'admin' };
           const customName = (primaryAdminObj.name || '').trim();
           const hasCustomName = Boolean(customName && customName !== primarySuperAdmin && !['administrador', 'editor', 'administrador principal', 'admin'].includes(customName.toLowerCase()));
           const displayName = hasCustomName ? customName : primarySuperAdmin;
@@ -6160,8 +6174,9 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
         {additionalAdmins.map(a => {
           const aEmail = (a.email || a.id || '').toLowerCase().trim();
           const customName = (a.name || '').trim();
+          const hasCustomName = Boolean(customName && customName.toLowerCase() !== aEmail && !['administrador', 'editor', 'admin', 'administrador principal'].includes(customName.toLowerCase()));
           const roleLabel = a.role === 'admin' ? 'Administrador' : 'Editor';
-          const displayName = customName || roleLabel;
+          const displayName = hasCustomName ? customName : aEmail;
           const isDeletingThis = userToDelete === aEmail;
           const isEditingThis = editingEmail === aEmail;
           const isSelf = aEmail === currentEmail;
@@ -6328,10 +6343,14 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
                       {displayName}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                      <span className={`text-xs font-normal truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={aEmail}>
-                        {aEmail}
-                      </span>
-                      <span className={`text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>•</span>
+                      {hasCustomName && (
+                        <>
+                          <span className={`text-xs font-normal truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={aEmail}>
+                            {aEmail}
+                          </span>
+                          <span className={`text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>•</span>
+                        </>
+                      )}
                       <span className={`text-[10px] uppercase font-bold tracking-wider shrink-0 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
                         {roleLabel}
                       </span>

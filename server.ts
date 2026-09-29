@@ -273,6 +273,14 @@ const DEFAULT_PERSISTENT_ADMINS: any[] = [
     updatedAt: "2026-09-23T16:51:40.205Z"
   },
   {
+    id: "lizbeth.hernandez@udgvirtual.udg.mx",
+    email: "lizbeth.hernandez@udgvirtual.udg.mx",
+    role: "editor",
+    name: "lizbeth hernandez",
+    createdAt: "2026-09-21T19:28:27.162Z",
+    updatedAt: "2026-09-22T17:37:40.371Z"
+  },
+  {
     id: "urielcg12@hotmail.com",
     email: "urielcg12@hotmail.com",
     role: "editor",
@@ -615,7 +623,12 @@ app.post("/api/admins/sync", (req, res) => {
     return res.status(400).json({ error: "Se esperaba un array de administradores" });
   }
   const primary = loadPrimarySuperAdmin();
-  const deletedSet = new Set(loadDeletedAdminIds());
+
+  // Los correos que se están sincronizando activamente ya no deben considerarse eliminados
+  const incomingKeys = new Set(list.map(item => (item?.email || item?.id || "").trim().toLowerCase()).filter(Boolean));
+  let currentDeleted = loadDeletedAdminIds().filter(id => !incomingKeys.has(id));
+  saveDeletedAdminIds(currentDeleted);
+  const deletedSet = new Set(currentDeleted);
   deletedSet.delete(primary);
 
   const current = loadServerAdmins();
@@ -655,6 +668,16 @@ app.post("/api/admins/sync", (req, res) => {
   res.json({ success: true, count: merged.length });
 });
 
+app.post("/api/admins/deleted/unrecord", (req, res) => {
+  const email = (req.body?.email || "").trim().toLowerCase();
+  if (email) {
+    const filtered = loadDeletedAdminIds().filter(id => id !== email);
+    saveDeletedAdminIds(filtered);
+    broadcastAdminsUpdate();
+  }
+  res.json({ success: true });
+});
+
 app.delete("/api/admins/:email", (req, res) => {
   const email = (req.params.email || "").trim().toLowerCase();
   const primary = loadPrimarySuperAdmin();
@@ -676,26 +699,39 @@ app.delete("/api/admins/:email", (req, res) => {
 
 // --- REGISTRO Y SINCRONIZACIÓN DE PELÍCULAS EN TIEMPO REAL (0 LECTURAS FIRESTORE) ---
 const MOVIES_FILE = path.join(process.cwd(), "movies-registry.json");
+const TMP_MOVIES_FILE = path.join("/tmp", "movies-registry.json");
 const moviesStreamClients = new Set<express.Response>();
+let memoryMoviesCache: any[] | null = null;
 
 function loadServerMovies(): any[] {
+  if (memoryMoviesCache && Array.isArray(memoryMoviesCache) && memoryMoviesCache.length > 0) {
+    return memoryMoviesCache;
+  }
   try {
-    if (fs.existsSync(MOVIES_FILE)) {
-      const raw = fs.readFileSync(MOVIES_FILE, "utf-8");
+    const fileToRead = fs.existsSync(TMP_MOVIES_FILE) ? TMP_MOVIES_FILE : (fs.existsSync(MOVIES_FILE) ? MOVIES_FILE : null);
+    if (fileToRead) {
+      const raw = fs.readFileSync(fileToRead, "utf-8");
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryMoviesCache = parsed;
+        return parsed;
+      }
     }
   } catch (e) {
     console.warn("Error leyendo movies-registry.json:", e);
   }
-  return [];
+  return memoryMoviesCache || [];
 }
 
 function saveServerMovies(movies: any[]) {
+  memoryMoviesCache = movies;
+  const payload = JSON.stringify(movies, null, 2);
   try {
-    fs.writeFileSync(MOVIES_FILE, JSON.stringify(movies, null, 2), "utf-8");
+    fs.writeFileSync(MOVIES_FILE, payload, "utf-8");
   } catch (e) {
-    console.warn("Error guardando movies-registry.json:", e);
+    try {
+      fs.writeFileSync(TMP_MOVIES_FILE, payload, "utf-8");
+    } catch (_) {}
   }
 }
 
