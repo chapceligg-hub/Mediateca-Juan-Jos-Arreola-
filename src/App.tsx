@@ -5667,13 +5667,6 @@ const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any)
         });
 
         if (newTargetEmail !== originalEmail) {
-          try {
-            await fetch(`/api/admins/${encodeURIComponent(originalEmail)}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-          } catch (_) {}
           await deleteAdmin(originalEmail);
           await upsertAdmin(payload);
         } else {
