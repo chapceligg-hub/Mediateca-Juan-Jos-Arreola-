@@ -5317,7 +5317,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
                   </button>
 
-                  {filteredMovies.length > 0 && filteredMovies.length !== movies.length && (
+                  {/* Botón CSV Filtrado / Pestaña Activa */}
+                  {(filteredMovies.length > 0 && (filteredMovies.length !== movies.length || activeExploreTab !== 'peliculas' || showReviewOnly || showHistoryOnly || selectedGenre !== 'Todos' || !!selectedLetter || !!selectedYearRange || !!searchTerm.trim())) && (
                     <button
                       type="button"
                       id="btn-download-csv-filtered"
@@ -5326,7 +5327,16 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         if (isExporting) return;
                         setIsExporting(true);
                         try {
-                          const success = await exportToCleanCSV(filteredMovies, "catalogo_filtrado");
+                          const tabLabel = activeExploreTab === 'series' 
+                            ? 'series' 
+                            : activeExploreTab === 'centauro' 
+                              ? 'centauro' 
+                              : showReviewOnly 
+                                ? 'revision' 
+                                : showHistoryOnly 
+                                  ? 'historial' 
+                                  : 'vista_filtrada';
+                          const success = await exportToCleanCSV(filteredMovies, `catalogo_${tabLabel}`, true);
                           if (success) setShowExportModal(false);
                         } finally {
                           setIsExporting(false);
@@ -5342,9 +5352,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <Download size={16} className={`shrink-0 ${isDayMode ? 'text-amber-600' : 'text-amber-400'}`} />
                         <div>
                           <span className={`text-xs font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900 group-hover:text-amber-700' : 'text-zinc-200 group-hover:text-amber-300'}`}>
-                            CSV Vista Filtrada ({filteredMovies.length})
+                            CSV {activeExploreTab === 'series' ? 'Pestaña Series' : activeExploreTab === 'centauro' ? 'Pestaña Centauro' : 'Vista Filtrada'} ({filteredMovies.length})
                           </span>
-                          <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Solo registros filtrados</span>
+                          <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Solo registros de la sección/filtro actual</span>
                         </div>
                       </div>
                       <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
@@ -5362,7 +5372,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       if (isExporting) return;
                       setIsExporting(true);
                       try {
-                        const success = await exportToJSON(movies, "catalogo_completo");
+                        const success = await exportToJSON(movies, "catalogo_completo", false);
                         if (success) setShowExportModal(false);
                       } finally {
                         setIsExporting(false);
@@ -5386,7 +5396,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
                   </button>
 
-                  {filteredMovies.length > 0 && filteredMovies.length !== movies.length && (
+                  {(filteredMovies.length > 0 && (filteredMovies.length !== movies.length || activeExploreTab !== 'peliculas' || showReviewOnly || showHistoryOnly || selectedGenre !== 'Todos' || !!selectedLetter || !!selectedYearRange || !!searchTerm.trim())) && (
                     <button
                       type="button"
                       id="btn-download-json-filtered"
@@ -5395,7 +5405,16 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         if (isExporting) return;
                         setIsExporting(true);
                         try {
-                          const success = await exportToJSON(filteredMovies, "catalogo_filtrado");
+                          const tabLabel = activeExploreTab === 'series' 
+                            ? 'series' 
+                            : activeExploreTab === 'centauro' 
+                              ? 'centauro' 
+                              : showReviewOnly 
+                                ? 'revision' 
+                                : showHistoryOnly 
+                                  ? 'historial' 
+                                  : 'vista_filtrada';
+                          const success = await exportToJSON(filteredMovies, `catalogo_${tabLabel}`, true);
                           if (success) setShowExportModal(false);
                         } finally {
                           setIsExporting(false);
@@ -5411,9 +5430,9 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <Download size={16} className={`shrink-0 ${isDayMode ? 'text-amber-600' : 'text-amber-400'}`} />
                         <div>
                           <span className={`text-xs font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900 group-hover:text-amber-700' : 'text-zinc-200 group-hover:text-amber-300'}`}>
-                            JSON Vista Filtrada ({filteredMovies.length})
+                            JSON {activeExploreTab === 'series' ? 'Pestaña Series' : activeExploreTab === 'centauro' ? 'Pestaña Centauro' : 'Vista Filtrada'} ({filteredMovies.length})
                           </span>
-                          <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Solo registros filtrados en JSON</span>
+                          <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Solo registros de la sección/filtro en JSON</span>
                         </div>
                       </div>
                       <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />

@@ -313,18 +313,18 @@ export const exportToExcelWithTabs = async (movies: Movie[], filteredMovies?: Mo
 /**
  * Genera un archivo CSV con codificación UTF-8 BOM reflejando 100% intactos los URLs y Base64 de póster.
  */
-export const exportToCleanCSV = async (movies: Movie[], filenameSuffix = "catalogo"): Promise<boolean> => {
+export const exportToCleanCSV = async (movies: Movie[], filenameSuffix = "catalogo", isFiltered = false): Promise<boolean> => {
   try {
-    const allMovies = await consolidateAllMovies(movies);
+    const listToExport = isFiltered ? movies : await consolidateAllMovies(movies);
 
-    if (!allMovies || allMovies.length === 0) {
+    if (!listToExport || listToExport.length === 0) {
       alert("No hay elementos para exportar en CSV.");
       return false;
     }
 
     const rows = [
       EXPORT_HEADERS,
-      ...allMovies.map((m, idx) => formatMovieToRow(m, idx, false))
+      ...listToExport.map((m, idx) => formatMovieToRow(m, idx, false))
     ];
 
     const csvLines = rows.map(row => 
@@ -359,19 +359,19 @@ export const exportToCleanCSV = async (movies: Movie[], filenameSuffix = "catalo
 };
 
 /**
- * Genera un archivo JSON (.json) con el catálogo estructurado completo,
+ * Genera un archivo JSON (.json) con el catálogo estructurado completo o filtrado,
  * reflejando todas las propiedades, enlaces de imágenes y Base64 en fidelidad 100%.
  */
-export const exportToJSON = async (movies: Movie[], filenameSuffix = "catalogo"): Promise<boolean> => {
+export const exportToJSON = async (movies: Movie[], filenameSuffix = "catalogo", isFiltered = false): Promise<boolean> => {
   try {
-    const allMovies = await consolidateAllMovies(movies);
+    const listToExport = isFiltered ? movies : await consolidateAllMovies(movies);
 
-    if (!allMovies || allMovies.length === 0) {
+    if (!listToExport || listToExport.length === 0) {
       alert("No hay elementos para exportar en JSON.");
       return false;
     }
 
-    const jsonContent = JSON.stringify(allMovies, null, 2);
+    const jsonContent = JSON.stringify(listToExport, null, 2);
     const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
