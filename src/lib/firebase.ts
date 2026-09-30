@@ -4,7 +4,6 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  initializeFirestore, memoryLocalCache,
   getDocsFromCache, query, orderBy, limit, where, onSnapshot, getDocFromServer
 } from 'firebase/firestore';
 import { get, set } from 'idb-keyval';
@@ -12,28 +11,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Inicializar Firestore con memoria local y long-polling forzado:
-// Esto previene al 100% fallos internos de WebChannel y cuellos de botella de IndexedDB residual
-export const db = initializeFirestore(app, {
-  localCache: memoryLocalCache(),
-  experimentalForceLongPolling: true,
-}, (firebaseConfig as any).firestoreDatabaseId);
-
+// Inicializar Firestore con el databaseId explícito del proyecto
+export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
-
-// Validar conexión a Firestore al iniciar
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Aviso de conectividad Firebase: el cliente está operando en modo desconectado/offline.");
-    }
-  }
-}
-testConnection().catch(() => {});
 
 // Manejo estandarizado de errores de Firestore según la especificación
 export enum OperationType {
@@ -83,6 +65,18 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   return errInfo;
 }
 
+// Validar conexión a Firestore al iniciar
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Aviso de conectividad Firebase: el cliente está operando en modo offline.");
+    }
+  }
+}
+testConnection().catch(() => {});
+
 export const signInWithGoogle = async () => {
   const result = await signInWithPopup(auth, provider);
   return result.user || result;
@@ -107,7 +101,7 @@ export const isGoogleAccountEmail = (email: string): boolean => {
 };
 
 export const recordGoogleAuth = async (_email: string) => {
-  // Operación local sin overhead
+  // Operación local
 };
 
 // Solicitar almacenamiento persistente al navegador para evitar desalojos automáticos (iOS Safari, Android Chrome)
@@ -125,7 +119,7 @@ requestPersistentStorage();
 
 // ==========================================
 // CANALES DE SINCRONIZACIÓN BROADCASTCHANNEL
-// (0ms de latencia entre pestañas locales)
+// (0ms de latencia entre pestañas en el mismo navegador)
 // ==========================================
 let movieBroadcastChannel: BroadcastChannel | null = null;
 try {
@@ -142,8 +136,8 @@ try {
 } catch (_) {}
 
 // ==========================================
-// PERSISTENCIA INMUTABLE LOCAL (PELÍCULAS)
-// (CacheStorage + IndexedDB + Memoria RAM)
+// PERSISTENCIA MULTI-NIVEL INMUTABLE (PELÍCULAS)
+// (RAM + IndexedDB + CacheStorage + localStorage + Servidor)
 // ==========================================
 const CACHE_STORAGE_NAME = 'videoteca_permanent_catalog_v1';
 const CACHE_STORAGE_URL = '/__videoteca_catalog_cache_store.json';
@@ -161,13 +155,12 @@ export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boole
   const currentCount = currentMovies.length;
   const newCount = newMovies.length;
   
-  // Proteger la memoria contra vaciados accidentales o pérdidas por fallos de red
   if (newCount === 0 && currentCount > 0) {
-    console.warn(`[Integrity Check] Se bloqueó intento de vaciar la caché. Actual: ${currentCount}, Nuevo: ${newCount}`);
+    console.warn(`[Integrity Check] Se bloqueó intento de vaciar la memoria. Actual: ${currentCount}, Nuevo: ${newCount}`);
     return false;
   }
   if (currentCount > 10 && newCount < (currentCount * 0.15)) {
-    console.warn(`[Integrity Check] Alerta de reducción drástica de películas. Se bloqueó sobreescribir la caché. Actual: ${currentCount}, Nuevo: ${newCount}`);
+    console.warn(`[Integrity Check] Alerta de reducción drástica de películas. Se bloqueó sobreescribir la memoria. Actual: ${currentCount}, Nuevo: ${newCount}`);
     return false;
   }
   return true;
@@ -197,13 +190,38 @@ const getFromCacheStorage = async (): Promise<any[] | null> => {
   return null;
 };
 
+// Sincronización al servidor en lotes pequeños (chunks de 40 películas ~80KB) para NUNCA exceder el límite 4.5MB de Vercel
+let isChunkSyncRunning = false;
+export const syncMoviesToServerChunked = async (movies: any[]) => {
+  if (isChunkSyncRunning || !Array.isArray(movies) || movies.length === 0) return;
+  isChunkSyncRunning = true;
+  try {
+    const CHUNK_SIZE = 40;
+    for (let i = 0; i < movies.length; i += CHUNK_SIZE) {
+      const chunk = movies.slice(i, i + CHUNK_SIZE);
+      await fetch('/api/movies/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(chunk)
+      }).catch(() => {});
+      if (i + CHUNK_SIZE < movies.length) {
+        await new Promise(r => setTimeout(r, 150));
+      }
+    }
+  } catch (_) {
+  } finally {
+    isChunkSyncRunning = false;
+  }
+};
+
+// Recuperación exhaustiva multi-nivel del catálogo local
 export const getCachedMovies = async (): Promise<any[] | null> => {
   // 1. Memoria RAM instantánea (0ms)
   if (lastKnownMoviesList && Array.isArray(lastKnownMoviesList) && lastKnownMoviesList.length > 0) {
     return lastKnownMoviesList;
   }
 
-  // 2. IndexedDB (idb-keyval)
+  // 2. IndexedDB principal (idb-keyval con videoteca_movies_cache)
   try {
     const cache = await get("videoteca_movies_cache");
     if (cache) {
@@ -218,13 +236,65 @@ export const getCachedMovies = async (): Promise<any[] | null> => {
     console.warn("Aviso leyendo IndexedDB de películas:", e);
   }
 
-  // 3. CacheStorage permanente (inmune a desalojos de IndexedDB)
+  // 3. Claves alternativas en IndexedDB
+  const altKeys = ["videoteca_movies", "videoteca_catalog", "movies_cache", "movies"];
+  for (const altKey of altKeys) {
+    try {
+      const altData = await get(altKey);
+      if (altData) {
+        const parsed = typeof altData === 'string' ? JSON.parse(altData) : altData;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log(`[Cache Recovery] Películas recuperadas desde clave '${altKey}' en IndexedDB (${parsed.length} títulos)`);
+          lastKnownMoviesList = parsed;
+          await set("videoteca_movies_cache", parsed);
+          saveToCacheStorage(parsed).catch(() => {});
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 4. CacheStorage permanente (inmune a desalojos de IndexedDB)
   try {
     const fromCacheStorage = await getFromCacheStorage();
     if (fromCacheStorage && fromCacheStorage.length > 0) {
+      console.log(`[Cache Recovery] Películas recuperadas desde CacheStorage permanente (${fromCacheStorage.length} títulos)`);
       lastKnownMoviesList = fromCacheStorage;
       set("videoteca_movies_cache", fromCacheStorage).catch(() => {});
       return fromCacheStorage;
+    }
+  } catch (_) {}
+
+  // 5. localStorage (por si IndexedDB fue limpiado o en navegadores restrictivos)
+  const lsKeys = ["videoteca_movies_cache", "videoteca_movies", "videoteca_catalog", "videoteca_backup_catalog"];
+  for (const lsKey of lsKeys) {
+    try {
+      const raw = localStorage.getItem(lsKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log(`[Cache Recovery] Películas recuperadas desde localStorage '${lsKey}' (${parsed.length} títulos)`);
+          lastKnownMoviesList = parsed;
+          await set("videoteca_movies_cache", parsed);
+          saveToCacheStorage(parsed).catch(() => {});
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 6. Servidor central (/api/movies) como respaldo de red rápido y sin coste de Firestore
+  try {
+    const res = await fetch('/api/movies');
+    if (res.ok) {
+      const serverMovies = await res.json();
+      if (Array.isArray(serverMovies) && serverMovies.length > 0) {
+        console.log(`[Cache Recovery] Catálogo obtenido desde servidor central (${serverMovies.length} títulos)`);
+        lastKnownMoviesList = serverMovies;
+        await set("videoteca_movies_cache", serverMovies);
+        saveToCacheStorage(serverMovies).catch(() => {});
+        return serverMovies;
+      }
     }
   } catch (_) {}
 
@@ -241,9 +311,20 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
       lastKnownMoviesList = newMovies;
       await set("videoteca_movies_cache", newMovies);
       await saveToCacheStorage(newMovies);
+
+      // Copia de seguridad en localStorage si cabe en 4MB
+      try {
+        const serialized = JSON.stringify(newMovies);
+        if (serialized.length < 3.5 * 1024 * 1024) {
+          localStorage.setItem("videoteca_movies_cache", serialized);
+        }
+      } catch (_) {}
+
+      // Sincronizar al servidor en lotes pequeños en segundo plano (0 bloqueo, sin error 413)
+      syncMoviesToServerChunked(newMovies);
     }
   } catch (e) {
-    console.error("Error al escribir en la caché local IndexedDB:", e);
+    console.error("Error al escribir en la memoria local:", e);
   }
 };
 
@@ -299,6 +380,19 @@ export const syncDeletedMovieIds = async (): Promise<string[]> => {
       if (!Array.isArray(localDeleted)) localDeleted = [];
     }
   } catch (_) {}
+
+  try {
+    const res = await fetch('/api/movies/deleted');
+    if (res.ok) {
+      const serverDeleted = await res.json();
+      if (Array.isArray(serverDeleted) && serverDeleted.length > 0) {
+        const combined = Array.from(new Set([...localDeleted, ...serverDeleted])).slice(-1000);
+        await set("videoteca_deleted_ids", combined);
+        return combined;
+      }
+    }
+  } catch (_) {}
+
   return localDeleted;
 };
 
@@ -314,22 +408,104 @@ export const notifyMovieSubscribers = (movies: any[]) => {
   }
 };
 
-let hasRunInitialDeltaSync = false;
+// --- CANAL SSE EN TIEMPO REAL MULTI-DISPOSITIVO (PELÍCULAS) ---
+let globalMovieEventSource: EventSource | null = null;
+let movieReconnectTimeout: any = null;
 
-// Delta Sync inteligente: recupera ÚNICAMENTE películas modificadas desde la última fecha local
-export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) => {
-  if (hasRunInitialDeltaSync) return;
-  hasRunInitialDeltaSync = true;
+const initMovieRealtimeStream = () => {
+  if (typeof window === 'undefined') return;
+  if (globalMovieEventSource && globalMovieEventSource.readyState !== EventSource.CLOSED) return;
 
+  try {
+    globalMovieEventSource = new EventSource('/api/movies/stream');
+
+    globalMovieEventSource.addEventListener('movie_upsert', async (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const incoming = payload?.data || payload;
+        if (incoming && incoming.id) {
+          const deletedIds = await syncDeletedMovieIds();
+          if (deletedIds.includes(incoming.id)) return;
+          const current = (await getCachedMovies()) || [];
+          const merged = mergeMoviesPreservingLocal(current, [incoming], deletedIds);
+          await setCachedMovies(merged, true);
+          notifyMovieSubscribers(merged);
+          if (movieBroadcastChannel) {
+            movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: merged });
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso procesando movie_upsert SSE:", err);
+      }
+    });
+
+    globalMovieEventSource.addEventListener('movie_deleted', async (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const id = payload?.data?.id || payload?.id;
+        if (id) {
+          const current = (await getCachedMovies()) || [];
+          const updated = current.filter((m: any) => m && m.id !== id);
+          await setCachedMovies(updated, true);
+          notifyMovieSubscribers(updated);
+          if (movieBroadcastChannel) {
+            movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: updated });
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso procesando movie_deleted SSE:", err);
+      }
+    });
+
+    globalMovieEventSource.addEventListener('movies_update', async () => {
+      try {
+        const res = await fetch('/api/movies');
+        if (res.ok) {
+          const serverMovies = await res.json();
+          if (Array.isArray(serverMovies) && serverMovies.length > 0) {
+            const deletedIds = await syncDeletedMovieIds();
+            const current = (await getCachedMovies()) || [];
+            const merged = mergeMoviesPreservingLocal(current, serverMovies, deletedIds);
+            await setCachedMovies(merged, true);
+            notifyMovieSubscribers(merged);
+            if (movieBroadcastChannel) {
+              movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: merged });
+            }
+          }
+        }
+      } catch (_) {}
+    });
+
+    globalMovieEventSource.onerror = () => {
+      try { globalMovieEventSource?.close(); } catch (_) {}
+      globalMovieEventSource = null;
+
+      if (!movieReconnectTimeout) {
+        movieReconnectTimeout = setTimeout(() => {
+          movieReconnectTimeout = null;
+          initMovieRealtimeStream();
+        }, 5000);
+      }
+    };
+  } catch (err) {
+    console.warn("Aviso iniciando EventSource de películas:", err);
+  }
+};
+
+// Delta Sync inteligente: consulta novedades en Firestore sin recargar todo el catálogo
+export const runSmartDeltaSyncOnce = async (
+  callback?: (movies: any[]) => void,
+  onError?: (err: any) => void
+) => {
   try {
     const deletedIds = await syncDeletedMovieIds();
     const deletedSet = new Set(deletedIds);
 
     let cached = await getCachedMovies();
 
-    // Si no hay absolutamente nada en local, hacer descarga inicial desde Firestore
+    // Si aún no hay nada en local ni servidor, intentar cargar de Firestore
     if (!cached || cached.length === 0) {
-      console.log("[Smart Delta Sync] Sin catálogo local. Obteniendo catálogo inicial de Firestore...");
+      console.log("[Smart Delta Sync] Sin catálogo local. Consultando Firestore...");
       try {
         const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
         const snapshot = await getDocs(q);
@@ -341,22 +517,22 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
           if (callback) callback(data);
           notifyMovieSubscribers(data);
         }
-      } catch (e) {
-        console.warn("[Smart Delta Sync] Lectura inicial Firestore limitada:", e);
+      } catch (e: any) {
+        const isQuota = e?.message?.includes('Quota') || e?.code === 'resource-exhausted';
+        if (isQuota) {
+          console.warn("[Smart Delta Sync] Cuota diaria de lectura de Firestore agotada. Operando desde almacenamiento local seguro.");
+          if (onError) onError(new Error("QUOTA_EXCEEDED"));
+        } else {
+          console.warn("[Smart Delta Sync] Aviso consultando Firestore:", e);
+          if (onError) onError(e);
+        }
       }
       return;
     }
 
-    const cleanCached = cached.filter(m => m && m.id && !deletedSet.has(m.id));
-    if (cleanCached.length !== cached.length) {
-      await setCachedMovies(cleanCached, true);
-      if (callback) callback(cleanCached);
-      notifyMovieSubscribers(cleanCached);
-    }
-
-    // Identificar el registro más reciente en la memoria local
+    // Si ya hay memoria local, consultar ÚNICAMENTE registros actualizados (Delta Sync)
     let maxTimestamp = "1970-01-01T00:00:00.000Z";
-    for (const m of cleanCached) {
+    for (const m of cached) {
       const t = m.updatedAt || m.createdAt || "";
       if (t && t > maxTimestamp) {
         maxTimestamp = t;
@@ -371,32 +547,38 @@ export const runSmartDeltaSyncOnce = async (callback?: (movies: any[]) => void) 
       }
     } catch (_) {}
 
-    console.log(`[Smart Delta Sync] Verificando novedades posteriores a ${safeQueryTime}...`);
-    const qDelta = query(
-      collection(db, 'movies'),
-      where('updatedAt', '>', safeQueryTime)
-    );
+    try {
+      const qDelta = query(
+        collection(db, 'movies'),
+        where('updatedAt', '>', safeQueryTime)
+      );
 
-    const snapshot = await getDocs(qDelta);
-    if (snapshot.empty) {
-      console.log("[Smart Delta Sync] Catálogo al día. 0 lecturas adicionales consumidas.");
-      return;
+      const snapshot = await getDocs(qDelta);
+      if (snapshot.empty) {
+        return;
+      }
+
+      const deltaMovies = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(m => m && m.id && !deletedSet.has(m.id));
+      
+      const merged = mergeMoviesPreservingLocal(cached, deltaMovies, deletedIds);
+      const cleanMerged = merged.filter(m => m && m.id && !deletedSet.has(m.id));
+
+      await setCachedMovies(cleanMerged, true);
+      if (callback) callback(cleanMerged);
+      notifyMovieSubscribers(cleanMerged);
+    } catch (err: any) {
+      const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+      if (isQuota) {
+        console.warn("[Smart Delta Sync] Cuota diaria de Firestore alcanzada. Catálogo 100% preservado en memoria local.");
+        if (onError) onError(new Error("QUOTA_EXCEEDED"));
+      } else {
+        console.warn("[Smart Delta Sync] Verificación delta finalizada:", err);
+      }
     }
-
-    const deltaMovies = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(m => m && m.id && !deletedSet.has(m.id));
-    
-    console.log(`[Smart Delta Sync] Se sincronizaron ${deltaMovies.length} película(s) actualizada(s).`);
-
-    const merged = mergeMoviesPreservingLocal(cleanCached, deltaMovies, deletedIds);
-    const cleanMerged = merged.filter(m => m && m.id && !deletedSet.has(m.id));
-
-    await setCachedMovies(cleanMerged, true);
-    if (callback) callback(cleanMerged);
-    notifyMovieSubscribers(cleanMerged);
-  } catch (err) {
-    console.log("[Smart Delta Sync] Verificación delta finalizada (operando con copia local segura):", err);
+  } catch (outerErr) {
+    console.warn("[Smart Delta Sync] Error:", outerErr);
   }
 };
 
@@ -412,30 +594,32 @@ if (movieBroadcastChannel) {
 
 export const subscribeToMovies = (
   callback: (movies: any[]) => void, 
-  _onError?: (err: any) => void
+  onError?: (err: any) => void
 ) => {
   movieSubscribers.add(callback);
 
-  // 1. Cargar instantáneamente la copia en memoria local de IndexedDB / CacheStorage (0ms)
-  syncDeletedMovieIds().then(async (deletedIds) => {
-    const offlineData = await getCachedMovies();
+  // 1. Cargar instantáneamente la memoria local y servidor (0ms de latencia inicial)
+  getCachedMovies().then(async (offlineData) => {
+    const deletedIds = await syncDeletedMovieIds();
+    const deletedSet = new Set(deletedIds);
     if (offlineData && offlineData.length > 0) {
-      const deletedSet = new Set(deletedIds);
       const cleaned = offlineData.filter(m => m && m.id && !deletedSet.has(m.id));
       callback(cleaned);
-      if (cleaned.length !== offlineData.length) {
-        await setCachedMovies(cleaned, true);
-      }
+      notifyMovieSubscribers(cleaned);
     }
-    runSmartDeltaSyncOnce(callback);
+    // 2. Consulta y sincronización delta con Firestore
+    runSmartDeltaSyncOnce(callback, onError);
   }).catch(() => {
-    runSmartDeltaSyncOnce(callback);
+    runSmartDeltaSyncOnce(callback, onError);
   });
 
-  // 2. Delta Sync & onSnapshot en segundo plano para cambios en tiempo real
+  // 3. Conexión SSE en tiempo real para sincronización multi-dispositivo
+  initMovieRealtimeStream();
+
+  // 4. Listener de cambios individuales en Firestore en segundo plano (Delta onSnapshot)
   let unsubMovieDelta: (() => void) | null = null;
   getCachedMovies().then((cached) => {
-    let maxTimestamp = new Date().toISOString();
+    let maxTimestamp = "1970-01-01T00:00:00.000Z";
     if (Array.isArray(cached) && cached.length > 0) {
       for (const m of cached) {
         const t = m?.updatedAt || m?.createdAt || "";
@@ -459,8 +643,13 @@ export const subscribeToMovies = (
             movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: merged });
           }
         }
-      }, () => {
-        // Silenciar errores de cuota para mantener funcionamiento transparente
+      }, (err: any) => {
+        const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
+        if (isQuota) {
+          if (onError) onError(new Error("QUOTA_EXCEEDED"));
+        } else {
+          if (onError) onError(err);
+        }
       });
     } catch (_) {}
   }).catch(() => {});
@@ -476,6 +665,20 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   if (!forceServer && offlineData && offlineData.length > 0) {
     return offlineData;
   }
+
+  // Consultar servidor central
+  try {
+    const res = await fetch('/api/movies');
+    if (res.ok) {
+      const serverMovies = await res.json();
+      if (Array.isArray(serverMovies) && serverMovies.length > 0) {
+        const deletedIds = await syncDeletedMovieIds();
+        const merged = mergeMoviesPreservingLocal(offlineData || [], serverMovies, deletedIds);
+        await setCachedMovies(merged, true);
+        return merged;
+      }
+    }
+  } catch (_) {}
 
   const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
 
@@ -517,7 +720,7 @@ export const upsertMovie = async (movie: any) => {
     updatedAt: nowIso
   };
   
-  // 1. Guardar de inmediato en la memoria local persistente y notificar a todas las pestañas
+  // 1. Guardar de inmediato en la memoria local persistente y notificar a todas las pestañas (0ms)
   try {
     const offlineData = await getCachedMovies();
     let list: any[] = [];
@@ -546,14 +749,23 @@ export const upsertMovie = async (movie: any) => {
       await set("videoteca_deleted_ids", deletedList.filter(id => id !== movieId));
     }
   } catch (e) {
-    console.error("Error actualizando la caché local tras upsertMovie:", e);
+    console.error("Error actualizando la memoria local tras upsertMovie:", e);
   }
 
-  // 2. Guardar en Firestore directamente (Delta Sync)
+  // 2. Guardar en el servidor backend central (< 2KB de payload, 100% seguro en Vercel)
+  try {
+    await fetch('/api/movies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(movieData)
+    });
+  } catch (_) {}
+
+  // 3. Guardar en Firestore directamente
   try {
     await setDoc(doc(db, 'movies', movieId), movieData, { merge: true });
   } catch (err) {
-    console.warn("Aviso al guardar en Firestore (registro asegurado en memoria local):", err);
+    console.warn("Aviso al guardar en Firestore (registro asegurado en memoria local y servidor):", err);
   }
 
   return movieData;
@@ -587,10 +799,20 @@ export const updateMovie = async (id: string, updates: any) => {
     }
   } catch (_) {}
 
+  // Sincronizar al servidor backend
+  try {
+    await fetch('/api/movies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...safeUpdates, id })
+    });
+  } catch (_) {}
+
+  // Sincronizar en Firestore
   try {
     await updateDoc(doc(db, 'movies', id), safeUpdates);
   } catch (err) {
-    console.warn("Aviso al actualizar en Firestore (actualizado en memoria local):", err);
+    console.warn("Aviso al actualizar en Firestore (actualizado en memoria local y servidor):", err);
   }
 
   return { id, ...updates };
@@ -614,10 +836,21 @@ export const deleteMovie = async (id: string) => {
     }
   } catch (_) {}
 
+  // Notificar al servidor backend
+  try {
+    await fetch(`/api/movies/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await fetch('/api/movies/deleted', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+  } catch (_) {}
+
+  // Eliminar en Firestore
   try {
     await deleteDoc(doc(db, 'movies', id));
   } catch (err) {
-    console.warn("Aviso al eliminar en Firestore (eliminado en memoria local):", err);
+    console.warn("Aviso al eliminar en Firestore (eliminado en memoria local y servidor):", err);
   }
 };
 
@@ -735,7 +968,6 @@ export const getAllMergedAdmins = (extraList?: any[]): any[] => {
   const perm = getPermanentLocalAdmins();
   const extra = Array.isArray(extraList) ? extraList : [];
 
-  // Los correos creados o editados por el usuario se rescatan siempre
   custom.forEach(c => {
     const em = (c?.email || c?.id || '').toLowerCase().trim();
     if (em) deletedSet.delete(em);
@@ -764,7 +996,6 @@ export const getAllMergedAdmins = (extraList?: any[]): any[] => {
   extra.forEach(addToList);
   custom.forEach(addToList);
 
-  // Asegurar que el Administrador Principal siempre exista con rol 'admin'
   const primaryObj = map.get(primary) || { id: primary, email: primary, role: "admin", name: primary.split("@")[0] };
   primaryObj.role = "admin";
   map.set(primary, primaryObj);
@@ -798,13 +1029,34 @@ export const setCachedAdmins = async (newAdmins: any[], _bypassIntegrity = false
       localStorage.setItem("videoteca_admins_cached_date", today);
       localStorage.setItem("videoteca_admins_last_update", new Date().toISOString());
     } catch (_) {}
+
+    // Respaldar en servidor central en segundo plano
+    try {
+      fetch('/api/admins/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged)
+      }).catch(() => {});
+    } catch (_) {}
   } catch (e) {
-    console.error("Error al guardar en caché local de cuentas:", e);
+    console.error("Error al guardar en memoria local de cuentas:", e);
   }
 };
 
 export const getDeletedAdminsSet = async (): Promise<Set<string>> => {
   const setObj = new Set<string>();
+  try {
+    const res = await fetch('/api/admins/deleted');
+    if (res.ok) {
+      const serverDeleted = await res.json();
+      if (Array.isArray(serverDeleted)) {
+        serverDeleted.forEach(id => {
+          if (id) setObj.add(String(id).trim().toLowerCase());
+        });
+      }
+    }
+  } catch (_) {}
+
   try {
     const raw = localStorage.getItem("videoteca_deleted_admins");
     if (raw) {
@@ -814,6 +1066,7 @@ export const getDeletedAdminsSet = async (): Promise<Set<string>> => {
       }
     }
   } catch (_) {}
+
   const currentPrimary = (localStorage.getItem("videoteca_primary_superadmin") || 'chapceligg@gmail.com').trim().toLowerCase();
   setObj.delete(currentPrimary);
   setObj.delete("chapceligg@gmail.com");
@@ -846,6 +1099,13 @@ export const unrecordDeletedAdmin = (email: string) => {
       }
     }
   } catch (_) {}
+  try {
+    fetch('/api/admins/deleted/unrecord', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: norm })
+    }).catch(() => {});
+  } catch (_) {}
 };
 
 export const isDeletedAdmin = async (email: string): Promise<boolean> => {
@@ -872,6 +1132,25 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     return null;
   }
 
+  // 1. Verificación rápida en servidor backend central
+  try {
+    const res = await fetch(`/api/admins/check/${encodeURIComponent(normalized)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.isAdmin) {
+        return {
+          id: normalized,
+          email: normalized,
+          role: data.role || (isPrimary ? 'admin' : 'editor'),
+          name: data.name || (isPrimary ? 'Alex Cárdenas' : '')
+        };
+      }
+      if (data && data.deleted) {
+        return null;
+      }
+    }
+  } catch (_) {}
+
   if (isPrimary) {
     return { 
       id: normalized, 
@@ -881,6 +1160,7 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     };
   }
 
+  // 2. Verificación en memoria local
   try {
     const offlineAdmins = await getCachedAdmins();
     if (offlineAdmins && Array.isArray(offlineAdmins)) {
@@ -896,7 +1176,7 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     }
   } catch (_) {}
 
-  // Fallback directo a Firestore
+  // 3. Fallback a Firestore
   try {
     const docSnap = await getDoc(doc(db, 'admins', normalized));
     if (docSnap.exists()) {
@@ -915,6 +1195,8 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
 
 const adminSubscribers = new Set<(admins: any[]) => void>();
 const primaryAdminSubscribers = new Set<(primaryEmail: string) => void>();
+let globalAdminEventSource: EventSource | null = null;
+let adminReconnectTimeout: any = null;
 let lastKnownAdminsList: any[] = [];
 
 export const notifyPrimarySuperAdminSubscribers = (primaryEmail: string) => {
@@ -956,6 +1238,50 @@ export const notifyAdminSubscribers = (admins: any[]) => {
   }
 };
 
+const initAdminRealtimeStream = () => {
+  if (typeof window === 'undefined') return;
+  if (globalAdminEventSource && globalAdminEventSource.readyState !== EventSource.CLOSED) return;
+
+  try {
+    globalAdminEventSource = new EventSource('/api/admins/stream');
+
+    globalAdminEventSource.addEventListener('admins_update', async (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload && Array.isArray(payload.admins)) {
+          const merged = getAllMergedAdmins(payload.admins);
+          notifyAdminSubscribers(merged);
+          if (adminBroadcastChannel) {
+            adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: merged });
+          }
+        }
+        if (payload?.primarySuperAdmin) {
+          try {
+            localStorage.setItem("videoteca_primary_superadmin", payload.primarySuperAdmin);
+          } catch (_) {}
+          notifyPrimarySuperAdminSubscribers(payload.primarySuperAdmin);
+        }
+      } catch (err) {
+        console.warn("Aviso al procesar evento de administradores:", err);
+      }
+    });
+
+    globalAdminEventSource.onerror = () => {
+      try { globalAdminEventSource?.close(); } catch (_) {}
+      globalAdminEventSource = null;
+
+      if (!adminReconnectTimeout) {
+        adminReconnectTimeout = setTimeout(() => {
+          adminReconnectTimeout = null;
+          initAdminRealtimeStream();
+        }, 5000);
+      }
+    };
+  } catch (err) {
+    console.warn("Aviso al iniciar EventSource de administradores:", err);
+  }
+};
+
 if (adminBroadcastChannel) {
   adminBroadcastChannel.onmessage = async (event: MessageEvent) => {
     if (event.data?.type === 'ADMINS_UPDATED' && Array.isArray(event.data.admins)) {
@@ -972,7 +1298,7 @@ export const subscribeToAdmins = (
 ) => {
   adminSubscribers.add(callback);
 
-  // 1. Cargar instantáneamente de la memoria local
+  // 1. Cargar instantáneamente de la memoria local (0ms)
   getCachedAdmins().then(async (offlineAdmins) => {
     const deletedSet = await getDeletedAdminsSet();
     if (offlineAdmins && offlineAdmins.length > 0) {
@@ -984,9 +1310,25 @@ export const subscribeToAdmins = (
     } else if (lastKnownAdminsList && lastKnownAdminsList.length > 0) {
       callback(lastKnownAdminsList);
     }
+
+    // 2. Sincronizar con el backend central
+    try {
+      const res = await fetch('/api/admins');
+      if (res.ok) {
+        const serverAdmins = await res.json();
+        if (Array.isArray(serverAdmins) && serverAdmins.length > 0) {
+          const merged = getAllMergedAdmins(serverAdmins);
+          await setCachedAdmins(merged, true);
+          notifyAdminSubscribers(merged);
+        }
+      }
+    } catch (_) {}
   }).catch(() => {});
 
-  // 2. onSnapshot inteligente en segundo plano sobre _registry
+  // 3. Conexión SSE en tiempo real
+  initAdminRealtimeStream();
+
+  // 4. Listener Firestore sobre _registry y _primary_config
   let unsubRegistry: (() => void) | null = null;
   let unsubPrimary: (() => void) | null = null;
   try {
@@ -1055,6 +1397,19 @@ export const runDailyAdminsSyncOnce = async (callback?: (admins: any[]) => void)
 };
 
 export const fetchAdminsOptimized = async (_forceServer = false) => {
+  try {
+    const res = await fetch('/api/admins');
+    if (res.ok) {
+      const serverAdmins = await res.json();
+      if (Array.isArray(serverAdmins) && serverAdmins.length > 0) {
+        const merged = getAllMergedAdmins(serverAdmins);
+        savePermanentLocalAdmins(merged);
+        await set("videoteca_admins_cache", merged);
+        return merged;
+      }
+    }
+  } catch (_) {}
+
   const merged = getAllMergedAdmins();
   savePermanentLocalAdmins(merged);
   return merged;
@@ -1099,7 +1454,21 @@ export const upsertAdmin = async (admin: any) => {
     adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: updatedList });
   }
 
-  // 2. Guardar en Firestore
+  // 2. Guardar en el servidor backend (< 2KB)
+  try {
+    await fetch('/api/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminData)
+    });
+    await fetch('/api/admins/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedList)
+    });
+  } catch (_) {}
+
+  // 3. Guardar en Firestore
   try {
     await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
     await setDoc(doc(db, 'admins', '_registry'), {
@@ -1107,7 +1476,7 @@ export const upsertAdmin = async (admin: any) => {
       updatedAt: new Date().toISOString()
     }, { merge: true });
   } catch (err) {
-    console.warn("Aviso al guardar admin en Firestore (asegurado en memoria local):", err);
+    console.warn("Aviso al guardar admin en Firestore (asegurado en memoria local y servidor):", err);
   }
 
   return adminData;
@@ -1132,7 +1501,12 @@ export const deleteAdmin = async (idOrEmail: string) => {
     adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: filteredList });
   }
 
-  // 2. Eliminar de Firestore
+  // 2. Eliminar en el servidor
+  try {
+    await fetch(`/api/admins/${encodeURIComponent(adminId)}`, { method: 'DELETE' });
+  } catch (_) {}
+
+  // 3. Eliminar de Firestore
   try {
     await deleteDoc(doc(db, 'admins', adminId));
     setDoc(doc(db, 'admins', '_registry'), {
@@ -1140,11 +1514,23 @@ export const deleteAdmin = async (idOrEmail: string) => {
       updatedAt: new Date().toISOString()
     }, { merge: true }).catch(() => {});
   } catch (err) {
-    console.warn("Aviso al eliminar admin en Firestore (eliminado en memoria local):", err);
+    console.warn("Aviso al eliminar admin en Firestore (eliminado en memoria local y servidor):", err);
   }
 };
 
 export const getPrimarySuperAdminEmail = async (): Promise<string> => {
+  try {
+    const res = await fetch('/api/primary-admin');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.email === 'string' && data.email.trim()) {
+        const clean = data.email.trim().toLowerCase();
+        try { localStorage.setItem("videoteca_primary_superadmin", clean); } catch (_) {}
+        return clean;
+      }
+    }
+  } catch (_) {}
+
   try {
     const cached = localStorage.getItem("videoteca_primary_superadmin");
     if (cached && cached.trim()) {
@@ -1179,7 +1565,16 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
     throw new Error("El correo ingresado no es válido.");
   }
 
-  // 1. Guardar en Firestore configuración de Administrador Principal
+  // 1. Servidor backend
+  try {
+    await fetch('/api/primary-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedNew, current: normalizedCurrent, keepPrevious: keepPreviousAsAdmin })
+    });
+  } catch (_) {}
+
+  // 2. Firestore
   try {
     await setDoc(doc(db, 'admins', '_primary_config'), {
       email: normalizedNew,
