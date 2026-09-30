@@ -3024,59 +3024,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       {!isDirectorFilterActive && !isFavoriteOfMonthActive && (
         <div className={`relative z-10 max-w-7xl mx-auto p-6 md:p-12 pb-2 ${selectedGenre !== "Todos" ? "category-section-view" : "archivo-section-view"}`}>
         
-        {/* Banner informativo de estado de sincronización y cuota */}
-        {firestoreError === 'QUOTA_EXCEEDED' && (
-          <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg backdrop-blur-md animate-in fade-in duration-300">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
-                <DatabaseBackup size={18} />
-              </div>
-              <div>
-                <p className="font-bold text-amber-300 text-sm">Modo de Memoria Local Blindada Activo</p>
-                <p className="text-[11px] text-amber-200/80 leading-relaxed mt-0.5">
-                  La cuota diaria gratuita de lecturas de Firebase se ha completado (50,000 unidades/día del plan Spark). El catálogo se está cargando y sincronizando al 100% desde la memoria persistente de tu dispositivo y servidor.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <a 
-                href="https://console.firebase.google.com/project/smart-idiom-384318/firestore/databases/ai-studio-8687fada-5073-404f-bcaa-dcc26b92126e/data?openUpgradeDialog=true" 
-                target="_blank" 
-                rel="noreferrer"
-                className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[11px] transition-colors inline-flex items-center gap-1.5"
-              >
-                <span>Ver cuota en Firebase</span>
-                <ChevronRight size={13} />
-              </a>
-              <button
-                type="button"
-                onClick={() => setFirestoreError(null)}
-                className="p-1.5 rounded-lg text-amber-400 hover:bg-amber-500/20 transition-colors"
-                title="Cerrar aviso"
-              >
-                <X size={15} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {firestoreError && firestoreError !== 'QUOTA_EXCEEDED' && (
-          <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-center justify-between gap-3 shadow-lg backdrop-blur-md animate-in fade-in duration-300">
-            <div className="flex items-center gap-3">
-              <AlertTriangle size={18} className="text-red-400 shrink-0" />
-              <p className="text-[11px] text-red-200 leading-relaxed">{firestoreError}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setFirestoreError(null)}
-              className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors shrink-0"
-              title="Cerrar aviso"
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
-        
         {activeExploreTab === 'series' && filteredMovies.length === 0 && !searchTerm && selectedGenre === "Todos" && !selectedLetter && !selectedYearRange && !showHistoryOnly && !showReviewOnly && (
           <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 animate-in fade-in duration-500 my-12">
             <div className="w-20 h-20 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] group">
