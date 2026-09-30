@@ -7,7 +7,7 @@ import {
   DatabaseBackup, LogIn, LogOut, MapPin, Quote, ShieldAlert, Copy, ClipboardPaste, Upload, Download,
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
-  Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table,
+  Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table, FileCode,
   Mail, RotateCcw, Crown
 } from 'lucide-react';
 import { 
@@ -17,7 +17,7 @@ import {
   getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
   isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS, getAllMergedAdmins
 } from './lib/firebase';
-import { exportToExcelWithTabs, exportToCleanCSV, getExportSummary } from './lib/exportUtils';
+import { exportToExcelWithTabs, exportToCleanCSV, exportToJSON, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
 import { ALPHABET, YEAR_RANGES, DEMO_POSTER } from './constants';
 import { catalogMovieAI, fetchIconicQuote } from './lib/aiService';
@@ -5311,7 +5311,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         <span className={`text-xs font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900 group-hover:text-black' : 'text-zinc-200 group-hover:text-white'}`}>
                           CSV Completo (.csv)
                         </span>
-                        <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Texto plano UTF-8 BOM</span>
+                        <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Texto plano UTF-8 BOM con URLs y Base64</span>
                       </div>
                     </div>
                     <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
@@ -5345,6 +5345,75 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                             CSV Vista Filtrada ({filteredMovies.length})
                           </span>
                           <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Solo registros filtrados</span>
+                        </div>
+                      </div>
+                      <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Opción 3: JSON Estructurado */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    id="btn-download-json-all"
+                    disabled={isExporting}
+                    onClick={async () => {
+                      if (isExporting) return;
+                      setIsExporting(true);
+                      try {
+                        const success = await exportToJSON(movies, "catalogo_completo");
+                        if (success) setShowExportModal(false);
+                      } finally {
+                        setIsExporting(false);
+                      }
+                    }}
+                    className={`flex-1 rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${
+                      isDayMode 
+                        ? 'bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 border border-zinc-300 text-zinc-800 hover:text-zinc-950' 
+                        : 'bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white'
+                    } ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <FileCode size={16} className={`shrink-0 ${isDayMode ? 'text-blue-600' : 'text-blue-400'}`} />
+                      <div>
+                        <span className={`text-xs font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900 group-hover:text-blue-700' : 'text-zinc-200 group-hover:text-blue-300'}`}>
+                          JSON Completo (.json)
+                        </span>
+                        <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Estructura JSON completa con Base64</span>
+                      </div>
+                    </div>
+                    <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
+                  </button>
+
+                  {filteredMovies.length > 0 && filteredMovies.length !== movies.length && (
+                    <button
+                      type="button"
+                      id="btn-download-json-filtered"
+                      disabled={isExporting}
+                      onClick={async () => {
+                        if (isExporting) return;
+                        setIsExporting(true);
+                        try {
+                          const success = await exportToJSON(filteredMovies, "catalogo_filtrado");
+                          if (success) setShowExportModal(false);
+                        } finally {
+                          setIsExporting(false);
+                        }
+                      }}
+                      className={`flex-1 rounded-xl p-3 transition-all duration-200 flex items-center justify-between cursor-pointer font-sans select-none group text-left ${
+                        isDayMode 
+                          ? 'bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 border border-zinc-300 text-zinc-800 hover:text-zinc-950' 
+                          : 'bg-[#131316] hover:bg-[#1a1a1f] active:bg-[#202026] border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white'
+                      } ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Download size={16} className={`shrink-0 ${isDayMode ? 'text-amber-600' : 'text-amber-400'}`} />
+                        <div>
+                          <span className={`text-xs font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900 group-hover:text-amber-700' : 'text-zinc-200 group-hover:text-amber-300'}`}>
+                            JSON Vista Filtrada ({filteredMovies.length})
+                          </span>
+                          <span className={`text-[10px] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Solo registros filtrados en JSON</span>
                         </div>
                       </div>
                       <Download size={15} className={`shrink-0 ml-2 ${isDayMode ? 'text-zinc-600 group-hover:text-zinc-950' : 'text-zinc-400 group-hover:text-white'}`} />
