@@ -191,31 +191,12 @@ const getFromCacheStorage = async (): Promise<any[] | null> => {
   return null;
 };
 
-// Sincronización al servidor en lotes pequeños (chunks de 40 películas ~80KB) para NUNCA exceder el límite 4.5MB de Vercel
-let isChunkSyncRunning = false;
-export const syncMoviesToServerChunked = async (movies: any[]) => {
-  if (isChunkSyncRunning || !Array.isArray(movies) || movies.length === 0) return;
-  isChunkSyncRunning = true;
-  try {
-    const CHUNK_SIZE = 40;
-    for (let i = 0; i < movies.length; i += CHUNK_SIZE) {
-      const chunk = movies.slice(i, i + CHUNK_SIZE);
-      await fetch('/api/movies/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(chunk)
-      }).catch(() => {});
-      if (i + CHUNK_SIZE < movies.length) {
-        await new Promise(r => setTimeout(r, 150));
-      }
-    }
-  } catch (_) {
-  } finally {
-    isChunkSyncRunning = false;
-  }
+// Sincronización al servidor desactivada: El catálogo se sirve directamente desde el cliente (IndexedDB / Firestore) sin intermediarios Serverless de Vercel
+export const syncMoviesToServerChunked = async (_movies: any[]) => {
+  return;
 };
 
-// Recuperación exhaustiva multi-nivel del catálogo local
+// Recuperación exhaustiva multi-nivel del catálogo local (Directo IndexedDB / CacheStorage / RAM)
 export const getCachedMovies = async (): Promise<any[] | null> => {
   // 1. Memoria RAM instantánea (0ms)
   if (lastKnownMoviesList && Array.isArray(lastKnownMoviesList) && lastKnownMoviesList.length > 0) {
@@ -284,21 +265,6 @@ export const getCachedMovies = async (): Promise<any[] | null> => {
     } catch (_) {}
   }
 
-  // 6. Servidor central (/api/movies) como respaldo de red rápido y sin coste de Firestore
-  try {
-    const res = await fetch('/api/movies');
-    if (res.ok) {
-      const serverMovies = await res.json();
-      if (Array.isArray(serverMovies) && serverMovies.length > 0) {
-        console.log(`[Cache Recovery] Catálogo obtenido desde servidor central (${serverMovies.length} títulos)`);
-        lastKnownMoviesList = serverMovies;
-        await set("videoteca_movies_cache", serverMovies);
-        saveToCacheStorage(serverMovies).catch(() => {});
-        return serverMovies;
-      }
-    }
-  } catch (_) {}
-
   return null;
 };
 
@@ -320,9 +286,6 @@ export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false)
           localStorage.setItem("videoteca_movies_cache", serialized);
         }
       } catch (_) {}
-
-      // Sincronizar al servidor en lotes pequeños en segundo plano (0 bloqueo, sin error 413)
-      syncMoviesToServerChunked(newMovies);
     }
   } catch (e) {
     console.error("Error al escribir en la memoria local:", e);
@@ -382,18 +345,6 @@ export const syncDeletedMovieIds = async (): Promise<string[]> => {
     }
   } catch (_) {}
 
-  try {
-    const res = await fetch('/api/movies/deleted');
-    if (res.ok) {
-      const serverDeleted = await res.json();
-      if (Array.isArray(serverDeleted) && serverDeleted.length > 0) {
-        const combined = Array.from(new Set([...localDeleted, ...serverDeleted])).slice(-1000);
-        await set("videoteca_deleted_ids", combined);
-        return combined;
-      }
-    }
-  } catch (_) {}
-
   return localDeleted;
 };
 
@@ -409,88 +360,9 @@ export const notifyMovieSubscribers = (movies: any[]) => {
   }
 };
 
-// --- CANAL SSE EN TIEMPO REAL MULTI-DISPOSITIVO (PELÍCULAS) ---
-let globalMovieEventSource: EventSource | null = null;
-let movieReconnectTimeout: any = null;
-
+// Sincronización en tiempo real directa: BroadcastChannel (pestañas) y onSnapshot Delta (Firestore)
 const initMovieRealtimeStream = () => {
-  if (typeof window === 'undefined') return;
-  if (globalMovieEventSource && globalMovieEventSource.readyState !== EventSource.CLOSED) return;
-
-  try {
-    globalMovieEventSource = new EventSource('/api/movies/stream');
-
-    globalMovieEventSource.addEventListener('movie_upsert', async (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data);
-        const incoming = payload?.data || payload;
-        if (incoming && incoming.id) {
-          const deletedIds = await syncDeletedMovieIds();
-          if (deletedIds.includes(incoming.id)) return;
-          const current = (await getCachedMovies()) || [];
-          const merged = mergeMoviesPreservingLocal(current, [incoming], deletedIds);
-          await setCachedMovies(merged, true);
-          notifyMovieSubscribers(merged);
-          if (movieBroadcastChannel) {
-            movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: merged });
-          }
-        }
-      } catch (err) {
-        console.warn("Aviso procesando movie_upsert SSE:", err);
-      }
-    });
-
-    globalMovieEventSource.addEventListener('movie_deleted', async (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data);
-        const id = payload?.data?.id || payload?.id;
-        if (id) {
-          const current = (await getCachedMovies()) || [];
-          const updated = current.filter((m: any) => m && m.id !== id);
-          await setCachedMovies(updated, true);
-          notifyMovieSubscribers(updated);
-          if (movieBroadcastChannel) {
-            movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: updated });
-          }
-        }
-      } catch (err) {
-        console.warn("Aviso procesando movie_deleted SSE:", err);
-      }
-    });
-
-    globalMovieEventSource.addEventListener('movies_update', async () => {
-      try {
-        const res = await fetch('/api/movies');
-        if (res.ok) {
-          const serverMovies = await res.json();
-          if (Array.isArray(serverMovies) && serverMovies.length > 0) {
-            const deletedIds = await syncDeletedMovieIds();
-            const current = (await getCachedMovies()) || [];
-            const merged = mergeMoviesPreservingLocal(current, serverMovies, deletedIds);
-            await setCachedMovies(merged, true);
-            notifyMovieSubscribers(merged);
-            if (movieBroadcastChannel) {
-              movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: merged });
-            }
-          }
-        }
-      } catch (_) {}
-    });
-
-    globalMovieEventSource.onerror = () => {
-      try { globalMovieEventSource?.close(); } catch (_) {}
-      globalMovieEventSource = null;
-
-      if (!movieReconnectTimeout) {
-        movieReconnectTimeout = setTimeout(() => {
-          movieReconnectTimeout = null;
-          initMovieRealtimeStream();
-        }, 5000);
-      }
-    };
-  } catch (err) {
-    console.warn("Aviso iniciando EventSource de películas:", err);
-  }
+  return;
 };
 
 // Delta Sync inteligente: consulta novedades en Firestore sin recargar todo el catálogo
@@ -614,10 +486,7 @@ export const subscribeToMovies = (
     runSmartDeltaSyncOnce(callback, onError);
   });
 
-  // 3. Conexión SSE en tiempo real para sincronización multi-dispositivo
-  initMovieRealtimeStream();
-
-  // 4. Listener de cambios individuales en Firestore en segundo plano (Delta onSnapshot)
+  // 3. Listener de cambios individuales en Firestore en segundo plano (Delta onSnapshot)
   let unsubMovieDelta: (() => void) | null = null;
   getCachedMovies().then((cached) => {
     let maxTimestamp = "1970-01-01T00:00:00.000Z";
@@ -666,20 +535,6 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   if (!forceServer && offlineData && offlineData.length > 0) {
     return offlineData;
   }
-
-  // Consultar servidor central
-  try {
-    const res = await fetch('/api/movies');
-    if (res.ok) {
-      const serverMovies = await res.json();
-      if (Array.isArray(serverMovies) && serverMovies.length > 0) {
-        const deletedIds = await syncDeletedMovieIds();
-        const merged = mergeMoviesPreservingLocal(offlineData || [], serverMovies, deletedIds);
-        await setCachedMovies(merged, true);
-        return merged;
-      }
-    }
-  } catch (_) {}
 
   const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
 
@@ -753,20 +608,11 @@ export const upsertMovie = async (movie: any) => {
     console.error("Error actualizando la memoria local tras upsertMovie:", e);
   }
 
-  // 2. Guardar en el servidor backend central (< 2KB de payload, 100% seguro en Vercel)
-  try {
-    await fetch('/api/movies', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(movieData)
-    });
-  } catch (_) {}
-
-  // 3. Guardar en Firestore directamente
+  // 2. Guardar en Firestore directamente (Sin intermediarios de Vercel)
   try {
     await setDoc(doc(db, 'movies', movieId), movieData, { merge: true });
   } catch (err) {
-    console.warn("Aviso al guardar en Firestore (registro asegurado en memoria local y servidor):", err);
+    console.warn("Aviso al guardar en Firestore (registro asegurado en memoria local):", err);
   }
 
   return movieData;
@@ -800,20 +646,11 @@ export const updateMovie = async (id: string, updates: any) => {
     }
   } catch (_) {}
 
-  // Sincronizar al servidor backend
-  try {
-    await fetch('/api/movies', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...safeUpdates, id })
-    });
-  } catch (_) {}
-
-  // Sincronizar en Firestore
+  // Sincronizar en Firestore directamente
   try {
     await updateDoc(doc(db, 'movies', id), safeUpdates);
   } catch (err) {
-    console.warn("Aviso al actualizar en Firestore (actualizado en memoria local y servidor):", err);
+    console.warn("Aviso al actualizar en Firestore (actualizado en memoria local):", err);
   }
 
   return { id, ...updates };
@@ -837,21 +674,11 @@ export const deleteMovie = async (id: string) => {
     }
   } catch (_) {}
 
-  // Notificar al servidor backend
-  try {
-    await fetch(`/api/movies/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await fetch('/api/movies/deleted', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
-    });
-  } catch (_) {}
-
-  // Eliminar en Firestore
+  // Eliminar en Firestore directamente
   try {
     await deleteDoc(doc(db, 'movies', id));
   } catch (err) {
-    console.warn("Aviso al eliminar en Firestore (eliminado en memoria local y servidor):", err);
+    console.warn("Aviso al eliminar en Firestore (eliminado en memoria local):", err);
   }
 };
 
