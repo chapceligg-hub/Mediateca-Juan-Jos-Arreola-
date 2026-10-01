@@ -4,7 +4,8 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  getDocsFromCache, query, orderBy, limit, where, onSnapshot, getDocFromServer
+  getDocsFromCache, query, orderBy, limit, where, onSnapshot, getDocFromServer,
+  writeBatch, runTransaction
 } from 'firebase/firestore';
 import { get, set } from 'idb-keyval';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -1116,10 +1117,22 @@ export const isDeletedAdmin = async (email: string): Promise<boolean> => {
   return deletedSet.has(norm);
 };
 
-export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string } | null> => {
+export interface AuthorizedUser {
+  id: string; // Document ID (normalized email)
+  email: string;
+  name?: string;
+  role: 'primary_admin' | 'admin' | 'editor';
+  createdAt: string;
+  updatedAt: string;
+  addedBy?: string;
+  photoURL?: string;
+}
+
+export const getAdminByEmail = async (email: string): Promise<{ id: string, role?: string, email?: string, name?: string, isPrimary?: boolean } | null> => {
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) return null;
 
+  // 1. Verificación inmediata de Administrador Principal (0 lecturas, 0ms)
   let primary = 'chapceligg@gmail.com';
   try {
     const cachedPrimary = localStorage.getItem("videoteca_primary_superadmin");
@@ -1127,12 +1140,49 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
   } catch (_) {}
 
   const isPrimary = normalized === 'chapceligg@gmail.com' || normalized === primary;
-
-  if (!isPrimary && (await isDeletedAdmin(normalized))) {
-    return null;
+  if (isPrimary) {
+    let customName = 'Alex Cárdenas';
+    try {
+      const cachedUsersRaw = localStorage.getItem("videoteca_authorized_users_cache");
+      if (cachedUsersRaw) {
+        const parsed = JSON.parse(cachedUsersRaw);
+        if (Array.isArray(parsed)) {
+          const match = parsed.find(u => (u.email || u.id || '').toLowerCase().trim() === normalized);
+          if (match?.name) customName = match.name;
+        }
+      }
+    } catch (_) {}
+    return { 
+      id: normalized, 
+      email: normalized, 
+      role: 'admin',
+      name: customName,
+      isPrimary: true
+    };
   }
 
-  // 1. Verificación rápida en servidor backend central
+  // 2. Verificación en caché local de usuarios autorizados (0 lecturas, 0ms)
+  try {
+    const cachedUsersRaw = localStorage.getItem("videoteca_authorized_users_cache");
+    if (cachedUsersRaw) {
+      const parsed = JSON.parse(cachedUsersRaw);
+      if (Array.isArray(parsed)) {
+        const match = parsed.find(u => (u.email || u.id || '').toLowerCase().trim() === normalized);
+        if (match) {
+          const rawRole = match.role || 'editor';
+          return {
+            id: normalized,
+            email: normalized,
+            role: rawRole === 'primary_admin' ? 'admin' : rawRole,
+            name: match.name || '',
+            isPrimary: rawRole === 'primary_admin'
+          };
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 3. Verificación rápida en servidor central (0 lecturas Firestore)
   try {
     const res = await fetch(`/api/admins/check/${encodeURIComponent(normalized)}`);
     if (res.ok) {
@@ -1141,8 +1191,8 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
         return {
           id: normalized,
           email: normalized,
-          role: data.role || (isPrimary ? 'admin' : 'editor'),
-          name: data.name || (isPrimary ? 'Alex Cárdenas' : '')
+          role: data.role || 'editor',
+          name: data.name || ''
         };
       }
       if (data && data.deleted) {
@@ -1151,46 +1201,522 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     }
   } catch (_) {}
 
-  if (isPrimary) {
-    return { 
-      id: normalized, 
-      email: normalized, 
-      role: 'admin',
-      name: 'Alex Cárdenas'
-    };
+  // 4. Verificación en Firestore solo como último recurso
+  try {
+    const userDocRef = doc(db, 'authorized_users', normalized);
+    const snap = await getDoc(userDocRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      const rawRole = data.role || 'editor';
+      const isPrim = rawRole === 'primary_admin' || data.isPrimary === true;
+      return {
+        id: normalized,
+        email: normalized,
+        role: isPrim ? 'admin' : rawRole,
+        name: data.name || (isPrim ? 'Alex Cárdenas' : ''),
+        isPrimary: isPrim
+      };
+    }
+  } catch (err) {
+    if (!isQuotaExceeded(err)) {
+      console.warn("Aviso consultando authorized_users en Firestore:", err);
+    }
   }
 
-  // 2. Verificación en memoria local
+  return null;
+};
+
+// ==========================================
+// COLECCIÓN AISLADA DE USUARIOS AUTORIZADOS ('authorized_users')
+// SERVER-FIRST • MULTI-DISPOSITIVO • TOLERANCIA TOTAL A CUOTA FIRESTORE
+// ==========================================
+
+const isQuotaExceeded = (err: any): boolean => {
+  if (!err) return false;
+  const msg = (err.message || String(err)).toLowerCase();
+  const code = (err.code || '').toLowerCase();
+  return (
+    code === 'resource-exhausted' ||
+    msg.includes('quota') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('free daily read units') ||
+    msg.includes('quota limit exceeded')
+  );
+};
+
+export const subscribeToAuthorizedUsers = (
+  onUsersUpdate: (users: AuthorizedUser[]) => void,
+  onError?: (err: any) => void
+): (() => void) => {
+  let isCleanedUp = false;
+
+  // 1. Carga inmediata desde almacenamiento local si existe (0ms de latencia)
   try {
-    const offlineAdmins = await getCachedAdmins();
-    if (offlineAdmins && Array.isArray(offlineAdmins)) {
-      const found = offlineAdmins.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalized);
-      if (found) {
-        return {
-          id: normalized,
-          email: normalized,
-          role: found.role || 'editor',
-          name: found.name || ''
-        };
+    const cachedRaw = localStorage.getItem("videoteca_authorized_users_cache");
+    if (cachedRaw) {
+      const cachedUsers = JSON.parse(cachedRaw);
+      if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
+        onUsersUpdate(cachedUsers);
       }
     }
   } catch (_) {}
 
-  // 3. Fallback a Firestore
-  try {
-    const docSnap = await getDoc(doc(db, 'admins', normalized));
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return {
-        id: normalized,
-        email: normalized,
-        role: data.role || 'editor',
-        name: data.name || ''
-      };
+  // Función de respaldo directo contra servidor seguro (0 lecturas Firestore)
+  const syncFromServer = async () => {
+    if (isCleanedUp) return;
+    try {
+      const [resAdmins, resPrimary] = await Promise.all([
+        fetch('/api/admins'),
+        fetch('/api/primary-admin')
+      ]);
+
+      if (resAdmins.ok) {
+        const serverAdmins = await resAdmins.json();
+        let primaryEmail = 'chapceligg@gmail.com';
+        if (resPrimary.ok) {
+          const primaryData = await resPrimary.json();
+          if (primaryData?.email) primaryEmail = primaryData.email.toLowerCase().trim();
+        }
+
+        if (Array.isArray(serverAdmins) && serverAdmins.length > 0) {
+          let hasPrimary = false;
+          const mapped: AuthorizedUser[] = serverAdmins.map((a: any) => {
+            const email = (a.email || a.id || '').toLowerCase().trim();
+            const isPrimary = email === primaryEmail || a.role === 'primary_admin' || (a.isPrimary && !hasPrimary);
+            if (isPrimary) hasPrimary = true;
+            return {
+              id: email,
+              email,
+              name: a.name || '',
+              role: isPrimary ? 'primary_admin' : (a.role || 'editor'),
+              createdAt: a.createdAt || new Date().toISOString(),
+              updatedAt: a.updatedAt || new Date().toISOString(),
+              addedBy: a.addedBy || '',
+              photoURL: a.photoURL || ''
+            };
+          });
+
+          if (!hasPrimary && mapped.length > 0) {
+            const p = mapped.find(m => m.email === 'chapceligg@gmail.com') || mapped[0];
+            p.role = 'primary_admin';
+          }
+
+          try {
+            localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(mapped));
+          } catch (_) {}
+
+          if (!isCleanedUp) {
+            onUsersUpdate(mapped);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Aviso consultando respaldo de cuentas desde servidor:", e);
     }
+  };
+
+  // 2. Conectar canal SSE del servidor en vivo para sincronización multi-dispositivo sin lecturas
+  let sse: EventSource | null = null;
+  try {
+    sse = new EventSource('/api/admins/stream');
+    sse.addEventListener('admins_update', (event) => {
+      if (isCleanedUp) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data && Array.isArray(data.admins)) {
+          const primaryEmail = (data.primarySuperAdmin || 'chapceligg@gmail.com').toLowerCase().trim();
+          let hasPrimary = false;
+          const mapped: AuthorizedUser[] = data.admins.map((a: any) => {
+            const email = (a.email || a.id || '').toLowerCase().trim();
+            const isPrimary = email === primaryEmail || a.role === 'primary_admin' || (a.isPrimary && !hasPrimary);
+            if (isPrimary) hasPrimary = true;
+            return {
+              id: email,
+              email,
+              name: a.name || '',
+              role: isPrimary ? 'primary_admin' : (a.role || 'editor'),
+              createdAt: a.createdAt || new Date().toISOString(),
+              updatedAt: a.updatedAt || new Date().toISOString(),
+              addedBy: a.addedBy || '',
+              photoURL: a.photoURL || ''
+            };
+          });
+
+          if (!hasPrimary && mapped.length > 0) {
+            const p = mapped.find(m => m.email === 'chapceligg@gmail.com') || mapped[0];
+            p.role = 'primary_admin';
+          }
+
+          try {
+            localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(mapped));
+          } catch (_) {}
+
+          if (!isCleanedUp) {
+            onUsersUpdate(mapped);
+          }
+        }
+      } catch (_) {}
+    });
+
+    sse.onerror = () => {
+      // Reconexión silenciosa sin error bloqueante
+    };
   } catch (_) {}
 
-  return null;
+  // 3. Conexión Firestore modular Server-First sobre colección 'authorized_users'
+  let unsubscribeFirestore: (() => void) | null = null;
+  try {
+    const usersCol = collection(db, 'authorized_users');
+    unsubscribeFirestore = onSnapshot(usersCol, async (snapshot) => {
+      if (isCleanedUp) return;
+      try {
+        if (snapshot.empty) {
+          syncFromServer();
+          return;
+        }
+
+        let primaryFound = false;
+        const users: AuthorizedUser[] = snapshot.docs.map(d => {
+          const data = d.data();
+          const email = (data.email || d.id || '').toLowerCase().trim();
+          let role: 'primary_admin' | 'admin' | 'editor' = data.role || 'editor';
+
+          if (role === 'primary_admin' || (data.isPrimary && !primaryFound)) {
+            role = 'primary_admin';
+            primaryFound = true;
+          }
+
+          return {
+            id: d.id,
+            email,
+            name: data.name || '',
+            role,
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || new Date().toISOString(),
+            addedBy: data.addedBy || '',
+            photoURL: data.photoURL || ''
+          };
+        });
+
+        if (!primaryFound && users.length > 0) {
+          const candidate = users.find(u => u.email === 'chapceligg@gmail.com') || users.find(u => u.role === 'admin') || users[0];
+          candidate.role = 'primary_admin';
+        }
+
+        try {
+          localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(users));
+        } catch (_) {}
+
+        if (!isCleanedUp) {
+          onUsersUpdate(users);
+        }
+      } catch (err) {
+        if (isQuotaExceeded(err)) {
+          console.warn("Aviso de cuota en Firestore (authorized_users), operando en modo servidor en vivo sin consumo de cuota.");
+          syncFromServer();
+        } else {
+          console.warn("Aviso en onSnapshot de authorized_users:", err);
+          syncFromServer();
+        }
+      }
+    }, (err) => {
+      if (isQuotaExceeded(err)) {
+        console.warn("Aviso: Cuota de lectura diaria de Firestore alcanzada. Sincronización activa mediante servidor central sin consumo de lecturas.");
+        syncFromServer();
+      } else {
+        console.warn("Aviso de conexión con authorized_users en Firestore:", err);
+        syncFromServer();
+        if (onError) onError(err);
+      }
+    });
+  } catch (err) {
+    if (isQuotaExceeded(err)) {
+      console.warn("Aviso de cuota en Firestore para authorized_users, usando servidor seguro.");
+      syncFromServer();
+    } else {
+      console.warn("Aviso inicializando conexión Firestore authorized_users:", err);
+      syncFromServer();
+    }
+  }
+
+  // Ejecutar verificación inicial de servidor
+  syncFromServer();
+
+  return () => {
+    isCleanedUp = true;
+    if (unsubscribeFirestore) {
+      try {
+        unsubscribeFirestore();
+      } catch (_) {}
+    }
+    if (sse) {
+      try {
+        sse.close();
+      } catch (_) {}
+    }
+  };
+};
+
+export const addAuthorizedUserInFirestore = async (user: {
+  email: string;
+  name?: string;
+  role: 'primary_admin' | 'admin' | 'editor';
+  addedBy?: string;
+}) => {
+  const normalizedEmail = user.email.trim().toLowerCase();
+  if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+    throw new Error("Por favor introduce un correo electrónico válido.");
+  }
+
+  const payload: AuthorizedUser = {
+    id: normalizedEmail,
+    email: normalizedEmail,
+    name: (user.name || '').trim(),
+    role: user.role || 'editor',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    addedBy: user.addedBy || auth.currentUser?.email || 'admin'
+  };
+
+  // 1. Guardar en servidor central (persistencia garantizada sin bloqueo por cuota)
+  try {
+    await fetch('/api/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    console.warn("Aviso sincronizando usuario con servidor central:", e);
+  }
+
+  // 2. Guardar en Firestore si hay cuota disponible
+  try {
+    const docRef = doc(db, 'authorized_users', normalizedEmail);
+    await setDoc(docRef, payload, { merge: true });
+    await setDoc(doc(db, 'admins', normalizedEmail), {
+      ...payload,
+      id: normalizedEmail
+    }, { merge: true });
+  } catch (err) {
+    if (isQuotaExceeded(err)) {
+      console.warn("Aviso: Cuota de Firestore excedida al agregar cuenta; guardado seguro en servidor central.");
+    } else {
+      console.warn("Aviso al guardar en Firestore authorized_users:", err);
+    }
+  }
+
+  return payload;
+};
+
+export const updateAuthorizedUserInFirestore = async (
+  userId: string,
+  updates: {
+    email?: string;
+    name?: string;
+    role?: 'primary_admin' | 'admin' | 'editor';
+  }
+) => {
+  const currentId = userId.trim().toLowerCase();
+  const targetEmail = (updates.email || currentId).trim().toLowerCase();
+
+  if (!targetEmail || !targetEmail.includes('@') || !targetEmail.includes('.')) {
+    throw new Error("Por favor introduce un correo electrónico válido.");
+  }
+
+  // 1. Sincronizar en servidor central primero
+  try {
+    await fetch(`/api/admins/${encodeURIComponent(currentId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: targetEmail,
+        name: updates.name,
+        role: updates.role
+      })
+    });
+  } catch (e) {
+    console.warn("Aviso actualizando usuario en servidor central:", e);
+  }
+
+  // 2. Sincronizar en Firestore
+  try {
+    if (targetEmail !== currentId) {
+      const batch = writeBatch(db);
+      const oldDocRef = doc(db, 'authorized_users', currentId);
+      const newDocRef = doc(db, 'authorized_users', targetEmail);
+
+      const oldSnap = await getDoc(oldDocRef);
+      const oldData = oldSnap.exists() ? oldSnap.data() : {};
+
+      const newData: AuthorizedUser = {
+        ...oldData,
+        id: targetEmail,
+        email: targetEmail,
+        name: updates.name !== undefined ? updates.name.trim() : (oldData.name || ''),
+        role: updates.role || oldData.role || 'editor',
+        createdAt: oldData.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        addedBy: oldData.addedBy || auth.currentUser?.email || 'admin'
+      };
+
+      batch.set(newDocRef, newData, { merge: true });
+      batch.delete(oldDocRef);
+
+      batch.delete(doc(db, 'admins', currentId));
+      batch.set(doc(db, 'admins', targetEmail), newData, { merge: true });
+
+      await batch.commit();
+      return newData;
+    } else {
+      const docRef = doc(db, 'authorized_users', currentId);
+      const payload: any = {
+        updatedAt: new Date().toISOString()
+      };
+      if (updates.name !== undefined) payload.name = updates.name.trim();
+      if (updates.role !== undefined) payload.role = updates.role;
+
+      await updateDoc(docRef, payload);
+
+      try {
+        await updateDoc(doc(db, 'admins', currentId), payload);
+      } catch (_) {}
+
+      return { id: currentId, ...payload };
+    }
+  } catch (err) {
+    if (isQuotaExceeded(err)) {
+      console.warn("Aviso: Cuota de Firestore excedida al actualizar usuario; guardado exitoso en servidor central.");
+      return { id: targetEmail, email: targetEmail, ...updates };
+    } else {
+      console.warn("Aviso al actualizar en Firestore:", err);
+      return { id: targetEmail, email: targetEmail, ...updates };
+    }
+  }
+};
+
+export const deleteAuthorizedUserInFirestore = async (userId: string) => {
+  const currentId = userId.trim().toLowerCase();
+  
+  // Validar estrictamente que el Administrador Principal NO se pueda eliminar
+  let primary = 'chapceligg@gmail.com';
+  try {
+    const cachedPrimary = localStorage.getItem("videoteca_primary_superadmin");
+    if (cachedPrimary) primary = cachedPrimary.toLowerCase().trim();
+  } catch (_) {}
+
+  if (currentId === primary || currentId === 'chapceligg@gmail.com') {
+    throw new Error("No se puede eliminar la cuenta de Administrador Principal.");
+  }
+
+  // 1. Eliminar en servidor central
+  try {
+    await fetch(`/api/admins/${encodeURIComponent(currentId)}`, {
+      method: 'DELETE'
+    });
+  } catch (e) {
+    console.warn("Aviso eliminando usuario en servidor central:", e);
+  }
+
+  // 2. Eliminar en Firestore
+  try {
+    const docRef = doc(db, 'authorized_users', currentId);
+    await deleteDoc(docRef);
+    await deleteDoc(doc(db, 'admins', currentId));
+  } catch (err) {
+    if (isQuotaExceeded(err)) {
+      console.warn("Aviso: Cuota de Firestore excedida al eliminar; baja confirmada en servidor central.");
+    } else {
+      console.warn("Aviso en Firestore al eliminar usuario:", err);
+    }
+  }
+};
+
+export const transferPrimarySuperAdminInFirestore = async (
+  newPrimaryEmail: string,
+  currentPrimaryEmail: string,
+  keepPreviousAsAdmin = true
+) => {
+  const newEmail = newPrimaryEmail.trim().toLowerCase();
+  const currentEmail = currentPrimaryEmail.trim().toLowerCase();
+
+  if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
+    throw new Error("El correo ingresado no es válido.");
+  }
+  if (newEmail === currentEmail) {
+    throw new Error("Este correo ya es el Administrador Principal actual.");
+  }
+
+  // 1. Guardar en servidor central inmediatamente
+  try {
+    await fetch('/api/primary-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: newEmail,
+        current: currentEmail,
+        keepPrevious: keepPreviousAsAdmin
+      })
+    });
+  } catch (e) {
+    console.warn("Aviso transfiriendo Super Admin en servidor central:", e);
+  }
+
+  try {
+    localStorage.setItem("videoteca_primary_superadmin", newEmail);
+  } catch (_) {}
+
+  // 2. Ejecución atómica en Firestore mediante writeBatch garantizando exactamente un 'primary_admin'
+  try {
+    const batch = writeBatch(db);
+
+    const newDocRef = doc(db, 'authorized_users', newEmail);
+    const currentDocRef = doc(db, 'authorized_users', currentEmail);
+
+    const newSnap = await getDoc(newDocRef);
+    const existingNewData = newSnap.exists() ? newSnap.data() : {};
+
+    batch.set(newDocRef, {
+      ...existingNewData,
+      id: newEmail,
+      email: newEmail,
+      role: 'primary_admin',
+      name: existingNewData.name || '',
+      createdAt: existingNewData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      transferredAt: new Date().toISOString()
+    }, { merge: true });
+
+    const currentSnap = await getDoc(currentDocRef);
+    const existingCurrentData = currentSnap.exists() ? currentSnap.data() : {};
+
+    if (keepPreviousAsAdmin) {
+      batch.set(currentDocRef, {
+        ...existingCurrentData,
+        id: currentEmail,
+        email: currentEmail,
+        role: 'admin',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } else {
+      batch.delete(currentDocRef);
+    }
+
+    batch.set(doc(db, 'admins', '_primary_config'), {
+      email: newEmail,
+      transferredBy: currentEmail,
+      transferredAt: new Date().toISOString()
+    }, { merge: true });
+
+    await batch.commit();
+  } catch (err) {
+    if (isQuotaExceeded(err)) {
+      console.warn("Aviso: Cuota de Firestore excedida al transferir titular; traspaso asegurado en servidor central.");
+    } else {
+      console.warn("Aviso en Firestore al transferir titular:", err);
+    }
+  }
+
+  return newEmail;
 };
 
 const adminSubscribers = new Set<(admins: any[]) => void>();

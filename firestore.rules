@@ -25,6 +25,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /authorized_users/{userId} {
+      // Colección dedicada y aislada de cuentas autorizadas (Administradores y Editores)
+      allow read, write: if true;
+    }
+
     match /admins/{adminId} {
       // Verificación de acceso y sincronización de administradores y editores entre dispositivos
       allow read, write: if true;
