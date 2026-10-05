@@ -358,9 +358,6 @@ function saveServerAdmins(admins: any[]) {
   }
 }
 
-// Clientes conectados a la sincronización en tiempo real (SSE: Server-Sent Events, 0 lecturas de cuota)
-const adminStreamClients = new Set<express.Response>();
-
 function getActiveAdminsList(): any[] {
   const admins = loadServerAdmins();
   const deleted = new Set(loadDeletedAdminIds());
@@ -371,65 +368,10 @@ function getActiveAdminsList(): any[] {
   return admins.filter(a => !deleted.has((a.email || a.id || "").trim().toLowerCase()));
 }
 
+// Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
 function broadcastAdminsUpdate() {
-  const active = getActiveAdminsList();
-  const payload = JSON.stringify({
-    type: "admins_update",
-    admins: active,
-    primarySuperAdmin: loadPrimarySuperAdmin(),
-    deletedIds: loadDeletedAdminIds(),
-    timestamp: new Date().toISOString()
-  });
-
-  for (const client of adminStreamClients) {
-    try {
-      client.write(`event: admins_update\ndata: ${payload}\n\n`);
-    } catch (_) {
-      adminStreamClients.delete(client);
-    }
-  }
+  // Sincronización en tiempo real gestionada 100% de forma directa cliente-Firestore
 }
-
-// Endpoint de eventos en tiempo real (SSE) para sincronizar altas, bajas y cambios en cualquier dispositivo (0 lecturas Firestore)
-app.get("/api/admins/stream", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  if (typeof (res as any).flushHeaders === 'function') {
-    (res as any).flushHeaders();
-  }
-
-  // Relleno inicial de 2KB para forzar el vaciado de buffers intermedios (Nginx, Cloud Run)
-  res.write(`: ${" ".repeat(2048)}\n\n`);
-
-  // Enviar estado actual de inmediato al conectar
-  const active = getActiveAdminsList();
-  res.write(`event: admins_update\ndata: ${JSON.stringify({ 
-    type: "admins_update", 
-    admins: active, 
-    primarySuperAdmin: loadPrimarySuperAdmin(), 
-    deletedIds: loadDeletedAdminIds(),
-    timestamp: new Date().toISOString() 
-  })}\n\n`);
-
-  adminStreamClients.add(res);
-
-  // Ping periódico cada 15s para mantener activo el canal y evitar caídas en redes móviles
-  const pingInterval = setInterval(() => {
-    try {
-      res.write(": ping\n\n");
-    } catch (_) {
-      clearInterval(pingInterval);
-      adminStreamClients.delete(res);
-    }
-  }, 15000);
-
-  req.on("close", () => {
-    clearInterval(pingInterval);
-    adminStreamClients.delete(res);
-  });
-});
 
 app.get("/api/primary-admin", (req, res) => {
   res.json({ email: loadPrimarySuperAdmin() });
@@ -697,10 +639,9 @@ app.delete("/api/admins/:email", (req, res) => {
   res.json({ success: true });
 });
 
-// --- REGISTRO Y SINCRONIZACIÓN DE PELÍCULAS EN TIEMPO REAL (0 LECTURAS FIRESTORE) ---
+// --- REGISTRO Y GESTIÓN DE PELÍCULAS ---
 const MOVIES_FILE = path.join(process.cwd(), "movies-registry.json");
 const TMP_MOVIES_FILE = path.join("/tmp", "movies-registry.json");
-const moviesStreamClients = new Set<express.Response>();
 let memoryMoviesCache: any[] | null = null;
 
 function loadServerMovies(): any[] {
@@ -741,52 +682,10 @@ function getActiveMoviesList(): any[] {
   return movies.filter(m => m && m.id && !deleted.has(m.id));
 }
 
-function broadcastMoviesUpdate(eventType: string, payload: any) {
-  const data = JSON.stringify({
-    type: eventType,
-    data: payload,
-    timestamp: new Date().toISOString()
-  });
-
-  for (const client of moviesStreamClients) {
-    try {
-      client.write(`event: ${eventType}\ndata: ${data}\n\n`);
-    } catch (_) {
-      moviesStreamClients.delete(client);
-    }
-  }
+// Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
+function broadcastMoviesUpdate(_eventType: string, _payload: any) {
+  // Sincronización en tiempo real gestionada 100% en el cliente con SDK modular de Firebase (onSnapshot)
 }
-
-// Endpoint de streaming en tiempo real para películas (0 lecturas Firestore)
-app.get("/api/movies/stream", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  if (typeof (res as any).flushHeaders === 'function') {
-    (res as any).flushHeaders();
-  }
-
-  // Relleno inicial para forzar flujo en Nginx y Cloud Run
-  res.write(`: ${" ".repeat(2048)}\n\n`);
-  res.write(`event: connected\ndata: {}\n\n`);
-
-  moviesStreamClients.add(res);
-
-  const pingInterval = setInterval(() => {
-    try {
-      res.write(": ping\n\n");
-    } catch (_) {
-      clearInterval(pingInterval);
-      moviesStreamClients.delete(res);
-    }
-  }, 15000);
-
-  req.on("close", () => {
-    clearInterval(pingInterval);
-    moviesStreamClients.delete(res);
-  });
-});
 
 app.get("/api/movies", (req, res) => {
   const active = getActiveMoviesList();
