@@ -8,17 +8,27 @@ import {
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
   Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table, FileCode,
-  Mail, RotateCcw, Crown
+  Mail, RotateCcw, Crown, KeyRound
 } from 'lucide-react';
 import { 
-  getAdminByEmail, initAuth, signInWithGoogle, logout, onAuthStateChanged,
-  upsertMovie, updateMovie, deleteMovie, upsertAdmin, deleteAdmin,
-  fetchMoviesOptimized, fetchAdminsOptimized, generateMovieId, subscribeToMovies, subscribeToAdmins, getCachedMovies,
-  getPrimarySuperAdminEmail, transferPrimarySuperAdmin, recordGoogleAuth, isGoogleAccountEmail,
-  isDeletedAdmin, mergeAdmins, subscribeToPrimarySuperAdmin, DEFAULT_CLIENT_ADMINS, getAllMergedAdmins,
-  AuthorizedUser, subscribeToAuthorizedUsers, addAuthorizedUserInFirestore, updateAuthorizedUserInFirestore,
-  deleteAuthorizedUserInFirestore, transferPrimarySuperAdminInFirestore
+  UserRole,
+  getStoredAccessKey,
+  setStoredAccessKey,
+  clearStoredAccessKey,
+  loginWithAccessKey,
+  verifyStoredKey,
+  fetchSystemKeys,
+  changeSystemKeys,
+  onAuthExpiredOrDenied,
+  upsertMovie,
+  updateMovie,
+  deleteMovie,
+  fetchMoviesOptimized,
+  generateMovieId,
+  subscribeToMovies,
+  getCachedMovies
 } from './lib/firebase';
+import { KeysAdminManager } from './components/KeysAdminManager';
 import { exportToExcelWithTabs, exportToCleanCSV, exportToJSON, getExportSummary } from './lib/exportUtils';
 import { Movie, Quote as QuoteType } from './types';
 import { ALPHABET, YEAR_RANGES, DEMO_POSTER } from './constants';
@@ -1307,84 +1317,17 @@ const curatorGenresList = [
 ];
 
 export default function App() {
-  const [user, setUser] = useState<any>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
-  const [adminsList, setAdminsList] = useState<any[]>(() => getAllMergedAdmins());
-  const [primarySuperAdminEmail, setPrimarySuperAdminEmail] = useState<string>("chapceligg@gmail.com");
-
-  useEffect(() => {
-    getPrimarySuperAdminEmail().then(email => {
-      if (email) setPrimarySuperAdminEmail(email);
-    }).catch(() => {});
-
-    fetchAdminsOptimized(false).then(adms => {
-      if (adms && Array.isArray(adms)) {
-        setAdminsList(adms);
-      }
-    }).catch(() => {});
-
-    const unsubAdmins = subscribeToAdmins((updated) => {
-      if (updated && Array.isArray(updated)) {
-        setAdminsList(updated);
-      }
-    });
-
-    const unsubPrimary = subscribeToPrimarySuperAdmin((newPrimary) => {
-      if (newPrimary) {
-        setPrimarySuperAdminEmail(newPrimary);
-      }
-    });
-
-    return () => {
-      unsubAdmins();
-      unsubPrimary();
-    };
-  }, []);
+  const [userRole, setUserRole] = useState<UserRole>('viewer');
+  const isOwner = userRole === 'owner';
+  const isEditor = userRole === 'owner' || userRole === 'editor';
+  const isViewer = userRole === 'viewer';
+  const isAdmin = isEditor;
 
   const sidebarDisplayName = useMemo(() => {
-    if (!user) return "";
-    const email = (user.email || '').toLowerCase().trim();
-    const primary = (primarySuperAdminEmail || 'chapceligg@gmail.com').toLowerCase().trim();
-    const isPrimary = email === primary || email === 'chapceligg@gmail.com';
-
-    // Buscar si existe un registro de administrador con nombre opcional registrado/editado
-    const currentAdminObj = adminsList.find(a => (a.email || a.id || '').toLowerCase().trim() === email) || DEFAULT_CLIENT_ADMINS.find(a => (a.email || a.id || '').toLowerCase().trim() === email);
-    const registeredName = (currentAdminObj?.name || user.customName || user.name || "").trim();
-
-    const isEmailOrPrefix = (name: string) => {
-      const n = name.toLowerCase().trim();
-      return !n || n === email || n === email.split('@')[0];
-    };
-
-    const isRoleName = (name: string) => {
-      const n = name.toLowerCase().trim();
-      return ['administrador', 'editor', 'administrador principal', 'admin'].includes(n);
-    };
-
-    // 1. Si tiene nombre opcional asignado desde el registro o edición en el panel
-    if (registeredName && !isEmailOrPrefix(registeredName) && !isRoleName(registeredName)) {
-      return registeredName;
-    }
-
-    // 2. Si en user.displayName viene un nombre que no es email/rol/bypass
-    const rawDisplayName = (user.displayName || "").trim();
-    if (rawDisplayName && !isEmailOrPrefix(rawDisplayName) && !isRoleName(rawDisplayName) && rawDisplayName !== 'Admin Maestro (Bypass Dev)') {
-      return rawDisplayName;
-    }
-
-    // 3. En caso de que no haya un nombre opcional desde el registro o edición, solo se pondrá el rol
-    if (isPrimary) {
-      return "Administrador Principal";
-    }
-
-    const currentRole = userRole || currentAdminObj?.role || user.role;
-    if (currentRole === 'admin') {
-      return "Administrador";
-    }
-
-    return "Editor";
-  }, [user, userRole, adminsList, primarySuperAdminEmail]);
+    if (userRole === 'owner') return "Dueño (Clave Maestra)";
+    if (userRole === 'editor') return "Editor (PIN Acceso)";
+    return "Modo Lector";
+  }, [userRole]);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -2051,7 +1994,13 @@ export default function App() {
   const [pasteTargetSection, setPasteTargetSection] = useState<'peliculas' | 'centauro' | 'series'>('peliculas');
   const [batchProgress, setBatchProgress] = useState({ active: false, total: 0, current: 0, currentMovie: "" });
   const [showPasteModal, setShowPasteModal] = useState(false);
-  const [showAdminsModal, setShowAdminsModal] = useState(false);
+  const [showKeysAdminModal, setShowKeysAdminModal] = useState(false);
+  const [showKeyLoginModal, setShowKeyLoginModal] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [showKeyPassword, setShowKeyPassword] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [keyLoginError, setKeyLoginError] = useState("");
+  const [showRestrictedModal, setShowRestrictedModal] = useState(false);
   const [duplicateWarningModal, setDuplicateWarningModal] = useState<{
     open: boolean;
     title: string;
@@ -2059,12 +2008,6 @@ export default function App() {
     onConfirm: (() => void) | null;
     onCancel?: (() => void) | null;
   }>({ open: false, title: "", year: 0, onConfirm: null, onCancel: null });
-  const [authDenied, setAuthDenied] = useState(false);
-  const [authDeniedEmail, setAuthDeniedEmail] = useState<string | null>(null);
-  const [showEmailLoginModal, setShowEmailLoginModal] = useState(false);
-  const [loginEmailInput, setLoginEmailInput] = useState("");
-  const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
-  const [loginError, setLoginError] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const [pasteLimit, setPasteLimit] = useState<5 | 10>(5);
@@ -2398,295 +2341,68 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     }
   };
 
-  const [isBypassActive, setIsBypassActive] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("videoteca_bypass_active") === "true";
-    } catch {
-      return false;
-    }
-  });
-
+  // Verificación de clave al iniciar la app
   useEffect(() => {
-    if (isBypassActive) {
-      setUser({ email: 'chapceligg@gmail.com', displayName: 'Admin Maestro (Bypass Dev)', photoURL: '' });
-      setIsAdmin(true);
-      setUserRole('admin');
-      setIsAuthChecking(false);
-      return;
-    }
-
-    try {
-      const savedVerifiedUser = localStorage.getItem("videoteca_verified_user");
-      if (savedVerifiedUser) {
-        const parsed = JSON.parse(savedVerifiedUser);
-        const parsedEmail = (parsed?.email || '').toLowerCase().trim();
-        if (parsedEmail === 'chapceligg@gmail.com') {
-          getAdminByEmail(parsedEmail).then(admin => {
-            const customName = (admin?.name || "").trim();
-            const hasCustomName = Boolean(customName && customName !== parsedEmail && customName !== parsedEmail.split('@')[0]);
-            const resolvedName = hasCustomName ? customName : 'Administrador Principal';
-            setUser({ ...parsed, displayName: resolvedName });
-            setIsAdmin(true);
-            setUserRole('admin');
-            setIsAuthChecking(false);
-          }).catch(() => {
-            setUser({ ...parsed, displayName: 'Administrador Principal' });
-            setIsAdmin(true);
-            setUserRole('admin');
-            setIsAuthChecking(false);
-          });
-        } else if (parsedEmail) {
-          getAdminByEmail(parsedEmail).then(admin => {
-            if (admin) {
-              const roleLabel = admin.role === 'admin' ? 'Administrador' : 'Editor';
-              const customName = (admin.name || "").trim();
-              const hasCustomName = Boolean(customName && customName !== parsedEmail && customName !== parsedEmail.split('@')[0]);
-              const resolvedName = hasCustomName ? customName : roleLabel;
-              const updatedUser = {
-                ...parsed,
-                displayName: resolvedName,
-                photoURL: admin.photoURL || parsed.photoURL || ''
-              };
-              setUser(updatedUser);
-              setIsAdmin(true);
-              setUserRole(admin.role || 'editor');
-            } else {
-              try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {}
-            }
-            setIsAuthChecking(false);
-          }).catch(() => setIsAuthChecking(false));
-        }
-      }
-    } catch (_) {}
-  }, [isBypassActive]);
-
-  // Sincronización en tiempo real de cuentas registradas en todos los dispositivos (0 lecturas Firestore)
-  useEffect(() => {
-    const unsub = subscribeToAdmins((realtimeAdmins) => {
-      if (!realtimeAdmins || !Array.isArray(realtimeAdmins) || realtimeAdmins.length === 0) return;
-
-      // Actualizar sesión activa en tiempo real si el administrador modifica rol o nombre
-      setUser((currentActiveUser: any) => {
-        if (!currentActiveUser || !currentActiveUser.email) return currentActiveUser;
-        const currentEmail = (currentActiveUser.email || '').toLowerCase().trim();
-        const primary = (primarySuperAdminEmail || 'chapceligg@gmail.com').toLowerCase().trim();
-        const isPrimary = currentEmail === primary || currentEmail === 'chapceligg@gmail.com';
-
-        const match = realtimeAdmins.find(a => (a.email || a.id || '').toLowerCase().trim() === currentEmail);
-        if (match || isPrimary) {
-          const roleLabel = isPrimary ? 'Administrador Principal' : (match?.role === 'admin' ? 'Administrador' : 'Editor');
-          const customName = (match?.name || "").trim();
-          const isInvalidName = !customName || customName === currentEmail || customName === currentEmail.split('@')[0] || ['administrador', 'editor', 'administrador principal', 'admin'].includes(customName.toLowerCase());
-          const resolvedName = !isInvalidName ? customName : roleLabel;
-          
-          setUserRole(isPrimary ? 'admin' : (match?.role || 'editor'));
-          setIsAdmin(true);
-
-          if (currentActiveUser.displayName !== resolvedName || (match?.photoURL && currentActiveUser.photoURL !== match.photoURL)) {
-            const updated = {
-              ...currentActiveUser,
-              displayName: resolvedName,
-              photoURL: match?.photoURL || currentActiveUser.photoURL || ''
-            };
-            try { localStorage.setItem("videoteca_verified_user", JSON.stringify(updated)); } catch (_) {}
-            return updated;
-          }
-        } else {
-          // SOLO revocar si la cuenta fue explícitamente eliminada en el servidor central
-          isDeletedAdmin(currentEmail).then(isDeleted => {
-            if (isDeleted) {
-              try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {}
-              setIsAdmin(false);
-              setUserRole(null);
-              setUser(null);
-            }
-          }).catch(() => {});
-        }
-        return currentActiveUser;
+    setIsAuthChecking(true);
+    verifyStoredKey()
+      .then((res) => {
+        setUserRole(res.role);
+      })
+      .catch(() => {
+        setUserRole('viewer');
+      })
+      .finally(() => {
+        setIsAuthChecking(false);
       });
+
+    const unsubExpired = onAuthExpiredOrDenied(() => {
+      setShowRestrictedModal(true);
     });
 
-    return () => unsub();
-  }, [primarySuperAdminEmail]);
+    return () => {
+      unsubExpired();
+    };
+  }, []);
 
-  const handleVerifyGoogleEmail = async (emailToVerify?: string) => {
-    const rawEmail = (emailToVerify || loginEmailInput || "").trim().toLowerCase();
-    if (!rawEmail) {
-      setLoginError("Por favor ingresa un correo electrónico.");
+  const handleKeyLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanKey = keyInput.trim();
+    if (!cleanKey) {
+      setKeyLoginError("Por favor ingresa la Clave Maestra o el PIN de Editor.");
       return;
     }
 
-    setIsVerifyingEmail(true);
-    setLoginError("");
+    setIsLoggingIn(true);
+    setKeyLoginError("");
 
     try {
-      const admin = await getAdminByEmail(rawEmail);
-      if (rawEmail === 'chapceligg@gmail.com' || (admin && (admin.role === 'admin' || admin.role === 'editor'))) {
-        const resolvedRole = (rawEmail === 'chapceligg@gmail.com' || admin?.role === 'admin') ? 'admin' : 'editor';
-        const roleLabel = (rawEmail === 'chapceligg@gmail.com') ? 'Administrador Principal' : (resolvedRole === 'admin' ? 'Administrador' : 'Editor');
-        const customName = (admin?.name || "").trim();
-        const hasCustomName = Boolean(customName && customName !== rawEmail && customName !== rawEmail.split('@')[0]);
-        const resolvedName = hasCustomName ? customName : roleLabel;
-        const editorUser = {
-          email: rawEmail,
-          displayName: resolvedName,
-          photoURL: ''
-        };
-        setUser(editorUser);
-        setIsAdmin(true);
-        setUserRole(resolvedRole);
-        try { localStorage.setItem("videoteca_verified_user", JSON.stringify(editorUser)); } catch (_) {}
-        setShowEmailLoginModal(false);
-        setLoginEmailInput("");
-        setLoginError("");
+      const res = await loginWithAccessKey(cleanKey);
+      if (res.valid && res.role) {
+        setUserRole(res.role);
+        setShowKeyLoginModal(false);
+        setKeyInput("");
+        setKeyLoginError("");
       } else {
-        setShowEmailLoginModal(false);
-        setAuthDeniedEmail(rawEmail);
-        setAuthDenied(true);
+        setKeyLoginError("Clave o PIN incorrecto. Verifica los datos ingresados.");
       }
     } catch (err: any) {
-      console.error("Error al validar correo:", err);
-      setShowEmailLoginModal(false);
-      setAuthDeniedEmail(rawEmail);
-      setAuthDenied(true);
+      setKeyLoginError("Error de conexión con el servidor. Intenta de nuevo.");
     } finally {
-      setIsVerifyingEmail(false);
+      setIsLoggingIn(false);
     }
   };
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(async (currentUser: any) => {
-      if (isBypassActive) return; // Prevent overwriting bypass session
-      
-      if (currentUser) {
-        const userEmail = (currentUser.email || '').toLowerCase().trim();
-        if (userEmail) {
-          recordGoogleAuth(userEmail);
-        }
-        let adminInfo: any = null;
-        try {
-          adminInfo = await getAdminByEmail(userEmail);
-        } catch (_) {}
+  const handleLogout = () => {
+    clearStoredAccessKey();
+    setUserRole('viewer');
+  };
 
-        const registeredName = (adminInfo?.name || "").trim();
-        const isEmailOrPrefix = (name: string) => {
-          const n = name.toLowerCase().trim();
-          return !n || n === userEmail || n === userEmail.split('@')[0];
-        };
-        const isRoleName = (name: string) => {
-          const n = name.toLowerCase().trim();
-          return ['administrador', 'editor', 'administrador principal', 'admin'].includes(n);
-        };
-        const hasCustomName = Boolean(registeredName && !isEmailOrPrefix(registeredName) && !isRoleName(registeredName));
-        const defaultRoleName = userEmail === 'chapceligg@gmail.com' 
-          ? 'Administrador Principal' 
-          : (adminInfo?.role === 'admin' ? 'Administrador' : 'Editor');
-        const finalDisplayName = hasCustomName ? registeredName : defaultRoleName;
-
-        const normalizedUser = {
-          ...currentUser,
-          displayName: finalDisplayName,
-          photoURL: currentUser.photoURL || currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || '',
-        };
-
-        if (userEmail === 'chapceligg@gmail.com') {
-          setUser(normalizedUser);
-          setIsAdmin(true);
-          setUserRole('admin');
-        } else {
-          try {
-            const admin = adminInfo || await getAdminByEmail(userEmail);
-            if (admin) {
-              setUser(normalizedUser);
-              setIsAdmin(true);
-              setUserRole(admin.role || 'editor');
-            } else {
-              let hasLocalVerified = false;
-              try {
-                const saved = localStorage.getItem("videoteca_verified_user");
-                if (saved) {
-                  const p = JSON.parse(saved);
-                  if (p?.email && p.email !== userEmail) {
-                    hasLocalVerified = true;
-                    const localAdmin = await getAdminByEmail(p.email);
-                    if (localAdmin) {
-                      setUser(p);
-                      setIsAdmin(true);
-                      setUserRole(localAdmin.role || 'editor');
-                    }
-                  }
-                }
-              } catch (_) {}
-
-              if (!hasLocalVerified) {
-                setAuthDeniedEmail(userEmail);
-                setAuthDenied(true);
-                await logout();
-                if (!isBypassActive) {
-                  setUser(null);
-                  setIsAdmin(false);
-                  setUserRole(null);
-                }
-              }
-            }
-          } catch (e) {
-            let hasLocalVerified = false;
-            try {
-              const saved = localStorage.getItem("videoteca_verified_user");
-              if (saved) {
-                const p = JSON.parse(saved);
-                if (p?.email) {
-                  hasLocalVerified = true;
-                }
-              }
-            } catch (_) {}
-
-            if (!hasLocalVerified) {
-              setAuthDeniedEmail(userEmail);
-              setAuthDenied(true);
-              await logout();
-              if (!isBypassActive) {
-                setUser(null);
-                setIsAdmin(false);
-                setUserRole(null);
-              }
-            }
-          }
-        }
-      } else {
-        if (!isBypassActive) {
-          let hasLocalVerified = false;
-          try {
-            const saved = localStorage.getItem("videoteca_verified_user");
-            if (saved) {
-              const p = JSON.parse(saved);
-              if (p?.email) {
-                hasLocalVerified = true;
-                const localAdmin = await getAdminByEmail(p.email);
-                if (localAdmin) {
-                  setUser(p);
-                  setIsAdmin(true);
-                  setUserRole(localAdmin.role || 'editor');
-                } else {
-                  hasLocalVerified = false;
-                  try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {}
-                }
-              }
-            }
-          } catch (_) {}
-
-          if (!hasLocalVerified) {
-            setUser(null);
-            setIsAdmin(false);
-            setUserRole(null);
-          }
-        }
-      }
-      setIsAuthChecking(false);
-    });
-
-    return () => unsub(); // REFUERZO: Evitar memory leaks e infinitos loops de verificación
-  }, [isBypassActive]);
+  const handleAcknowledgeRestricted = () => {
+    setShowRestrictedModal(false);
+    clearStoredAccessKey();
+    setUserRole('viewer');
+    setShowKeyLoginModal(true);
+  };
 
   // Rotación periódica de las 123 frases icónicas de cine (cada minuto) 100% client-side sin lecturas en base de datos
   useEffect(() => {
@@ -2941,7 +2657,10 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   };
 
   const handleSave = async (forceSave = false) => {
-    if (!isAdmin || !user) return;
+    if (!isEditor) {
+      setShowKeyLoginModal(true);
+      return;
+    }
 
     if (isAddingNew && !forceSave) {
       const titleToSave = editForm.title || "Obra sin título";
@@ -3097,7 +2816,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
   };
 
   const handleDelete = async () => {
-    if (!isAdmin || !user || !selectedMovie) return;
+    if (!isOwner) {
+      setShowRestrictedModal(true);
+      return;
+    }
+    if (!selectedMovie) return;
     const deletedId = selectedMovie.id;
     try {
       setMovies(prev => prev.filter(m => m.id !== deletedId));
@@ -3109,7 +2832,10 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
 
   const handleToggleReview = async (movie: Movie, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!isAdmin || !user) return;
+    if (!isEditor) {
+      setShowKeyLoginModal(true);
+      return;
+    }
     const newValue = !movie.needsReview;
     try {
       const updatedAt = new Date().toISOString();
@@ -3452,24 +3178,24 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                            disabled={batchProgress.active} 
                            className={`${getSidebarItemClass(false)} disabled:opacity-50`}
                          >
-                           <ClipboardList className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
+                           <ClipboardList className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500 shrink-0" /> 
                            <span>{t("MULTI PEGADO")}</span>
                          </button>
-                         {userRole === 'admin' && (
-                           <button 
-                             id="btn-gestionar-admins"
-                             onClick={() => setShowAdminsModal(true)} 
-                             className={getSidebarItemClass(false)}
-                           >
-                             <Users className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
-                             <span>{t("ADMINISTRADORES")}</span>
-                           </button>
-                         )}
+                         {isOwner && (
+                            <button 
+                              id="btn-gestionar-claves"
+                              onClick={() => setShowKeysAdminModal(true)} 
+                              className={getSidebarItemClass(false)}
+                            >
+                              <Users className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500 shrink-0" /> 
+                              <span>ADMINISTRACIÓN</span>
+                            </button>
+                          )}
                          <button 
                            onClick={() => { const newVal = !showReviewOnly; setShowReviewOnly(newVal); if (newVal) setShowHistoryOnly(false); }} 
                            className={getReviewSidebarClass(showReviewOnly)}
                          >
-                           <AlertTriangle className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
+                           <AlertTriangle className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500 shrink-0" /> 
                            <span>{t("PARA REVISIÓN")}</span>
                          </button>
                          <button 
@@ -3478,7 +3204,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                            className={getSidebarItemClass(false)}
                            title="Exportar videoteca organizada por pestañas"
                          >
-                           <FileSpreadsheet className="w-5 h-5 transition-colors group-hover:text-red-500" /> 
+                           <FileSpreadsheet className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500 shrink-0" /> 
                            <span>{t("EXPORTAR CSV / EXCEL")}</span>
                          </button>
 
@@ -3508,47 +3234,45 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </button>
           )}
 
-          {user ? (
-            <div className={`flex items-center gap-3.5 pt-2 cursor-pointer p-2 rounded-xl transition-colors ${isDayMode ? 'hover:bg-zinc-100' : 'hover:bg-white/5'}`}>
-              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${sidebarDisplayName || user.email}&background=random`} alt="Avatar" className={`w-9 h-9 rounded-full border shrink-0 ${isDayMode ? 'border-zinc-200' : 'border-white/10'}`} />
-              <div className="flex flex-col min-w-0 overflow-hidden">
-                 <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`} title={sidebarDisplayName}>
-                   {sidebarDisplayName}
-                 </span>
-                 <span className={`text-[11px] truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={user.email}>
-                   {user.email}
-                 </span>
-              </div>
-              <button 
-                onClick={async () => { 
-                  try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {} 
-                  try { localStorage.removeItem("videoteca_verified_user"); } catch (_) {} 
-                  setIsBypassActive(false); 
-                  setUser(null);
-                  setIsAdmin(false);
-                  setUserRole(null);
-                  await logout(); 
-                }} 
-                className={`ml-auto p-1.5 rounded-lg transition-colors shrink-0 ${isDayMode ? 'text-zinc-500 hover:text-red-600 hover:bg-zinc-200' : 'text-zinc-500 hover:text-red-400 hover:bg-white/5'}`}
-                title="Cerrar sesión"
-              >
-                <LogOut size={15}/>
-              </button>
-            </div>
-          ) : (
-             <button 
-               id="btn-login-google"
-               onClick={() => {
-                 try { localStorage.removeItem("videoteca_bypass_active"); } catch (_) {}
-                 setIsBypassActive(false);
-                 setShowEmailLoginModal(true);
-               }} 
-               className={`app-login-btn flex items-center justify-center gap-3 pt-2 cursor-pointer p-2 rounded-xl transition-colors font-bold w-full ${isDayMode ? 'hover:bg-zinc-100 text-zinc-950' : 'hover:bg-white/5 text-white'}`}
-               title="Iniciar sesión con cuenta de Google o correo registrado"
-             >
-                <LogIn size={18} /> Acceso Editores
-             </button>
-          )}
+          {!isViewer ? (
+    <div className={`flex items-center gap-3.5 pt-2 cursor-pointer p-2 rounded-xl transition-colors ${isDayMode ? 'hover:bg-zinc-100' : 'hover:bg-white/5'}`}>
+      <div className="w-9 h-9 rounded-full border border-red-500/30 bg-red-500/10 text-red-500 shrink-0 flex items-center justify-center shadow-[0_0_15px_rgba(180,29,29,0.2)]">
+        <Users size={18} className="text-red-500" />
+      </div>
+      <div className="flex flex-col min-w-0 overflow-hidden">
+         <span className={`admin-profile-name font-bold text-xs truncate ${isDayMode ? 'text-zinc-950' : 'text-white'}`} title={sidebarDisplayName}>
+           {sidebarDisplayName}
+         </span>
+         <span className={`text-[11px] truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+           {isOwner ? 'Control Total & Claves' : 'Catalogación y Edición'}
+         </span>
+      </div>
+      <button 
+        onClick={handleLogout} 
+        className={`ml-auto p-1.5 rounded-lg transition-colors shrink-0 ${isDayMode ? 'text-zinc-500 hover:text-red-600 hover:bg-zinc-200' : 'text-zinc-500 hover:text-red-400 hover:bg-white/5'}`}
+        title="Cerrar sesión / Salir"
+      >
+        <LogOut size={15}/>
+      </button>
+    </div>
+  ) : (
+     <button 
+       id="btn-login-key"
+       onClick={() => {
+         setKeyLoginError("");
+         setKeyInput("");
+         setShowKeyLoginModal(true);
+       }} 
+       className={`app-login-btn flex items-center justify-center gap-3 pt-2 cursor-pointer p-2.5 rounded-xl transition-colors font-bold w-full border ${
+         isDayMode 
+           ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-950 border-zinc-300' 
+           : 'bg-white/5 hover:bg-white/10 text-white border-white/10'
+       }`}
+       title="Ingresar con Clave Maestra o PIN de Editor"
+     >
+        <LogIn size={17} /> Acceso con Clave
+     </button>
+  )}
         </div>
       </aside>
 
@@ -3620,57 +3344,47 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         )}
       
       {/* Modal: Apartado Solo para Editores Autorizados */}
-      {authDenied && (
+      {/* Modal: Acceso Restringido */}
+      {showRestrictedModal && (
         <div 
-          id="modal-auth-denied"
+          id="modal-restricted-access"
           className="fixed inset-0 bg-black/85 backdrop-blur-md z-[400] flex items-center justify-center p-4 animate-in fade-in duration-300"
-          onClick={() => { setAuthDenied(false); setAuthDeniedEmail(null); }}
+          onClick={() => handleAcknowledgeRestricted()}
         >
           <div 
             className="bg-[#0c0c0e] border border-red-500/40 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.95),0_0_40px_rgba(180,29,29,0.25)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-14 h-14 rounded-2xl bg-white/5 border border-red-500/30 flex items-center justify-center text-white mb-4 shadow-lg">
-              <Shield size={28} className="text-[#b41d1d]" />
+              <ShieldAlert size={28} className="text-[#b41d1d]" />
             </div>
 
             <h3 className="text-xl font-black uppercase tracking-tight text-white mb-2">
-              Lo Sentimos
+              Acceso Restringido
             </h3>
 
-            <p className="text-sm text-zinc-300 font-medium leading-relaxed mb-4">
-              Esta sección es exclusiva para editores autorizados. Tu correo no se encuentra registrado en la lista de editores gestionada por el Administrador.
-            </p>
-
-            {authDeniedEmail && (
-              <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 mb-4 flex items-center justify-center gap-2 text-xs font-mono text-zinc-400">
-                <span className="text-zinc-500">Cuenta ingresada:</span>
-                <span className="text-white font-semibold truncate">{authDeniedEmail}</span>
-              </div>
-            )}
-
-            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
-              Si necesitas permisos para agregar o modificar películas, solicita al Administrador que registre tu correo. Mientras tanto, puedes explorar y consultar libremente todo el catálogo de la Mediateca.
+            <p className="text-sm text-zinc-300 font-medium leading-relaxed mb-6">
+              Tu clave ha expirado, fue cambiada o no tienes permisos suficientes para esta acción.
             </p>
 
             <button
               type="button"
-              id="btn-close-auth-denied"
-              onClick={() => { setAuthDenied(false); setAuthDeniedEmail(null); }}
+              id="btn-close-restricted-modal"
+              onClick={handleAcknowledgeRestricted}
               className="w-full py-3.5 px-6 rounded-xl bg-[#b41d1d] hover:bg-[#cf2424] text-white font-black text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_25px_rgba(180,29,29,0.5)] active:scale-[0.98] cursor-pointer"
             >
-              Entendido, volver al catálogo
+              Entendido / Ingresar Nueva Clave
             </button>
           </div>
         </div>
       )}
 
-      {/* Modal: Acceso de Editores con Cuenta Google */}
-      {showEmailLoginModal && (
+      {/* Modal: Acceso con Clave Maestra o PIN */}
+      {showKeyLoginModal && (
         <div 
-          id="modal-email-login"
+          id="modal-key-login"
           className="fixed inset-0 bg-black/85 backdrop-blur-md z-[400] flex items-center justify-center p-4 animate-in fade-in duration-300"
-          onClick={() => { setShowEmailLoginModal(false); setLoginError(""); }}
+          onClick={() => { setShowKeyLoginModal(false); setKeyLoginError(""); }}
         >
           <div 
             className="bg-[#0c0c0e] border border-white/10 rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-[0_25px_70px_rgba(0,0,0,0.95)] text-white relative font-sans flex flex-col items-center text-center animate-in zoom-in-95 duration-200"
@@ -3678,76 +3392,94 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
           >
             <button 
               type="button" 
-              onClick={() => { setShowEmailLoginModal(false); setLoginError(""); }} 
+              onClick={() => { setShowKeyLoginModal(false); setKeyLoginError(""); }} 
               className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
             >
               <X size={18} />
             </button>
 
             <div className="w-13 h-13 rounded-2xl bg-white/5 border border-red-500/40 flex items-center justify-center text-white mb-3 shadow-[0_0_20px_rgba(180,29,29,0.2)]">
-              <Mail size={22} className="text-white drop-shadow-[0_2px_10px_rgba(239,68,68,0.4)]" />
+              <KeyRound size={22} className="text-[#b41d1d]" />
             </div>
 
             <h3 className="text-xl font-black uppercase tracking-tight text-white mb-1.5">
-              Acceso a Editores
+              Acceso con Clave
             </h3>
 
             <p className="text-xs text-zinc-300 font-medium leading-relaxed mb-5">
-              Inicia sesión con tu cuenta autorizada por el administrador para acceder a las herramientas de edición y catalogación.
+              Ingresa la Clave Maestra (Dueño) o el PIN de Editor para acceder a los permisos de catalogación y administración.
             </p>
 
-            {/* Formulario de Correo Autorizado */}
             <form
-              id="form-verify-email-login"
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleVerifyGoogleEmail(loginEmailInput);
-              }}
+              id="form-key-login"
+              onSubmit={handleKeyLogin}
               className="w-full flex flex-col gap-3"
             >
               <div className="flex flex-col text-left">
-                <label htmlFor="input-login-email" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <Mail size={12} className="text-zinc-400" />
-                  <span>Correo registrado</span>
+                <label htmlFor="input-access-key" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <KeyRound size={12} className="text-zinc-400" />
+                  <span>Clave Maestra o PIN de Editor</span>
                 </label>
-                <input
-                  id="input-login-email"
-                  type="email"
-                  value={loginEmailInput}
-                  onChange={(e) => {
-                    setLoginEmailInput(e.target.value);
-                    if (loginError) setLoginError("");
-                  }}
-                  placeholder="ej. editor@empresa.com"
-                  required
-                  className="w-full bg-zinc-900 border border-white/15 focus:border-[#b41d1d] focus:ring-1 focus:ring-[#b41d1d]/30 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-600 outline-none transition-all"
-                />
+                <div className="relative">
+                  <input
+                    id="input-access-key"
+                    type={showKeyPassword ? "text" : "password"}
+                    value={keyInput}
+                    onChange={(e) => {
+                      setKeyInput(e.target.value);
+                      if (keyLoginError) setKeyLoginError("");
+                    }}
+                    placeholder="Introduce tu clave o PIN"
+                    required
+                    autoFocus
+                    className="w-full bg-zinc-900 border border-white/15 focus:border-[#b41d1d] focus:ring-1 focus:ring-[#b41d1d]/30 rounded-xl px-3.5 py-2.5 pr-10 text-xs font-mono text-white placeholder:text-zinc-600 outline-none transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyPassword(!showKeyPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-1 transition-colors cursor-pointer"
+                    title={showKeyPassword ? "Ocultar" : "Mostrar"}
+                  >
+                    <Eye size={14} />
+                  </button>
+                </div>
               </div>
 
-              {loginError && (
+              {keyLoginError && (
                 <div className="p-2.5 bg-red-500/10 border border-red-500/25 rounded-xl text-xs text-red-400 text-left flex items-start gap-2">
                   <AlertTriangle size={14} className="shrink-0 mt-0.5 text-red-400" />
-                  <span className="leading-tight">{loginError}</span>
+                  <span className="leading-tight">{keyLoginError}</span>
                 </div>
               )}
 
               <button
                 type="submit"
-                id="btn-submit-verify-email"
-                disabled={isVerifyingEmail || !loginEmailInput.trim()}
+                id="btn-submit-key-login"
+                disabled={isLoggingIn || !keyInput.trim()}
                 className="w-full py-2.5 px-4 rounded-xl bg-[#b41d1d] hover:bg-[#cf2424] text-white font-extrabold text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_20px_rgba(180,29,29,0.4)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
               >
-                {isVerifyingEmail ? (
+                {isLoggingIn ? (
                   <>
                     <Loader2 size={15} className="animate-spin" />
-                    <span>Verificando permisos...</span>
+                    <span>Verificando...</span>
                   </>
                 ) : (
                   <>
                     <Check size={15} />
-                    <span>Verificar y Acceder</span>
+                    <span>Validar y Entrar</span>
                   </>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowKeyLoginModal(false);
+                  setKeyLoginError("");
+                }}
+                className="w-full py-2 px-4 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Continuar como Lector
               </button>
             </form>
           </div>
@@ -4754,14 +4486,17 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         )}
                       </button>
 
-                      {/* Button: ELIMINAR */}
-                      <button 
-                        type="button"
-                        onClick={() => setIsDeleting(true)} 
-                        className="h-14 w-14 bg-[#0c0c0e] hover:bg-[#121215] border border-white/5 hover:border-[#b41d1d]/40 text-neutral-400 hover:text-[#b41d1d] hover:shadow-[0_0_12px_rgba(180,29,29,0.35)] rounded-xl transition-all duration-300 flex items-center justify-center active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)] shrink-0"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {/* Button: ELIMINAR (Solo Dueño / Master) */}
+                      {isOwner && (
+                        <button 
+                          type="button"
+                          onClick={() => setIsDeleting(true)} 
+                          className="h-14 w-14 bg-[#0c0c0e] hover:bg-[#121215] border border-white/5 hover:border-[#b41d1d]/40 text-neutral-400 hover:text-[#b41d1d] hover:shadow-[0_0_12px_rgba(180,29,29,0.35)] rounded-xl transition-all duration-300 flex items-center justify-center active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.4)] shrink-0"
+                          title="Eliminar obra (Solo Dueño)"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   )}
                   {isDeleting && (
@@ -6048,8 +5783,8 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
         </div>
       )}
 
-      {/* ADMINS MODAL */}
-      {showAdminsModal && (
+      {/* KEYS ADMIN MODAL */}
+      {showKeysAdminModal && (
         <div className={`fixed inset-0 backdrop-blur-md z-50 flex items-center justify-center p-4 transition-colors duration-300 ${
           isDayMode ? 'bg-black/60' : 'bg-black/95'
         }`}>
@@ -6059,7 +5794,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               : 'bg-[#0a0a0a] border border-white/10 text-white'
           }`}>
             <button 
-              onClick={() => setShowAdminsModal(false)} 
+              onClick={() => setShowKeysAdminModal(false)} 
               className={`absolute top-5 right-5 p-1 rounded-lg transition-colors cursor-pointer ${
                 isDayMode ? 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100' : 'text-zinc-500 hover:text-white'
               }`}
@@ -6069,14 +5804,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             <h3 className={`text-xl font-black uppercase tracking-tighter flex items-center gap-2 mb-2 ${
               isDayMode ? 'text-zinc-900' : 'text-white'
             }`}>
-              <Users className="text-brand-light" size={24} /> Gestionar Administradores
+              <Crown className="text-amber-500" size={24} /> Administración de Claves
             </h3>
             <p className={`text-xs mb-6 font-medium leading-relaxed ${
               isDayMode ? 'text-zinc-600' : 'text-zinc-400'
             }`}>
-              Agrega administradores o editores autorizados para colaborar en la mediateca. Registra sus correos electrónicos para habilitar su acceso a la plataforma.
+              Gestiona directamente la Clave Maestra (Dueño) y el PIN de Editor sin correos ni cuentas. Los cambios se persisten inmediatamente en el servidor.
             </p>
-            <AdminManager currentUser={user} userRole={userRole} isDayMode={isDayMode} isBypassActive={isBypassActive} />
+            <KeysAdminManager isDayMode={isDayMode} />
           </div>
         </div>
       )}
@@ -6466,1031 +6201,3 @@ const TechItem = ({ label, value, className = "", icon = null }: any) => (
     <span className="text-xs font-bold text-zinc-300">{value || "N/A"}</span>
   </div>
 );
-
-const AdminManager = ({ currentUser, userRole, isDayMode, isBypassActive }: any) => {
-  const [users, setUsers] = useState<AuthorizedUser[]>([]);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState<'admin' | 'editor'>("editor");
-  const [userToDelete, setUserToDelete] = useState<AuthorizedUser | null>(null);
-
-  // Estados para edición de cuentas existentes
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editEmailValue, setEditEmailValue] = useState("");
-  const [editNameValue, setEditNameValue] = useState("");
-  const [editRoleValue, setEditRoleValue] = useState<'primary_admin' | 'admin' | 'editor'>("editor");
-  const [editSaving, setEditSaving] = useState(false);
-
-  // Estados para traspaso de Super Admin Principal
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [targetTransferEmail, setTargetTransferEmail] = useState("");
-  const [confirmPhrase, setConfirmPhrase] = useState("");
-  const [transferError, setTransferError] = useState("");
-  const [transferLoading, setTransferLoading] = useState(false);
-
-  // 1. PREVENCIÓN DE FUGAS DE LECTURAS (onSnapshot + unsubscribe obligatorio al desmontar o cerrar)
-  useEffect(() => {
-    setInitialLoading(true);
-    setError("");
-    const unsubscribe = subscribeToAuthorizedUsers(
-      (liveUsers) => {
-        setUsers(liveUsers);
-        setInitialLoading(false);
-      },
-      (err) => {
-        const isQuota = err?.code === 'resource-exhausted' || (err?.message && (err.message.includes('Quota') || err.message.includes('quota') || err.message.includes('resource-exhausted')));
-        if (isQuota) {
-          console.warn("Aviso de cuota en Firestore (authorized_users). Sincronización continua mediante canal seguro en vivo.");
-        } else {
-          console.warn("Aviso en conexión con authorized_users:", err?.message || err);
-        }
-        setInitialLoading(false);
-      }
-    );
-
-    return () => {
-      // Cierra inmediatamente la conexión y el oyente con Firestore al cerrar el modal o desmontar el componente
-      unsubscribe();
-    };
-  }, []);
-
-  const primaryAdmin = useMemo(() => {
-    return users.find(u => u.role === 'primary_admin') || 
-           users.find(u => u.email === 'chapceligg@gmail.com') || 
-           (users.length > 0 ? users[0] : null);
-  }, [users]);
-
-  const primaryEmail = (primaryAdmin?.email || 'chapceligg@gmail.com').toLowerCase().trim();
-
-  const additionalUsers = useMemo(() => {
-    return users.filter(u => u.id !== primaryAdmin?.id && u.email !== primaryEmail);
-  }, [users, primaryAdmin, primaryEmail]);
-
-  const currentEmail = (currentUser?.email || '').toLowerCase().trim();
-  const isCurrentPrimary = currentEmail === primaryEmail || currentEmail === 'chapceligg@gmail.com';
-  const isSuper = userRole === 'admin' || isCurrentPrimary || currentEmail === 'chapceligg@gmail.com' || isBypassActive;
-
-  const handleAdd = async (e: any) => {
-    e.preventDefault();
-    const email = newEmail.trim().toLowerCase();
-    if (!email) return;
-
-    if (!isSuper) {
-      setError("No tienes permisos suficientes de Administrador para agregar cuentas.");
-      return;
-    }
-
-    if (!email.includes('@') || !email.includes('.')) {
-      setError("Por favor introduce un correo electrónico válido.");
-      return;
-    }
-
-    if (email === primaryEmail) {
-      setError(`${primaryEmail} ya es el Administrador Principal.`);
-      return;
-    }
-
-    setActionLoading(true);
-    setError("");
-    try {
-      await addAuthorizedUserInFirestore({
-        email,
-        name: newName.trim(),
-        role: newRole,
-        addedBy: currentUser?.email || 'admin'
-      });
-      setNewEmail("");
-      setNewName("");
-      setNewRole("editor");
-      setSuccessMsg(`Cuenta ${email} agregada exitosamente.`);
-      setTimeout(() => setSuccessMsg(""), 3500);
-    } catch (err: any) {
-      setError(err?.message || "Error al registrar el usuario en Firestore.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const startEditing = (u: AuthorizedUser) => {
-    setEditingUserId(u.id);
-    setEditEmailValue(u.email);
-    setEditNameValue(u.name || "");
-    setEditRoleValue(u.role);
-    setUserToDelete(null);
-    setError("");
-  };
-
-  const cancelEditing = () => {
-    setEditingUserId(null);
-    setEditEmailValue("");
-    setEditNameValue("");
-    setEditRoleValue("editor");
-  };
-
-  const handleSaveEdit = async (originalUser: AuthorizedUser) => {
-    const targetEmail = editEmailValue.trim().toLowerCase();
-    const targetName = editNameValue.trim();
-    const targetRole = editRoleValue;
-
-    if (!targetEmail || !targetEmail.includes('@') || !targetEmail.includes('.')) {
-      setError("Por favor introduce un correo electrónico válido.");
-      return;
-    }
-
-    const isPrimary = originalUser.role === 'primary_admin' || originalUser.email === primaryEmail;
-
-    if (!isPrimary && targetEmail === primaryEmail) {
-      setError("No puedes renombrar esta cuenta al correo del Administrador Principal.");
-      return;
-    }
-
-    setEditSaving(true);
-    setError("");
-    try {
-      if (isPrimary && targetEmail !== originalUser.email) {
-        await transferPrimarySuperAdminInFirestore(targetEmail, originalUser.email, false);
-      }
-      await updateAuthorizedUserInFirestore(originalUser.id, {
-        email: targetEmail,
-        name: targetName,
-        role: targetRole
-      });
-      setEditingUserId(null);
-      setSuccessMsg("Cambios guardados en vivo exitosamente.");
-      setTimeout(() => setSuccessMsg(""), 3500);
-    } catch (err: any) {
-      setError(err?.message || "Error al actualizar los datos en Firestore.");
-    } finally {
-      setEditSaving(false);
-    }
-  };
-
-  const handleRemove = (user: AuthorizedUser) => {
-    if (!isSuper) return;
-    const target = user.email.toLowerCase().trim();
-    if (target === currentEmail) {
-      setError("No puedes revocar tu propio acceso.");
-      return;
-    }
-    if (user.role === 'primary_admin' || target === primaryEmail) {
-      setError("No se puede eliminar la cuenta de Administrador Principal.");
-      return;
-    }
-    setError("");
-    setEditingUserId(null);
-    setUserToDelete(user);
-  };
-
-  const confirmDelete = async () => {
-    if (!userToDelete) return;
-    if (userToDelete.role === 'primary_admin' || userToDelete.email === primaryEmail) {
-      setError("El Administrador Principal está protegido y no se puede eliminar.");
-      setUserToDelete(null);
-      return;
-    }
-    setActionLoading(true);
-    setError("");
-    try {
-      const emailDeleted = userToDelete.email;
-      setUserToDelete(null);
-      await deleteAuthorizedUserInFirestore(userToDelete.id);
-      setSuccessMsg(`Cuenta ${emailDeleted} eliminada correctamente.`);
-      setTimeout(() => setSuccessMsg(""), 3500);
-    } catch (err: any) {
-      setError(err?.message || "Error al revocar acceso.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleRoleChange = async (targetUser: AuthorizedUser, role: string) => {
-    if (!isSuper) return;
-    if (targetUser.email === currentEmail) {
-      setError("No puedes cambiar tu propio rol.");
-      return;
-    }
-    if (targetUser.role === 'primary_admin' || targetUser.email === primaryEmail) {
-      setError("No se puede cambiar el rol del Administrador Principal.");
-      return;
-    }
-
-    if (role === 'primary_admin') {
-      setTargetTransferEmail(targetUser.email);
-      setConfirmPhrase("");
-      setTransferError("");
-      setShowTransferModal(true);
-      return;
-    }
-
-    setActionLoading(true);
-    setError("");
-    try {
-      await updateAuthorizedUserInFirestore(targetUser.id, {
-        role: role as 'admin' | 'editor'
-      });
-      setSuccessMsg(`Rol de ${targetUser.email} actualizado a ${role === 'admin' ? 'Administrador' : 'Editor'}.`);
-      setTimeout(() => setSuccessMsg(""), 3000);
-    } catch (err: any) {
-      setError(err?.message || "Error al actualizar rol.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleConfirmTransfer = async () => {
-    if (!isCurrentPrimary) {
-      setTransferError("Solo el Administrador Principal actual puede traspasar este puesto.");
-      return;
-    }
-    const newEmail = targetTransferEmail.trim().toLowerCase();
-    if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
-      setTransferError("Por favor ingresa un correo electrónico válido.");
-      return;
-    }
-    if (newEmail === primaryEmail) {
-      setTransferError("Este correo ya es el Administrador Principal actual.");
-      return;
-    }
-    if (confirmPhrase.trim().toUpperCase() !== "TRANSFERIR") {
-      setTransferError('Debes escribir "TRANSFERIR" para confirmar el traspaso.');
-      return;
-    }
-    setTransferLoading(true);
-    setTransferError("");
-    try {
-      await transferPrimarySuperAdminInFirestore(newEmail, primaryEmail, true);
-      setSuccessMsg(`Puesto de Administrador Principal transferido exitosamente a ${newEmail}`);
-      setShowTransferModal(false);
-      setTargetTransferEmail("");
-      setConfirmPhrase("");
-      setTimeout(() => setSuccessMsg(""), 4500);
-    } catch (err: any) {
-      setTransferError(err?.message || "Error al transferir la titularidad.");
-    } finally {
-      setTransferLoading(false);
-    }
-  };
-
-  if (!isSuper) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 text-center gap-3">
-        <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shadow-sm ${
-          isDayMode ? 'bg-zinc-100 border-zinc-300 text-zinc-800' : 'bg-white/5 border-white/10 text-zinc-300'
-        }`}>
-          <Shield size={24} strokeWidth={1.75} className={isDayMode ? 'text-zinc-700' : 'text-zinc-300'} />
-        </div>
-        <p className={`text-sm font-bold ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
-          Acceso Exclusivo para Administradores
-        </p>
-        <p className={`text-xs max-w-xs leading-relaxed ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
-          Tu cuenta tiene rol de Editor. Solo los Administradores pueden gestionar los roles y permisos de la videoteca.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-5 w-full font-sans">
-      {/* FORMULARIO AGREGAR CUENTA - DISEÑO COMPACTO Y OPTIMIZADO */}
-      <form id="form-add-admin" onSubmit={handleAdd} className={`flex flex-col gap-4 w-full p-4 sm:p-5 rounded-2xl shadow-sm transition-all border ${
-        isDayMode ? 'bg-zinc-50 border-zinc-200 text-zinc-900' : 'bg-[#121215] border-white/[0.08] text-white'
-      }`}>
-        {/* Cabecera limpia y estilizada */}
-        <div className={`flex items-center justify-between pb-3 border-b ${
-          isDayMode ? 'border-zinc-200' : 'border-white/[0.06]'
-        }`}>
-          <div className="flex items-center gap-2.5">
-            <div className={`w-7 h-7 rounded-lg border flex items-center justify-center ${
-              isDayMode ? 'bg-zinc-200/80 border-zinc-300 text-zinc-800' : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
-            }`}>
-              <Users size={14} />
-            </div>
-            <div className="flex flex-col">
-              <span className={`text-xs font-bold uppercase tracking-wider ${
-                isDayMode ? 'text-zinc-900' : 'text-zinc-100'
-              }`}>
-                Registrar Nuevo Acceso
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Fila 1: Correo Electrónico y Nombre */}
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 w-full pt-0.5">
-          {/* Campo Correo Electrónico */}
-          <div className="sm:col-span-7 flex flex-col min-w-0">
-            <label htmlFor="input-new-admin-email" className={`text-[11px] font-semibold mb-1.5 flex items-center gap-1.5 ${
-              isDayMode ? 'text-zinc-700' : 'text-zinc-300'
-            }`}>
-              <Mail size={12} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
-              <span>Correo electrónico</span>
-              <span className="text-red-500 text-xs">*</span>
-            </label>
-            <input 
-              id="input-new-admin-email"
-              type="email" 
-              placeholder="correo@ejemplo.com" 
-              value={newEmail} 
-              onChange={(e) => setNewEmail(e.target.value)}
-              required
-              className={`w-full rounded-xl px-3.5 py-2 text-xs outline-none transition-all h-10 ${
-                isDayMode 
-                  ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600 placeholder:text-zinc-400' 
-                  : 'bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black text-white placeholder:text-zinc-600'
-              }`}
-            />
-          </div>
-
-          {/* Campo Nombre */}
-          <div className="sm:col-span-5 flex flex-col min-w-0">
-            <label htmlFor="input-new-admin-name" className={`text-[11px] font-semibold mb-1.5 flex items-center gap-1.5 ${
-              isDayMode ? 'text-zinc-700' : 'text-zinc-300'
-            }`}>
-              <User size={12} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
-              <span>Nombre</span>
-              <span className={`font-normal text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>(Opcional)</span>
-            </label>
-            <input 
-              id="input-new-admin-name"
-              type="text" 
-              placeholder="ej. Carlos Pérez" 
-              value={newName} 
-              onChange={(e) => setNewName(e.target.value)}
-              className={`w-full rounded-xl px-3.5 py-2 text-xs outline-none transition-all h-10 ${
-                isDayMode 
-                  ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600 placeholder:text-zinc-400' 
-                  : 'bg-[#0a0a0c] border border-white/10 focus:border-white/30 focus:bg-black text-white placeholder:text-zinc-600'
-              }`}
-            />
-          </div>
-        </div>
-
-        {/* Fila 2: Selector de Rol y Botón de Acción */}
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 w-full items-end">
-          {/* Selector de Rol */}
-          <div className="sm:col-span-7 flex flex-col min-w-0">
-            <label htmlFor="select-new-admin-role" className={`text-[11px] font-semibold mb-1.5 flex items-center gap-1.5 ${
-              isDayMode ? 'text-zinc-700' : 'text-zinc-300'
-            }`}>
-              <Shield size={12} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
-              <span>Rol asignado</span>
-            </label>
-            <div className="relative">
-              <select
-                id="select-new-admin-role"
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value as any)}
-                className={`w-full rounded-xl pl-3.5 pr-8 py-2 text-xs font-semibold outline-none cursor-pointer h-10 transition-colors appearance-none ${
-                  isDayMode 
-                    ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' 
-                    : 'bg-[#0a0a0c] border border-white/10 focus:border-white/30 text-zinc-200'
-                }`}
-              >
-                <option value="editor" className={isDayMode ? 'bg-white text-zinc-900' : 'bg-[#121215] text-white py-1'}>Editor (Catalogación y Edición)</option>
-                <option value="admin" className={isDayMode ? 'bg-white text-zinc-900' : 'bg-[#121215] text-white py-1'}>Administrador (Control Total)</option>
-              </select>
-              <ChevronDown size={14} className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${
-                isDayMode ? 'text-zinc-500' : 'text-zinc-400'
-              }`} />
-            </div>
-          </div>
-
-          {/* Botón de Acción */}
-          <div className="sm:col-span-5 flex flex-col min-w-0">
-            <button 
-              id="btn-add-admin"
-              disabled={actionLoading || !newEmail.trim()} 
-              type="submit" 
-              className={`font-bold text-xs px-5 rounded-xl transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed h-10 w-full ${
-                isDayMode 
-                  ? 'bg-zinc-900 hover:bg-black active:bg-zinc-800 text-white' 
-                  : 'bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-950'
-              }`}
-              title="Agregar cuenta con permisos"
-            >
-              {actionLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} strokeWidth={2.5} className="shrink-0" />}
-              <span className="tracking-wide">Añadir cuenta</span>
-            </button>
-          </div>
-        </div>
-      </form>
-      
-      {error && (
-        <div className="text-red-500 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-2.5">
-          <AlertTriangle size={15} className="shrink-0 text-red-500" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-xs font-medium px-3.5 py-2.5 rounded-xl flex items-center gap-2.5 animate-in fade-in duration-150 shadow-sm">
-          <Check size={14} className="shrink-0 text-emerald-600" />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
-      {/* Cabecera de Lista con Indicador Discreto de Tiempo Real (Sin botón manual) */}
-      <div className="flex items-center justify-between pt-1">
-        <span className={`text-[11px] font-black uppercase tracking-widest ${
-          isDayMode ? 'text-zinc-600' : 'text-zinc-400'
-        }`}>
-          Cuentas Registradas ({additionalUsers.length + (primaryAdmin ? 1 : 0)})
-        </span>
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold tracking-wide select-none ${
-          isDayMode 
-            ? 'bg-zinc-200/80 border-zinc-300 text-zinc-700' 
-            : 'bg-zinc-800/80 border-zinc-700/80 text-zinc-300'
-        }`}>
-          <span className={`w-2 h-2 rounded-full ${isDayMode ? 'bg-zinc-500' : 'bg-zinc-400'} animate-pulse`} />
-          <span>Conectado.</span>
-        </div>
-      </div>
-      
-      {/* Estado de carga inicial */}
-      {initialLoading ? (
-        <div className="flex flex-col items-center justify-center py-12 gap-3">
-          <Loader2 className="animate-spin text-red-500" size={24} />
-          <span className={`text-xs font-semibold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
-            Conectando con el servidor seguro en vivo...
-          </span>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3 max-h-[520px] overflow-y-auto p-1 pb-4 custom-scrollbar">
-          {/* Tarjeta del Administrador Principal */}
-          {primaryAdmin && (() => {
-            const customName = (primaryAdmin.name || '').trim();
-            const hasCustomName = Boolean(customName && customName !== primaryAdmin.email && !['administrador', 'editor', 'administrador principal', 'admin'].includes(customName.toLowerCase()));
-            const displayName = hasCustomName ? customName : primaryAdmin.email;
-            const isEditingPrimary = editingUserId === primaryAdmin.id;
-
-            return (
-              <div key={primaryAdmin.id} className={`flex flex-col rounded-xl border w-full overflow-hidden transition-all ${
-                isDayMode ? 'bg-zinc-50 border-zinc-200 hover:border-zinc-300' : 'bg-zinc-900 border-white/10 hover:border-white/20'
-              }`}>
-                {isEditingPrimary ? (
-                  <div className={`p-4 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200 ${
-                    isDayMode ? 'bg-zinc-100' : 'bg-black/95'
-                  }`}>
-                    <div className={`flex items-center justify-between border-b pb-2 ${
-                      isDayMode ? 'border-zinc-200' : 'border-white/5'
-                    }`}>
-                      <span className={`text-xs font-bold flex items-center gap-1.5 ${
-                        isDayMode ? 'text-zinc-900' : 'text-white'
-                      }`}>
-                        <Edit2 size={13} className="text-red-500" />
-                        <span>Editar Administrador Principal</span>
-                      </span>
-                      <button 
-                        type="button"
-                        onClick={cancelEditing}
-                        className={`p-1 rounded-md transition-colors cursor-pointer ${
-                          isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-500 hover:text-white'
-                        }`}
-                        title="Cancelar edición"
-                      >
-                        <X size={15} />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="flex flex-col min-w-0">
-                        <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
-                          isDayMode ? 'text-zinc-600' : 'text-zinc-400'
-                        }`}>
-                          <Mail size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
-                          <span>Correo electrónico</span>
-                          <span className="text-red-500 font-bold">*</span>
-                        </label>
-                        <input 
-                          type="email"
-                          value={editEmailValue}
-                          onChange={(e) => setEditEmailValue(e.target.value)}
-                          placeholder="correo@dominio.com"
-                          className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
-                            isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
-                          }`}
-                        />
-                      </div>
-
-                      <div className="flex flex-col min-w-0">
-                        <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
-                          isDayMode ? 'text-zinc-600' : 'text-zinc-400'
-                        }`}>
-                          <User size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
-                          <span>Nombre (Opcional)</span>
-                        </label>
-                        <input 
-                          type="text"
-                          value={editNameValue}
-                          onChange={(e) => setEditNameValue(e.target.value)}
-                          placeholder="ej. Carlos Pérez"
-                          className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
-                            isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    <div className={`flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t ${
-                      isDayMode ? 'border-zinc-200' : 'border-white/5'
-                    }`}>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[11px] font-medium ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Rol:</span>
-                        <span className={`text-[11px] font-medium px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 shadow-sm border ${
-                          isDayMode ? 'bg-white border-zinc-300 text-zinc-900' : 'bg-white/[0.04] border-white/10 text-zinc-200'
-                        }`}>
-                          <Crown size={12} className="text-amber-500" />
-                          <span>Administrador Principal</span>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button 
-                          type="button"
-                          onClick={() => handleSaveEdit(primaryAdmin)}
-                          disabled={editSaving}
-                          className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
-                            isDayMode ? 'bg-zinc-900 hover:bg-black text-white' : 'bg-white hover:bg-zinc-200 text-black'
-                          }`}
-                        >
-                          {editSaving ? <RotateCcw size={13} className="animate-spin" /> : <Check size={13} />}
-                          <span>Guardar cambios</span>
-                        </button>
-                        <button 
-                          type="button"
-                          onClick={cancelEditing}
-                          disabled={editSaving}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${
-                            isDayMode ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
-                          }`}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between p-3.5 gap-3">
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className={`text-sm font-bold truncate ${isDayMode ? 'text-zinc-900' : 'text-white'}`} title={displayName}>
-                        {displayName}
-                      </span>
-                      <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                        {hasCustomName && (
-                          <>
-                            <span className={`text-xs font-normal truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={primaryAdmin.email}>
-                              {primaryAdmin.email}
-                            </span>
-                            <span className={`text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>•</span>
-                          </>
-                        )}
-                        <span className={`text-[10px] uppercase font-bold tracking-wider ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                          Administrador Principal
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isSuper && (
-                        <button 
-                          type="button"
-                          onClick={() => startEditing(primaryAdmin)}
-                          disabled={actionLoading}
-                          className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs ${
-                            isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                          }`}
-                          title="Editar nombre o correo del Administrador Principal"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                      )}
-                      {isCurrentPrimary && (
-                        <button
-                          type="button"
-                          onClick={() => { setTargetTransferEmail(""); setTransferError(""); setShowTransferModal(true); }}
-                          className={`text-xs border px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0 ${
-                            isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 hover:text-zinc-950 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border-white/10'
-                          }`}
-                          title="Ceder el puesto de Administrador Principal a otro correo"
-                        >
-                          <Crown size={14} className={isDayMode ? 'text-amber-600' : 'text-amber-400'} />
-                          <span className="hidden sm:inline">Traspasar</span>
-                        </button>
-                      )}
-                      {/* NOTA OBLIGATORIA: El botón de eliminar NUNCA se muestra para el Administrador Principal */}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-          
-          {/* Cuentas Adicionales */}
-          {additionalUsers.map(a => {
-            const customName = (a.name || '').trim();
-            const hasCustomName = Boolean(customName && customName.toLowerCase() !== a.email.toLowerCase() && !['administrador', 'editor', 'admin', 'administrador principal'].includes(customName.toLowerCase()));
-            const roleLabel = a.role === 'admin' ? 'Administrador' : 'Editor';
-            const displayName = hasCustomName ? customName : a.email;
-            const isDeletingThis = userToDelete?.id === a.id;
-            const isEditingThis = editingUserId === a.id;
-            const isSelf = a.email.toLowerCase().trim() === currentEmail;
-
-            return (
-              <div key={a.id} className={`flex flex-col rounded-xl border w-full overflow-hidden transition-all ${
-                isDayMode ? 'bg-zinc-50 border-zinc-200 hover:border-zinc-300' : 'bg-zinc-900 border-white/10 hover:border-white/20'
-              }`}>
-                {/* MODO EDICIÓN INLINE */}
-                {isEditingThis ? (
-                  <div className={`p-4 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200 ${
-                    isDayMode ? 'bg-zinc-100' : 'bg-black/95'
-                  }`}>
-                    <div className={`flex items-center justify-between border-b pb-2 ${
-                      isDayMode ? 'border-zinc-200' : 'border-white/5'
-                    }`}>
-                      <span className={`text-xs font-bold flex items-center gap-1.5 ${
-                        isDayMode ? 'text-zinc-900' : 'text-white'
-                      }`}>
-                        <Edit2 size={13} className="text-red-500" />
-                        <span>Editar datos de la cuenta</span>
-                      </span>
-                      <button 
-                        type="button"
-                        onClick={cancelEditing}
-                        className={`p-1 rounded-md transition-colors cursor-pointer ${
-                          isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-500 hover:text-white'
-                        }`}
-                        title="Cancelar edición"
-                      >
-                        <X size={15} />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="flex flex-col min-w-0">
-                        <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
-                          isDayMode ? 'text-zinc-600' : 'text-zinc-400'
-                        }`}>
-                          <Mail size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
-                          <span>Correo electrónico</span>
-                          <span className="text-red-500 font-bold">*</span>
-                        </label>
-                        <input 
-                          type="email"
-                          value={editEmailValue}
-                          onChange={(e) => setEditEmailValue(e.target.value)}
-                          placeholder="correo@dominio.com"
-                          className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
-                            isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
-                          }`}
-                        />
-                      </div>
-
-                      <div className="flex flex-col min-w-0">
-                        <label className={`text-[10px] font-bold mb-1 flex items-center gap-1 ${
-                          isDayMode ? 'text-zinc-600' : 'text-zinc-400'
-                        }`}>
-                          <User size={11} className={isDayMode ? 'text-zinc-500' : 'text-zinc-400'} />
-                          <span>Nombre (Opcional)</span>
-                        </label>
-                        <input 
-                          type="text"
-                          value={editNameValue}
-                          onChange={(e) => setEditNameValue(e.target.value)}
-                          placeholder="ej. Carlos Pérez"
-                          className={`w-full rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
-                            isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 border border-white/15 focus:border-red-500 text-white'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    <div className={`flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t ${
-                      isDayMode ? 'border-zinc-200' : 'border-white/5'
-                    }`}>
-                      <div className="flex items-center gap-2">
-                        <label className={`text-[10px] font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Rol:</label>
-                        <select 
-                          value={editRoleValue}
-                          onChange={(e) => setEditRoleValue(e.target.value as any)}
-                          disabled={isSelf}
-                          className={`text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer disabled:opacity-50 ${
-                            isDayMode ? 'bg-white border border-zinc-300 text-zinc-900 focus:border-red-600' : 'bg-zinc-900 text-white border border-white/15 focus:border-red-500'
-                          }`}
-                        >
-                          <option value="editor">Editor</option>
-                          <option value="admin">Administrador</option>
-                        </select>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button 
-                          type="button"
-                          onClick={() => handleSaveEdit(a)}
-                          disabled={editSaving}
-                          className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
-                            isDayMode ? 'bg-zinc-900 hover:bg-black text-white' : 'bg-white hover:bg-zinc-200 text-black'
-                          }`}
-                        >
-                          {editSaving ? <RotateCcw size={13} className="animate-spin" /> : <Check size={13} />}
-                          <span>Guardar cambios</span>
-                        </button>
-                        <button 
-                          type="button"
-                          onClick={cancelEditing}
-                          disabled={editSaving}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${
-                            isDayMode ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
-                          }`}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : isDeletingThis ? (
-                  /* MODO CONFIRMACIÓN DE ELIMINACIÓN */
-                  <div className={`p-4 flex flex-col gap-3.5 border-l-2 border-red-500 animate-in fade-in duration-200 ${
-                    isDayMode ? 'bg-zinc-100' : 'bg-black/95'
-                  }`}>
-                    <div className="flex items-start gap-2.5">
-                      <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 shrink-0 mt-0.5">
-                        <AlertTriangle size={14} />
-                      </div>
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className={`text-xs font-bold tracking-tight ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
-                          ¿Revocar permisos de edición?
-                        </span>
-                        <span className={`text-[11px] break-words mt-0.5 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`} title={a.email}>
-                          Se retirará el acceso a <span className={`font-medium ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>{displayName}</span> ({a.email})
-                        </span>
-                      </div>
-                    </div>
-                    <div className={`flex items-center justify-end gap-2 pt-2 border-t ${
-                      isDayMode ? 'border-zinc-200' : 'border-white/5'
-                    }`}>
-                      <button 
-                        type="button"
-                        onClick={confirmDelete} 
-                        disabled={actionLoading} 
-                        className="bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white text-xs font-bold py-1.5 px-4 rounded-lg disabled:opacity-50 transition-all cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.4)] flex items-center justify-center gap-1.5"
-                      >
-                        <Trash2 size={13} className="text-white" />
-                        <span>Revocar acceso</span>
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={() => setUserToDelete(null)} 
-                        disabled={actionLoading} 
-                        className={`px-3 py-1.5 active:scale-[0.98] text-xs font-semibold rounded-lg disabled:opacity-50 transition-all cursor-pointer border ${
-                          isDayMode ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 border-zinc-300' : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
-                        }`}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* MODO VISTA NORMAL */
-                  <div className="flex items-center justify-between p-3.5 gap-3">
-                    <div className="flex flex-col flex-1 min-w-0">
-                      <span className={`text-sm font-bold truncate ${isDayMode ? 'text-zinc-900' : 'text-white'}`} title={displayName}>
-                        {displayName}
-                      </span>
-                      <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                        {hasCustomName && (
-                          <>
-                            <span className={`text-xs font-normal truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`} title={a.email}>
-                              {a.email}
-                            </span>
-                            <span className={`text-[10px] ${isDayMode ? 'text-zinc-400' : 'text-zinc-500'}`}>•</span>
-                          </>
-                        )}
-                        <span className={`text-[10px] uppercase font-bold tracking-wider shrink-0 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                          {roleLabel}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {/* Botón Editar */}
-                      {(isSuper || isSelf) && (
-                        <button 
-                          type="button"
-                          onClick={() => startEditing(a)}
-                          disabled={actionLoading}
-                          className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer flex items-center gap-1 text-xs ${
-                            isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                          }`}
-                          title="Editar nombre o correo"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                      )}
-
-                      {/* Botón Traspasar Administrador Principal */}
-                      {isCurrentPrimary && !isSelf && (
-                        <button 
-                          type="button"
-                          onClick={() => { setTargetTransferEmail(a.email); setConfirmPhrase(""); setTransferError(""); setShowTransferModal(true); }} 
-                          disabled={actionLoading} 
-                          className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer ${
-                            isDayMode ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-100' : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                          }`}
-                          title={`Traspasar puesto de Administrador Principal a ${a.email}`}
-                        >
-                          <Crown size={15} />
-                        </button>
-                      )}
-
-                      {/* Selector de Rol */}
-                      {isSuper && !isSelf && (
-                        <select 
-                          value={a.role || 'editor'}
-                          onChange={(e) => handleRoleChange(a, e.target.value)}
-                          disabled={actionLoading}
-                          className={`text-[10px] font-black uppercase tracking-widest rounded-lg px-2.5 py-1.5 outline-none cursor-pointer ${
-                            isDayMode ? 'bg-white text-zinc-800 border border-zinc-300 focus:border-red-600' : 'bg-black/50 text-zinc-300 border border-white/15 focus:border-red-500'
-                          }`}
-                        >
-                          <option value="editor">Editor</option>
-                          <option value="admin">Administrador</option>
-                        </select>
-                      )}
-
-                      {/* Botón Eliminar */}
-                      {isSuper && !isSelf && (
-                        <button 
-                          type="button"
-                          onClick={() => handleRemove(a)} 
-                          disabled={actionLoading} 
-                          className={`transition-colors p-1.5 rounded-lg disabled:opacity-50 shrink-0 cursor-pointer ${
-                            isDayMode ? 'text-zinc-400 hover:text-red-600 hover:bg-red-50' : 'text-zinc-400 hover:text-red-400 hover:bg-white/5'
-                          }`}
-                          title="Eliminar permiso"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {additionalUsers.length === 0 && (
-            <p className={`text-xs italic text-center py-5 ${isDayMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
-              No hay editores adicionales registrados aún. Añade correos arriba para habilitar su acceso.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* MODAL TRASPASAR ADMINISTRADOR PRINCIPAL */}
-      {showTransferModal && (
-        <div className={`fixed inset-0 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200 ${
-          isDayMode ? 'bg-black/60' : 'bg-black/85'
-        }`}>
-          <div className={`rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative font-sans transition-colors duration-300 ${
-            isDayMode 
-              ? 'bg-white border border-zinc-200 text-zinc-900' 
-              : 'bg-[#0e0e0e] border border-white/10 text-white'
-          }`}>
-            <button 
-              onClick={() => { setShowTransferModal(false); setTransferError(""); setConfirmPhrase(""); }}
-              className={`absolute top-4 right-4 p-1 rounded-lg transition-colors cursor-pointer ${
-                isDayMode ? 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100' : 'text-zinc-500 hover:text-white'
-              }`}
-            >
-              <X size={18} />
-            </button>
-            <div className="flex items-center gap-2.5">
-              <div className={`p-2.5 rounded-xl border ${
-                isDayMode ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-white/5 border-white/10 text-zinc-300'
-              }`}>
-                <Crown size={20} />
-              </div>
-              <div>
-                <h4 className={`text-base font-bold ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
-                  Traspasar Administrador Principal
-                </h4>
-                <p className={`text-[11px] ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  Cede la titularidad principal de la videoteca
-                </p>
-              </div>
-            </div>
-
-            <p className={`text-xs leading-relaxed ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
-              Como <strong className={isDayMode ? 'text-zinc-900' : 'text-white'}>Administrador Principal</strong> actual ({primaryEmail}), puedes ceder tu puesto a otro correo. Tu cuenta conservará el rol de <strong className={isDayMode ? 'text-zinc-900' : 'text-white'}>Administrador</strong> y el nuevo correo asumirá la titularidad principal de forma atómica en Firestore.
-            </p>
-
-            <div className="flex flex-col gap-2">
-              <label className={`text-xs font-semibold ${isDayMode ? 'text-zinc-700' : 'text-zinc-300'}`}>
-                Correo del nuevo Administrador Principal:
-              </label>
-              <input 
-                type="email"
-                placeholder="nuevo.admin@gmail.com"
-                value={targetTransferEmail}
-                onChange={(e) => setTargetTransferEmail(e.target.value)}
-                className={`rounded-xl px-4 py-2.5 text-sm outline-none w-full ${
-                  isDayMode 
-                    ? 'bg-zinc-50 border border-zinc-300 text-zinc-900 focus:border-red-600 placeholder:text-zinc-400' 
-                    : 'bg-zinc-900 border border-white/15 text-white focus:border-white/40'
-                }`}
-              />
-              {additionalUsers.length > 0 && (
-                <div className="flex flex-col gap-1 mt-1">
-                  <span className={`text-[10px] ${isDayMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                    O elige entre las cuentas registradas:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                    {additionalUsers.map(adm => {
-                      const emailStr = adm.email.toLowerCase().trim();
-                      const isSelected = targetTransferEmail.toLowerCase().trim() === emailStr;
-                      return (
-                        <button
-                          key={emailStr}
-                          type="button"
-                          onClick={() => setTargetTransferEmail(emailStr)}
-                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
-                            isSelected 
-                              ? (isDayMode ? 'bg-zinc-900 border-zinc-900 text-white font-bold' : 'bg-white/15 border-white/30 text-white font-bold') 
-                              : (isDayMode ? 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:text-zinc-950 hover:bg-zinc-200' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white')
-                          }`}
-                        >
-                          {emailStr}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className={`p-3.5 rounded-xl flex flex-col gap-2.5 border ${
-              isDayMode ? 'bg-amber-50/80 border-amber-200 text-amber-950' : 'bg-zinc-900 border-white/10 text-zinc-300'
-            }`}>
-              <p className={`text-[11px] leading-tight ${isDayMode ? 'text-amber-900' : 'text-zinc-300'}`}>
-                ⚠️ <strong>Confirmación de seguridad requerida:</strong> Esta acción es irreversible. El nuevo titular será la única persona autorizada para gestionar la titularidad principal en el futuro.
-              </p>
-              <div className={`flex flex-col gap-1.5 pt-1.5 border-t ${
-                isDayMode ? 'border-amber-200/60' : 'border-white/5'
-              }`}>
-                <label className={`text-[11px] font-medium ${isDayMode ? 'text-amber-800' : 'text-zinc-400'}`}>
-                  Escribe <span className={`font-black tracking-widest font-mono ${isDayMode ? 'text-amber-950' : 'text-white'}`}>TRANSFERIR</span> para desbloquear la confirmación:
-                </label>
-                <input 
-                  type="text"
-                  placeholder="TRANSFERIR"
-                  value={confirmPhrase}
-                  onChange={(e) => setConfirmPhrase(e.target.value)}
-                  className={`rounded-lg px-3 py-2 text-xs font-mono tracking-wider outline-none w-full uppercase ${
-                    isDayMode 
-                      ? 'bg-white border border-amber-300 text-amber-950 focus:border-amber-600' 
-                      : 'bg-black/60 border border-white/15 text-white focus:border-white/40'
-                  }`}
-                />
-              </div>
-            </div>
-
-            {transferError && (
-              <div className="text-red-500 text-xs font-semibold bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl flex items-center gap-2">
-                <AlertTriangle size={14} className="shrink-0 text-red-500" />
-                <span>{transferError}</span>
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={handleConfirmTransfer}
-                disabled={transferLoading || !targetTransferEmail.trim() || confirmPhrase.trim().toUpperCase() !== 'TRANSFERIR'}
-                className={`flex-1 text-xs font-bold py-2.5 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg ${
-                  isDayMode 
-                    ? 'bg-zinc-900 hover:bg-black text-white' 
-                    : 'bg-white hover:bg-zinc-200 text-black'
-                }`}
-              >
-                {transferLoading ? <RotateCcw size={14} className="animate-spin" /> : <Crown size={14} />}
-                <span>Confirmar Traspaso</span>
-              </button>
-              <button
-                onClick={() => { setShowTransferModal(false); setTransferError(""); setConfirmPhrase(""); }}
-                disabled={transferLoading}
-                className={`flex-1 text-xs font-bold py-2.5 rounded-xl disabled:opacity-50 transition-colors cursor-pointer ${
-                  isDayMode 
-                    ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-300' 
-                    : 'bg-white/10 hover:bg-white/20 text-white'
-                }`}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};

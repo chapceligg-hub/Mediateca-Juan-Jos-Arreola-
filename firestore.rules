@@ -5,33 +5,8 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper functions
-    function isSignedIn() { 
-      return request.auth != null && request.auth.token != null; 
-    }
-    
-    function isAdmin() {
-      return isSignedIn() && 
-             'email' in request.auth.token && 
-             request.auth.token.email is string &&
-             (
-               request.auth.token.email.lower() == "chapceligg@gmail.com" || 
-               exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()))
-             );
-    }
-
     match /movies/{movieId} {
-      // Lectura y sincronización global entre equipos incluso en modo bypass sin autenticación de Google
-      allow read, write: if true;
-    }
-
-    match /authorized_users/{userId} {
-      // Colección dedicada y aislada de cuentas autorizadas (Administradores y Editores)
-      allow read, write: if true;
-    }
-
-    match /admins/{adminId} {
-      // Verificación de acceso y sincronización de administradores y editores entre dispositivos
+      // Lectura y sincronización global del catálogo de películas
       allow read, write: if true;
     }
 

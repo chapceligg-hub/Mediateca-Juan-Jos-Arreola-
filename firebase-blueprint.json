@@ -36,44 +36,12 @@
         "isLatestSaved": { "type": "boolean" },
         "latestSavedAt": { "type": "string" }
       }
-    },
-    "admin": {
-      "title": "Admin",
-      "description": "An admin configuration with a user's email.",
-      "type": "object",
-      "properties": {
-        "email": { "type": "string" }
-      },
-      "required": ["email"]
-    },
-    "authorized_user": {
-      "title": "Authorized User",
-      "description": "An authorized user account with email, name, role and timestamps.",
-      "type": "object",
-      "properties": {
-        "email": { "type": "string" },
-        "name": { "type": "string" },
-        "role": { "type": "string" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" },
-        "addedBy": { "type": "string" },
-        "photoURL": { "type": "string" }
-      },
-      "required": ["email", "role"]
     }
   },
   "firestore": {
     "/movies/{movieId}": {
       "schema": { "$ref": "#/entities/movie" },
       "description": "Catalog of movies."
-    },
-    "/admins/{adminId}": {
-      "schema": { "$ref": "#/entities/admin" },
-      "description": "Collection of admin emails allowed to edit."
-    },
-    "/authorized_users/{userId}": {
-      "schema": { "$ref": "#/entities/authorized_user" },
-      "description": "Dedicated isolated collection of authorized users and administrators."
     }
   }
 }

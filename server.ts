@@ -177,478 +177,114 @@ export const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- GESTIÓN DE ADMINISTRADORES Y EDITORES EN SERVIDOR (Garantiza acceso multi-dispositivo sin bloqueos por cuota) ---
-const ADMINS_FILE = path.join(process.cwd(), "admins-registry.json");
-const DELETED_ADMINS_FILE = path.join(process.cwd(), "deleted-admins.json");
-const PRIMARY_ADMIN_FILE = path.join(process.cwd(), "primary-admin.json");
+// --- SISTEMA PURO DE DOS LLAVES DE ACCESO DIRECTAS (SIN CORREOS NI CUENTAS) ---
+const KEYS_CONFIG_FILE = path.join(process.cwd(), "keys-config.json");
+const TMP_KEYS_CONFIG_FILE = path.join("/tmp", "keys-config.json");
 
-const TMP_ADMINS_FILE = path.join("/tmp", "admins-registry.json");
-const TMP_PRIMARY_ADMIN_FILE = path.join("/tmp", "primary-admin.json");
-const TMP_DELETED_ADMINS_FILE = path.join("/tmp", "deleted-admins.json");
+const DEFAULT_MASTER_KEY = "AdminMaster2026#";
+const DEFAULT_EDITOR_PIN = "123456";
 
-let memoryAdminsCache: any[] | null = null;
-let memoryPrimaryAdminCache: string | null = null;
-let memoryDeletedAdminsCache: string[] | null = null;
+let activeMasterKey = DEFAULT_MASTER_KEY;
+let activeEditorPin = DEFAULT_EDITOR_PIN;
 let globalSyncVersion = 1;
 let globalMovieRevision = 1;
-let globalAdminRevision = 1;
 
-function loadDeletedAdminIds(): string[] {
-  if (memoryDeletedAdminsCache) return memoryDeletedAdminsCache;
+function loadKeysConfig() {
   try {
-    const fileToRead = fs.existsSync(TMP_DELETED_ADMINS_FILE) ? TMP_DELETED_ADMINS_FILE : (fs.existsSync(DELETED_ADMINS_FILE) ? DELETED_ADMINS_FILE : null);
+    const fileToRead = fs.existsSync(TMP_KEYS_CONFIG_FILE)
+      ? TMP_KEYS_CONFIG_FILE
+      : (fs.existsSync(KEYS_CONFIG_FILE) ? KEYS_CONFIG_FILE : null);
     if (fileToRead) {
       const raw = fs.readFileSync(fileToRead, "utf-8");
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        memoryDeletedAdminsCache = parsed.map((e: any) => String(e).toLowerCase().trim()).filter(Boolean);
-        return memoryDeletedAdminsCache;
+      if (parsed && typeof parsed.masterKey === 'string' && parsed.masterKey.trim()) {
+        activeMasterKey = parsed.masterKey.trim();
+      }
+      if (parsed && typeof parsed.editorPin === 'string' && parsed.editorPin.trim()) {
+        activeEditorPin = parsed.editorPin.trim();
       }
     }
   } catch (e) {
-    console.warn("Error leyendo deleted-admins.json:", e);
-  }
-  memoryDeletedAdminsCache = [];
-  return memoryDeletedAdminsCache;
-}
-
-function saveDeletedAdminIds(ids: string[]) {
-  const clean = Array.from(new Set(ids.map(e => String(e).toLowerCase().trim()).filter(Boolean)));
-  memoryDeletedAdminsCache = clean;
-  const payload = JSON.stringify(clean, null, 2);
-  try {
-    fs.writeFileSync(DELETED_ADMINS_FILE, payload, "utf-8");
-  } catch (e) {
-    try {
-      fs.writeFileSync(TMP_DELETED_ADMINS_FILE, payload, "utf-8");
-    } catch (_) {}
+    console.warn("Error leyendo keys-config.json:", e);
   }
 }
 
-// --- REGISTRO DE ADMINISTRADOR PRINCIPAL Y EDITORES (Persistencia y Sincronización) ---
-function loadPrimarySuperAdmin(): string {
-  if (memoryPrimaryAdminCache) return memoryPrimaryAdminCache;
-  try {
-    const fileToRead = fs.existsSync(TMP_PRIMARY_ADMIN_FILE) ? TMP_PRIMARY_ADMIN_FILE : (fs.existsSync(PRIMARY_ADMIN_FILE) ? PRIMARY_ADMIN_FILE : null);
-    if (fileToRead) {
-      const raw = fs.readFileSync(fileToRead, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed.email === 'string' && parsed.email.trim()) {
-        memoryPrimaryAdminCache = parsed.email.trim().toLowerCase();
-        return memoryPrimaryAdminCache;
-      }
-    }
-  } catch (e) {
-    console.warn("Error leyendo primary-admin.json:", e);
-  }
-  memoryPrimaryAdminCache = "chapceligg@gmail.com";
-  return memoryPrimaryAdminCache;
-}
-
-function savePrimarySuperAdmin(email: string) {
-  const normalized = email.trim().toLowerCase();
-  memoryPrimaryAdminCache = normalized;
-  const payload = JSON.stringify({ email: normalized, updatedAt: new Date().toISOString() }, null, 2);
-  try {
-    fs.writeFileSync(PRIMARY_ADMIN_FILE, payload, "utf-8");
-  } catch (e) {
-    try {
-      fs.writeFileSync(TMP_PRIMARY_ADMIN_FILE, payload, "utf-8");
-    } catch (_) {}
-  }
-}
-
-const DEFAULT_PERSISTENT_ADMINS: any[] = [
-  {
-    id: "chapceligg@gmail.com",
-    email: "chapceligg@gmail.com",
-    role: "admin",
-    name: "Alex Cárdenas",
-    createdAt: "2026-09-17T20:29:42.431Z",
-    updatedAt: "2026-09-22T17:57:55.347Z"
-  },
-  {
-    id: "uriel.cardenas@udgvirtual.udg.mx",
-    email: "uriel.cardenas@udgvirtual.udg.mx",
-    role: "admin",
-    name: "Uriel Cárdenas",
-    createdAt: "2026-09-18T19:36:07.784Z",
-    updatedAt: "2026-09-23T16:51:40.205Z"
-  },
-  {
-    id: "lizbeth.hernandez@udgvirtual.udg.mx",
-    email: "lizbeth.hernandez@udgvirtual.udg.mx",
-    role: "editor",
-    name: "lizbeth hernandez",
-    createdAt: "2026-09-21T19:28:27.162Z",
-    updatedAt: "2026-09-22T17:37:40.371Z"
-  },
-  {
-    id: "urielcg12@hotmail.com",
-    email: "urielcg12@hotmail.com",
-    role: "editor",
-    name: "Uriel CG",
-    createdAt: "2026-09-29T09:00:00.000Z"
-  }
-];
-
-function loadServerAdmins(): any[] {
-  if (memoryAdminsCache && Array.isArray(memoryAdminsCache) && memoryAdminsCache.length > 0) {
-    return memoryAdminsCache;
-  }
-  const primary = loadPrimarySuperAdmin();
-  const deletedSet = new Set(loadDeletedAdminIds());
-  deletedSet.delete(primary);
-
-  const map = new Map<string, any>();
-  let hasLoadedFromFile = false;
-
-  // 1. Cargar archivo admins-registry.json si existe en /tmp o en directorio raíz
-  try {
-    const fileToRead = fs.existsSync(TMP_ADMINS_FILE) ? TMP_ADMINS_FILE : (fs.existsSync(ADMINS_FILE) ? ADMINS_FILE : null);
-    if (fileToRead) {
-      const raw = fs.readFileSync(fileToRead, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        hasLoadedFromFile = true;
-        for (const item of parsed) {
-          const key = (item.email || item.id || "").toLowerCase().trim();
-          if (key && !deletedSet.has(key)) {
-            map.set(key, { ...item, id: key, email: key });
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn("Error leyendo admins-registry.json:", e);
-  }
-
-  // 2. Solo si admins-registry.json no existe o está vacío, sembrar con DEFAULT_PERSISTENT_ADMINS
-  if (!hasLoadedFromFile) {
-    for (const def of DEFAULT_PERSISTENT_ADMINS) {
-      const key = def.email.toLowerCase().trim();
-      if (!deletedSet.has(key)) {
-        map.set(key, { ...def });
-      }
-    }
-  }
-
-  // Asegurar que el Administrador Principal siempre tenga rol admin
-  const primaryAdmin = map.get(primary) || {
-    id: primary,
-    email: primary,
-    role: "admin",
-    name: primary.split("@")[0],
-    createdAt: new Date().toISOString()
-  };
-  primaryAdmin.role = "admin";
-  map.set(primary, primaryAdmin);
-
-  const result = Array.from(map.values());
-  memoryAdminsCache = result;
-  return result;
-}
-
-function saveServerAdmins(admins: any[]) {
-  memoryAdminsCache = admins;
-  const payload = JSON.stringify(admins, null, 2);
-  try {
-    fs.writeFileSync(ADMINS_FILE, payload, "utf-8");
-  } catch (e) {
-    try {
-      fs.writeFileSync(TMP_ADMINS_FILE, payload, "utf-8");
-    } catch (_) {}
-  }
-}
-
-function getActiveAdminsList(): any[] {
-  const admins = loadServerAdmins();
-  const deleted = new Set(loadDeletedAdminIds());
-  const primary = loadPrimarySuperAdmin();
-  // El Administrador Principal jamás puede figurar como eliminado
-  deleted.delete(primary);
-  deleted.delete("chapceligg@gmail.com");
-  return admins.filter(a => !deleted.has((a.email || a.id || "").trim().toLowerCase()));
-}
-
-// Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
-function broadcastAdminsUpdate() {
-  globalSyncVersion++;
-  globalAdminRevision++;
-}
-
-app.get("/api/primary-admin", (req, res) => {
-  res.json({ email: loadPrimarySuperAdmin() });
-});
-
-app.post("/api/primary-admin", (req, res) => {
-  const email = (req.body?.email || "").trim().toLowerCase();
-  const current = (req.body?.current || "").trim().toLowerCase();
-  const keepPrevious = req.body?.keepPrevious !== false;
-  if (!email || !email.includes("@")) {
-    return res.status(400).json({ error: "Email inválido" });
-  }
-  savePrimarySuperAdmin(email);
-
-  // Asegurar que el primary super admin esté registrado en admins
-  let admins = loadServerAdmins();
-  const deleted = loadDeletedAdminIds().filter(d => d !== email);
-  saveDeletedAdminIds(deleted);
-
-  const nowIso = new Date().toISOString();
-  const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
-  if (idx > -1) {
-    admins[idx].role = "primary_admin";
-    admins[idx].updatedAt = nowIso;
-    admins[idx]._rev = ++globalAdminRevision;
-  } else {
-    admins.unshift({
-      id: email,
-      email,
-      role: "primary_admin",
-      name: "",
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      _rev: ++globalAdminRevision
-    });
-  }
-
-  // Si el anterior primary admin estaba registrado, mantenerlo si keepPrevious es true, o removerlo si es false (edición)
-  if (current && current !== email) {
-    if (keepPrevious) {
-      const curIdx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === current);
-      if (curIdx > -1) {
-        admins[curIdx].role = "admin";
-        admins[curIdx].updatedAt = nowIso;
-        admins[curIdx]._rev = ++globalAdminRevision;
-      }
-    } else {
-      admins = admins.filter(a => (a.email || a.id || "").trim().toLowerCase() !== current);
-      const delList = loadDeletedAdminIds();
-      if (!delList.includes(current)) {
-        delList.push(current);
-        saveDeletedAdminIds(delList.slice(-500));
-      }
-    }
-  }
-
-  saveServerAdmins(admins);
-  broadcastAdminsUpdate();
-  res.json({ success: true, email });
-});
-
-app.get("/api/admins", (req, res) => {
-  const active = getActiveAdminsList();
-  res.json(active);
-});
-
-app.get("/api/admins/deleted", (req, res) => {
-  const ids = loadDeletedAdminIds();
-  res.json(ids);
-});
-
-app.get("/api/admins/check/:email", (req, res) => {
-  const email = (req.params.email || "").trim().toLowerCase();
-  if (!email) {
-    return res.json({ isAdmin: false });
-  }
-
-  const primary = loadPrimarySuperAdmin();
-  if (email === primary || email === "chapceligg@gmail.com") {
-    const admins = loadServerAdmins();
-    const primaryMatch = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
-    return res.json({ 
-      isAdmin: true, 
-      role: "admin", 
-      name: primaryMatch?.name || "Alex Cárdenas"
-    });
-  }
-
-  const deleted = new Set(loadDeletedAdminIds());
-  if (deleted.has(email)) {
-    return res.json({ isAdmin: false, deleted: true });
-  }
-
-  const admins = loadServerAdmins();
-  const match = admins.find(a => (a.email || a.id || "").trim().toLowerCase() === email);
-  if (match) {
-    return res.json({ 
-      isAdmin: true, 
-      role: match.role || "editor", 
-      name: match.name || ""
-    });
-  }
-  return res.json({ isAdmin: false });
-});
-
-app.post("/api/admins", (req, res) => {
-  const adminData = req.body;
-  if (!adminData || (!adminData.email && !adminData.id)) {
-    return res.status(400).json({ error: "Datos de administrador incompletos" });
-  }
-  const email = (adminData.email || adminData.id).trim().toLowerCase();
-  
-  // Si se vuelve a agregar o editar, quitar de la lista de eliminados
-  const deletedIds = loadDeletedAdminIds().filter(id => id !== email);
-  saveDeletedAdminIds(deletedIds);
-
-  const admins = loadServerAdmins();
-  const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
-  const existingName = (idx > -1 ? (admins[idx].name || "") : "").trim();
-  const incomingName = adminData.name !== undefined ? String(adminData.name).trim() : existingName;
-
-  const updatedEntry = {
-    ...(idx > -1 ? admins[idx] : {}),
-    ...adminData,
-    id: email,
-    email: email,
-    name: incomingName,
-    role: adminData.role || (idx > -1 ? admins[idx].role : "editor"),
-    updatedAt: new Date().toISOString(),
-    _rev: ++globalAdminRevision
-  };
-  if (idx > -1) {
-    admins[idx] = updatedEntry;
-  } else {
-    admins.push(updatedEntry);
-  }
-  saveServerAdmins(admins);
-  broadcastAdminsUpdate();
-  res.json({ success: true, admin: updatedEntry });
-});
-
-app.put("/api/admins/:oldEmail", (req, res) => {
-  const oldEmail = decodeURIComponent(req.params.oldEmail || "").trim().toLowerCase();
-  const updateData = req.body;
-  if (!updateData || (!updateData.email && !updateData.id)) {
-    return res.status(400).json({ error: "Datos incompletos" });
-  }
-  const newEmail = (updateData.email || updateData.id).trim().toLowerCase();
-  
-  const primary = loadPrimarySuperAdmin();
-  if (oldEmail === primary && newEmail !== oldEmail) {
-    savePrimarySuperAdmin(newEmail);
-  }
-
-  // Si cambia de correo, registrar el viejo como eliminado y retirar el nuevo de eliminados
-  let deletedIds = loadDeletedAdminIds().filter(id => id !== newEmail);
-  if (newEmail !== oldEmail && oldEmail !== primary) {
-    if (!deletedIds.includes(oldEmail)) {
-      deletedIds.push(oldEmail);
-    }
-  }
-  saveDeletedAdminIds(deletedIds);
-
-  let admins = loadServerAdmins();
-  const oldIdx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === oldEmail);
-  const updatedEntry = {
-    ...(oldIdx > -1 ? admins[oldIdx] : {}),
-    ...updateData,
-    id: newEmail,
-    email: newEmail,
-    name: updateData.name !== undefined ? String(updateData.name).trim() : (oldIdx > -1 ? admins[oldIdx].name : ""),
-    role: updateData.role || (oldIdx > -1 ? admins[oldIdx].role : "editor"),
+function saveKeysConfig(newMasterKey: string, newEditorPin: string) {
+  activeMasterKey = newMasterKey.trim();
+  activeEditorPin = newEditorPin.trim();
+  const payload = JSON.stringify({
+    masterKey: activeMasterKey,
+    editorPin: activeEditorPin,
     updatedAt: new Date().toISOString()
-  };
+  }, null, 2);
 
-  if (oldIdx > -1) {
-    admins[oldIdx] = updatedEntry;
+  try {
+    fs.writeFileSync(KEYS_CONFIG_FILE, payload, "utf-8");
+  } catch (e) {
+    try {
+      fs.writeFileSync(TMP_KEYS_CONFIG_FILE, payload, "utf-8");
+    } catch (_) {}
+  }
+}
+
+// Inicializar claves en arranque
+loadKeysConfig();
+
+// Middleware de Autorización por Header HTTP 'x-access-key'
+app.use((req, res, next) => {
+  const accessKey = (req.headers['x-access-key'] as string || '').trim();
+  if (accessKey && accessKey === activeMasterKey) {
+    (req as any).userRole = 'owner';
+  } else if (accessKey && accessKey === activeEditorPin) {
+    (req as any).userRole = 'editor';
   } else {
-    admins.push(updatedEntry);
+    (req as any).userRole = 'viewer';
   }
+  next();
+});
 
-  // Evitar duplicados por clave de correo
-  const seen = new Set<string>();
-  admins = admins.filter(a => {
-    const k = (a.email || a.id || "").trim().toLowerCase();
-    if (!k || seen.has(k)) return false;
-    seen.add(k);
-    return true;
+// POST /api/auth/login-key: Valida clave y retorna rol ('owner' | 'editor')
+app.post("/api/auth/login-key", (req, res) => {
+  const key = (req.body?.key || '').trim();
+  if (key === activeMasterKey) {
+    return res.json({ valid: true, role: 'owner' });
+  }
+  if (key === activeEditorPin) {
+    return res.json({ valid: true, role: 'editor' });
+  }
+  return res.status(401).json({ valid: false, message: "CLAVE_INVALIDA" });
+});
+
+// GET /api/auth/keys (PROTEGIDO - Solo 'owner')
+app.get("/api/auth/keys", (req, res) => {
+  if ((req as any).userRole !== 'owner') {
+    return res.status(403).json({ message: "NO_ACCESS" });
+  }
+  return res.json({
+    masterKey: activeMasterKey,
+    editorPin: activeEditorPin
   });
-
-  saveServerAdmins(admins);
-  broadcastAdminsUpdate();
-  res.json({ success: true, admin: updatedEntry });
 });
 
-app.post("/api/admins/sync", (req, res) => {
-  const list = req.body;
-  if (!Array.isArray(list)) {
-    return res.status(400).json({ error: "Se esperaba un array de administradores" });
+// POST /api/auth/change-keys (PROTEGIDO - Solo 'owner')
+app.post("/api/auth/change-keys", (req, res) => {
+  if ((req as any).userRole !== 'owner') {
+    return res.status(403).json({ message: "NO_ACCESS" });
   }
-  const primary = loadPrimarySuperAdmin();
-
-  // Los correos que se están sincronizando activamente ya no deben considerarse eliminados
-  const incomingKeys = new Set(list.map(item => (item?.email || item?.id || "").trim().toLowerCase()).filter(Boolean));
-  let currentDeleted = loadDeletedAdminIds().filter(id => !incomingKeys.has(id));
-  saveDeletedAdminIds(currentDeleted);
-  const deletedSet = new Set(currentDeleted);
-  deletedSet.delete(primary);
-
-  const current = loadServerAdmins();
-  const map = new Map<string, any>();
-  for (const a of current) {
-    const key = (a.email || a.id || "").trim().toLowerCase();
-    if (key && !deletedSet.has(key)) map.set(key, a);
+  const { newMasterKey, newEditorPin } = req.body || {};
+  if (!newMasterKey || typeof newMasterKey !== 'string' || !newMasterKey.trim()) {
+    return res.status(400).json({ error: "La Clave Maestra no puede estar vacía" });
   }
-  for (const item of list) {
-    const key = (item.email || item.id || "").trim().toLowerCase();
-    if (key && !deletedSet.has(key)) {
-      const existing = map.get(key);
-      if (!existing) {
-        map.set(key, { ...item, id: key, email: key });
-      } else {
-        const itemTime = item.updatedAt || item.createdAt || "";
-        const existTime = existing.updatedAt || existing.createdAt || "";
-        const base = itemTime >= existTime ? { ...existing, ...item } : { ...item, ...existing };
-        const existingName = (existing.name || "").trim();
-        const incomingName = (item.name || "").trim();
-        const finalName = item.name !== undefined && String(item.name).trim() ? String(item.name).trim() : (incomingName || existingName);
-        map.set(key, { ...base, id: key, email: key, name: finalName });
-      }
-    }
-  }
-  if (!map.has(primary)) {
-    map.set(primary, {
-      id: primary,
-      email: primary,
-      role: "admin",
-      name: primary.split("@")[0]
-    });
-  }
-  const merged = Array.from(map.values());
-  saveServerAdmins(merged);
-  broadcastAdminsUpdate();
-  res.json({ success: true, count: merged.length });
-});
-
-app.post("/api/admins/deleted/unrecord", (req, res) => {
-  const email = (req.body?.email || "").trim().toLowerCase();
-  if (email) {
-    const filtered = loadDeletedAdminIds().filter(id => id !== email);
-    saveDeletedAdminIds(filtered);
-    broadcastAdminsUpdate();
-  }
-  res.json({ success: true });
-});
-
-app.delete("/api/admins/:email", (req, res) => {
-  const email = (req.params.email || "").trim().toLowerCase();
-  const primary = loadPrimarySuperAdmin();
-  if (email === primary) {
-    return res.status(403).json({ error: "No se puede eliminar el Super Admin Principal" });
-  }
-  // Registrar en lista de eliminados para propagar a otros dispositivos
-  const deletedIds = loadDeletedAdminIds();
-  if (!deletedIds.includes(email)) {
-    deletedIds.push(email);
-    saveDeletedAdminIds(deletedIds.slice(-500));
+  if (!newEditorPin || typeof newEditorPin !== 'string' || !newEditorPin.trim()) {
+    return res.status(400).json({ error: "El PIN de Editor no puede estar vacío" });
   }
 
-  const admins = loadServerAdmins().filter(a => (a.email || a.id || "").trim().toLowerCase() !== email);
-  saveServerAdmins(admins);
-  broadcastAdminsUpdate();
-  res.json({ success: true });
+  saveKeysConfig(newMasterKey.trim(), newEditorPin.trim());
+  return res.json({
+    success: true,
+    masterKey: activeMasterKey,
+    editorPin: activeEditorPin
+  });
 });
 
 // --- REGISTRO Y GESTIÓN DE PELÍCULAS ---
@@ -706,6 +342,11 @@ app.get("/api/movies", (req, res) => {
 });
 
 app.post("/api/movies", (req, res) => {
+  const role = (req as any).userRole;
+  if (role !== 'owner' && role !== 'editor') {
+    return res.status(403).json({ error: "NO_ACCESS", message: "Acceso no autorizado para agregar o editar películas." });
+  }
+
   const movie = req.body;
   if (!movie || !movie.id) {
     return res.status(400).json({ error: "Película inválida o sin ID" });
@@ -787,6 +428,11 @@ app.post("/api/movies/sync", (req, res) => {
 });
 
 app.delete("/api/movies/:id", (req, res) => {
+  const role = (req as any).userRole;
+  if (role !== 'owner') {
+    return res.status(403).json({ error: "NO_ACCESS", message: "Solo el Dueño (Clave Maestra) puede eliminar películas." });
+  }
+
   const id = req.params.id;
   if (!id) return res.status(400).json({ error: "ID requerido" });
 
@@ -832,6 +478,11 @@ app.get("/api/movies/deleted", (req, res) => {
 });
 
 app.post("/api/movies/deleted", (req, res) => {
+  const role = (req as any).userRole;
+  if (role !== 'owner') {
+    return res.status(403).json({ error: "NO_ACCESS", message: "Solo el Dueño (Clave Maestra) puede eliminar películas." });
+  }
+
   const { id, ids } = req.body || {};
   const current = loadDeletedMovieIds();
   const setIds = new Set(current);
@@ -856,9 +507,6 @@ app.get(["/api/delta", "/api/sync/delta"], (req, res) => {
   const rev = parseInt((req.query.rev as string) || "0", 10);
   const allMovies = getActiveMoviesList();
   const deletedMovieIds = loadDeletedMovieIds();
-  const allAdmins = getActiveAdminsList();
-  const primaryAdmin = loadPrimarySuperAdmin();
-  const deletedAdminIds = loadDeletedAdminIds();
 
   // Si no se especifica 'since' o es época o rev=0, entregar todas
   let deltaMovies: any[] = [];
@@ -878,12 +526,8 @@ app.get(["/api/delta", "/api/sync/delta"], (req, res) => {
     timestamp: new Date().toISOString(),
     version: globalSyncVersion,
     movieRevision: globalMovieRevision,
-    adminRevision: globalAdminRevision,
     deltaMovies,
     deletedMovieIds,
-    admins: allAdmins,
-    primaryAdmin,
-    deletedAdminIds,
     totalMoviesCount: allMovies.length
   });
 });
