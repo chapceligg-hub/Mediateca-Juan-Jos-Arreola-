@@ -192,6 +192,977 @@ export const normalizeText = (text: string | null | undefined): string => {
     .trim();
 };
 
+/**
+ * Limpia un texto dejando solo caracteres alfanuméricos separados por un espacio,
+ * removiendo apóstrofes (Schindler's -> schindlers) y signos de puntuación.
+ */
+export const cleanAlphanumeric = (text: string | null | undefined): string => {
+  if (!text) return "";
+  return normalizeText(text)
+    .replace(/['’`´]/g, "") // Schindler's -> schindlers
+    .replace(/[^a-z0-9]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+/**
+ * Compacta un texto eliminando todos los espacios y símbolos
+ * para permitir búsquedas compuestas (Spider-Man === spiderman === spider man)
+ */
+export const compactAlpha = (text: string | null | undefined): string => {
+  if (!text) return "";
+  return cleanAlphanumeric(text).replace(/\s+/g, "");
+};
+
+// Conversión bidireccional de números romanos y arábigos (Parte 2 <-> Part II, Rocky 4 <-> Rocky IV)
+const ROMAN_TO_ARABIC: Record<string, string> = {
+  "i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5",
+  "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10"
+};
+const ARABIC_TO_ROMAN: Record<string, string> = {
+  "1": "i", "2": "ii", "3": "iii", "4": "iv", "5": "v",
+  "6": "vi", "7": "vii", "8": "viii", "9": "ix", "10": "x"
+};
+
+export const getNumberEquivalents = (term: string): string[] => {
+  const norm = term.toLowerCase().trim();
+  const results = [norm];
+  if (ROMAN_TO_ARABIC[norm]) results.push(ROMAN_TO_ARABIC[norm]);
+  if (ARABIC_TO_ROMAN[norm]) results.push(ARABIC_TO_ROMAN[norm]);
+  return results;
+};
+
+// Palabras vacías / artículos comunes en inglés y español que no deben bloquear la coincidencia
+export const SEARCH_STOP_WORDS = new Set([
+  "the", "a", "an", "el", "la", "los", "las", "un", "una", "unos", "unas",
+  "de", "del", "y", "and", "of", "in", "en", "on", "at", "to", "for", "por", "para"
+]);
+
+// Diccionario extendido de equivalencias cinematográficas bilingües inglés <-> español (España y Latinoamérica)
+export const BILINGUAL_TITLE_EQUIVALENTS: [string, string][] = [
+  // --- CLÁSICOS Y OBRAS MAESTRAS ---
+  ["the shawshank redemption", "sueno de fuga / cadena perpetua / sueno de libertad / redencion"],
+  ["the godfather", "el padrino"],
+  ["the godfather part ii", "el padrino parte 2 / el padrino 2 / el padrino parte ii / the godfather 2"],
+  ["the godfather part iii", "el padrino parte 3 / el padrino 3 / el padrino parte iii / the godfather 3"],
+  ["pulp fiction", "tiempos violentos / pulp fiction"],
+  ["fight club", "el club de la pelea / el club de la lucha"],
+  ["forrest gump", "forrest gump"],
+  ["goodfellas", "buenos muchachos / uno de los nuestros"],
+  ["the silence of the lambs", "el silencio de los inocentes / el silencio de los corderos"],
+  ["schindler's list", "la lista de schindler / schindlers list"],
+  ["schindlers list", "la lista de schindler"],
+  ["saving private ryan", "rescatando al soldado ryan / salvar al soldado ryan"],
+  ["the green mile", "milagros inesperados / la milla verde"],
+  ["life is beautiful", "la vida es bella / la vita e bella"],
+  ["the truman show", "el show de truman / una vida en directo"],
+  ["american beauty", "belleza americana"],
+  ["braveheart", "corazon valiente"],
+  ["gladiator", "gladiador / gladiator"],
+  ["titanic", "titanic"],
+  ["cast away", "naufrago"],
+  ["the departed", "los infiltrados / infiltrados"],
+  ["catch me if you can", "atrapame si puedes"],
+  ["the wolf of wall street", "el lobo de wall street"],
+  ["eternal sunshine of the spotless mind", "eterno resplandor de una mente sin recuerdos / olvidate de mi"],
+  ["no country for old men", "sin lugar para los debiles / no es pais para viejos"],
+  ["there will be blood", "petroleo sangriento / pozos de ambicion"],
+  ["the prestige", "el gran truco / el prestigio"],
+  ["memento", "memento / amnesia"],
+  ["shutter island", "la isla siniestra"],
+  ["inglourious basterds", "bastardos sin gloria / malditos bastardos"],
+  ["django unchained", "django sin cadenas"],
+  ["the social network", "red social / la red social"],
+  ["gone girl", "perdida"],
+  ["the curious case of benjamin button", "el curioso caso de benjamin button"],
+  ["the revenant", "el renacido"],
+  ["dead poets society", "la sociedad de los poetas muertos / el club de los poetas muertos"],
+  ["good will hunting", "mente indomable / el indomable will hunting"],
+  ["a beautiful mind", "una mente brillante / una mente maravillosa"],
+  ["one flew over the cuckoo's nest", "atrapado sin salida / alguien volo sobre el nido del cuco"],
+  ["12 angry men", "12 hombres en pugna / doce hombres sin piedad"],
+  ["citizen kane", "el ciudadano kane / ciudadano kane"],
+  ["casablanca", "casablanca"],
+  ["sunset boulevard", "el ocaso de una vida / el crepusculo de los dioses"],
+  ["rear window", "la ventana indiscreta"],
+  ["vertigo", "vertigo / de entre los muertos"],
+  ["psycho", "psicosis"],
+  ["north by northwest", "intriga internacional / con la muerte en los talones"],
+  ["the birds", "los pajaros"],
+  ["dial m for murder", "la llamada fatal / crimen perfecto"],
+  ["rope", "la soga"],
+  ["singin in the rain", "cantando bajo la lluvia"],
+  ["the sound of music", "la novicia rebelde / sonrisas y lagrimas"],
+  ["some like it hot", "una eva y dos adanes / con faldas y a lo loco"],
+  ["the apartment", "piso de soltero / el apartamento"],
+  ["lawrence of arabia", "lawrence de arabia"],
+  ["2001 a space odyssey", "2001 odisea del espacio / 2001 una odisea del espacio"],
+  ["a clockwork orange", "la naranja mecanica"],
+  ["the shining", "el resplandor"],
+  ["full metal jacket", "cara de guerra / nacido para matar"],
+  ["apocalypse now", "apocalipsis ahora / apocalypse now"],
+  ["taxi driver", "taxi driver"],
+  ["raging bull", "toro salvaje"],
+  ["scarface", "caracortada / el precio del poder"],
+  ["carlito's way", "atrapado por su pasado / carlitos way"],
+  ["heat", "fuego contra fuego"],
+  ["the untouchables", "los intocables"],
+  ["snatch", "snatch cerdos y diamantes"],
+  ["lock stock and two smoking barrels", "juegos trampas y dos armas humeantes"],
+  ["fargo", "fargo"],
+  ["the big lebowski", "el gran lebowski"],
+  ["gran torino", "gran torino"],
+  ["million dollar baby", "golpes del destino"],
+  ["mystic river", "rio mistico"],
+  ["unforgiven", "los imperdonables / sin perdon"],
+  ["the good the bad and the ugly", "el bueno el malo y el feo"],
+  ["once upon a time in the west", "erase una vez en el oeste / hasta que llego su hora"],
+  ["once upon a time in america", "erase una vez en america"],
+  ["once upon a time in hollywood", "habia una vez en hollywood"],
+  ["the deer hunter", "el francotirador / el cazador"],
+  ["platoon", "peloton"],
+  ["stand by me", "cuenta conmigo"],
+  ["the breakfast club", "el club de los cinco"],
+
+  // --- CIENCIA FICCIÓN, ACCIÓN Y FANTASÍA ---
+  ["the matrix", "matrix"],
+  ["the matrix reloaded", "matrix recargado / matrix 2"],
+  ["the matrix revolutions", "matrix revoluciones / matrix 3"],
+  ["inception", "el origen"],
+  ["interstellar", "interestelar"],
+  ["dune", "duna / dune parte 1"],
+  ["dune part two", "duna parte 2 / dune 2 / dune parte dos"],
+  ["oppenheimer", "oppenheimer"],
+  ["blade runner", "blade runner"],
+  ["blade runner 2049", "blade runner 2049"],
+  ["jurassic park", "parque jurasico / jurassic park"],
+  ["the lost world jurassic park", "el mundo perdido parque jurasico / jurassic park 2"],
+  ["jurassic world", "mundo jurasico / jurassic world"],
+  ["back to the future", "volver al futuro / regreso al futuro"],
+  ["back to the future part ii", "volver al futuro 2 / regreso al futuro 2 / volver al futuro parte 2"],
+  ["back to the future part iii", "volver al futuro 3 / regreso al futuro 3 / volver al futuro parte 3"],
+  ["the terminator", "el exterminador / terminator"],
+  ["terminator 2 judgment day", "terminator 2 el juicio final / terminator 2 / t2"],
+  ["alien", "alien el octavo pasajero"],
+  ["aliens", "aliens el regreso / alien 2"],
+  ["alien 3", "alien 3"],
+  ["alien resurrection", "alien resurreccion / alien 4"],
+  ["predator", "depredador"],
+  ["robocop", "robocop el defensor del futuro / robocop"],
+  ["die hard", "duro de matar / la jungla de cristal"],
+  ["die hard 2", "duro de matar 2 / la jungla 2"],
+  ["die hard with a vengeance", "duro de matar 3 / la jungla de cristal 3"],
+  ["lethal weapon", "arma mortal / arma letal"],
+  ["speed", "maxima velocidad / speed"],
+  ["top gun", "top gun pasion y gloria / top gun"],
+  ["top gun maverick", "top gun maverick / top gun 2"],
+  ["mission impossible", "mision imposible"],
+  ["mission impossible fallout", "mision imposible repercusion / mision imposible fallout"],
+  ["mad max", "mad max"],
+  ["mad max fury road", "mad max furia en el camino / mad max furia en la carretera"],
+  ["the thing", "la cosa del otro mundo / el enigma de otro mundo"],
+  ["pacific rim", "titanes del pacifico"],
+  ["arrival", "la llegada"],
+  ["everything everywhere all at once", "todo en todas partes al mismo tiempo / todo a la vez en todas partes"],
+  ["tenet", "tenet"],
+  ["dunkirk", "dunkerque"],
+  ["avatar", "avatar"],
+  ["avatar the way of water", "avatar el sentido del agua / avatar el camino del agua / avatar 2"],
+
+  // --- SAGAS LEGENDARIAS: STAR WARS, LOTR, HARRY POTTER, FAST & FURIOUS ---
+  ["star wars", "la guerra de las galaxias / star wars"],
+  ["a new hope", "una nueva esperanza / star wars episodio iv / star wars 4"],
+  ["the empire strikes back", "el imperio contraataca / star wars episodio v / star wars 5"],
+  ["return of the jedi", "el retorno del jedi / star wars episodio vi / star wars 6"],
+  ["the phantom menace", "la amenaza fantasma / star wars episodio i / star wars 1"],
+  ["attack of the clones", "el ataque de los clones / star wars episodio ii / star wars 2"],
+  ["revenge of the sith", "la venganza de los sith / star wars episodio iii / star wars 3"],
+  ["the force awakens", "el despertar de la fuerza / star wars 7"],
+  ["the last jedi", "los ultimos jedi / star wars 8"],
+  ["the rise of skywalker", "el ascenso de skywalker / star wars 9"],
+  ["rogue one", "rogue one una historia de star wars"],
+  ["the lord of the rings", "el senor de los anillos / lord of the rings"],
+  ["the fellowship of the ring", "la comunidad del anillo / el senor de los anillos 1"],
+  ["the two towers", "las dos torres / el senor de los anillos 2"],
+  ["the return of the king", "el retorno del rey / el senor de los anillos 3"],
+  ["the hobbit", "el hobbit"],
+  ["an unexpected journey", "un viaje inesperado / el hobbit 1"],
+  ["the desolation of smaug", "la desolacion de smaug / el hobbit 2"],
+  ["the battle of the five armies", "la batalla de los cinco ejercitos / el hobbit 3"],
+  ["harry potter", "harry potter"],
+  ["harry potter and the sorcerer's stone", "harry potter y la piedra filosofal / harry potter 1"],
+  ["harry potter and the philosopher's stone", "harry potter y la piedra filosofal / harry potter 1"],
+  ["harry potter and the chamber of secrets", "harry potter y la camara secreta / harry potter 2"],
+  ["harry potter and the prisoner of azkaban", "harry potter y el prisionero de azkaban / harry potter 3"],
+  ["harry potter and the goblet of fire", "harry potter y el caliz de fuego / harry potter 4"],
+  ["harry potter and the order of the phoenix", "harry potter y la orden del fenix / harry potter 5"],
+  ["harry potter and the half blood prince", "harry potter y el misterio del principe / el principe mestizo / harry potter 6"],
+  ["harry potter and the deathly hallows", "harry potter y las reliquias de la muerte / harry potter 7"],
+  ["pirates of the caribbean", "piratas del caribe"],
+  ["the curse of the black pearl", "la maldicion del perla negra / piratas del caribe 1"],
+  ["dead man's chest", "el cofre de la muerte / el cofre del hombre muerto / piratas del caribe 2"],
+  ["at world's end", "en el fin del mundo / piratas del caribe 3"],
+  ["on stranger tides", "navegando aguas misteriosas / en mareas misteriosas / piratas del caribe 4"],
+  ["the fast and the furious", "rapidos y furiosos / a todo gas / fast and furious 1"],
+  ["2 fast 2 furious", "rapidos y furiosos 2 / a todo gas 2 / fast and furious 2"],
+  ["the hunger games", "los juegos del hambre"],
+  ["catching fire", "en llamas / los juegos del hambre en llamas / juegos del hambre 2"],
+  ["mockingjay", "sinsajo / los juegos del hambre sinsajo"],
+  ["twilight", "crepusculo"],
+  ["the chronicles of narnia", "las cronicas de narnia"],
+
+  // --- SUPERHÉROES Y CÓMIC (MARVEL / DC) ---
+  ["spider man", "el hombre arana / spider man / spiderman"],
+  ["spiderman", "el hombre arana / spider man"],
+  ["spider man 2", "el hombre arana 2 / spiderman 2"],
+  ["spider man 3", "el hombre arana 3 / spiderman 3"],
+  ["the amazing spider man", "el sorprendente hombre arana"],
+  ["spider man homecoming", "spider man de regreso a casa / de regreso a casa"],
+  ["spider man far from home", "spider man lejos de casa / lejos de casa"],
+  ["spider man no way home", "spider man sin camino a casa / sin camino a casa"],
+  ["spider man into the spider verse", "spider man un nuevo universo / into the spiderverse"],
+  ["spider man across the spider verse", "spider man a traves del spider verso / across the spiderverse"],
+  ["the dark knight", "el caballero de la noche / el caballero oscuro / batman 2"],
+  ["the dark knight rises", "el caballero de la noche asciende / el caballero oscuro renace / batman 3"],
+  ["batman begins", "batman inicia / batman begins / batman 1"],
+  ["the batman", "batman / the batman"],
+  ["batman", "batman"],
+  ["joker", "guason / joker"],
+  ["joker folie a deux", "guason 2 / joker 2 folie a deux"],
+  ["the avengers", "los vengadores / vengadores / avengers 1"],
+  ["avengers age of ultron", "vengadores era de ultron / la era de ultron / avengers 2"],
+  ["avengers infinity war", "vengadores infinity war / guerra del infinito / avengers 3"],
+  ["avengers endgame", "vengadores endgame / endgame / avengers 4"],
+  ["iron man", "el hombre de hierro / iron man"],
+  ["iron man 2", "el hombre de hierro 2 / iron man 2"],
+  ["iron man 3", "el hombre de hierro 3 / iron man 3"],
+  ["captain america the first avenger", "capitan america el primer vengador / capitan america 1"],
+  ["captain america the winter soldier", "capitan america el soldado del invierno / soldado de invierno / capitan america 2"],
+  ["captain america civil war", "capitan america civil war / capitan america 3"],
+  ["thor", "thor"],
+  ["thor ragnarok", "thor ragnarok / thor 3"],
+  ["guardians of the galaxy", "guardianes de la galaxia"],
+  ["deadpool", "deadpool"],
+  ["deadpool and wolverine", "deadpool y wolverine / deadpool 3"],
+  ["wolverine", "wolverine / guepardo / lobezno"],
+  ["logan", "logan / wolverine logan"],
+  ["black panther", "pantera negra / black panther"],
+
+  // --- TERROR, SUSPENSO Y MISTERIO ---
+  ["se7en", "siete / se7en los siete pecados capitales / seven"],
+  ["seven", "siete / se7en los siete pecados capitales"],
+  ["the exorcist", "el exorcista"],
+  ["the conjuring", "el conjuro / expediente warren"],
+  ["the conjuring 2", "el conjuro 2 / expediente warren el caso enfield"],
+  ["annabelle", "annabelle"],
+  ["it", "eso / it el payaso asesino"],
+  ["it chapter two", "eso capitulo dos / it 2"],
+  ["saw", "el juego del miedo / saw"],
+  ["the ring", "el aro / la senal"],
+  ["a nightmare on elm street", "pesadilla en la calle del infierno / pesadilla en elm street"],
+  ["friday the 13th", "viernes 13"],
+  ["halloween", "halloween / la noche de halloween"],
+  ["child's play", "chucky el muneco diabolico / childs play"],
+  ["the texas chain saw massacre", "la masacre de texas / la matanza de texas"],
+  ["rosemary's baby", "el bebe de rosemary / la semilla del diablo"],
+  ["the omen", "la profecia"],
+  ["hereditary", "el legado del diablo / hereditary"],
+  ["midsommar", "midsommar el terror no espera la noche"],
+  ["the witch", "la bruja / the vvitch"],
+  ["a quiet place", "un lugar en silencio / un lugar tranquilo"],
+  ["a quiet place part ii", "un lugar en silencio 2 / un lugar tranquilo 2"],
+  ["bird box", "bird box a ciegas / a ciegas"],
+  ["get out", "huye / dejame salir"],
+  ["us", "nosotros / us"],
+  ["nope", "nope / ¡nop!"],
+  ["split", "fragmentado / multiple"],
+  ["glass", "glass / cristal"],
+  ["unbreakable", "el protegido"],
+  ["the sixth sense", "el sexto sentido"],
+  ["knives out", "entre navajas y secretos / punales por la espalda"],
+  ["glass onion", "glass onion un misterio de knives out / knives out 2"],
+  ["nightmare alley", "el callejon de las almas perdidas"],
+  ["crimson peak", "la cumbre escarlata"],
+  ["pan's labyrinth", "el laberinto del fauno"],
+  ["the shape of water", "la forma del agua"],
+  ["the mist", "la niebla / la niebla de stephen king"],
+  ["misery", "misery"],
+  ["carrie", "carrie"],
+  ["pet sematary", "cementerio de mascotas / cementerio viviente"],
+  ["insidious", "la noche del demonio / insidious"],
+  ["sin city", "la ciudad del pecado / sin city"],
+
+  // --- ANIMACIÓN Y FAMILIARES (DISNEY, PIXAR, DREAMWORKS, GHIBLI) ---
+  ["the lion king", "el rey leon"],
+  ["beauty and the beast", "la bella y la bestia"],
+  ["aladdin", "aladdin / aladino"],
+  ["the little mermaid", "la sirenita"],
+  ["mulan", "mulan"],
+  ["tarzan", "tarzan"],
+  ["hercules", "hercules"],
+  ["pocahontas", "pocahontas"],
+  ["the hunchback of notre dame", "el jorobado de notre dame"],
+  ["cinderella", "cenicienta / la cenicienta"],
+  ["snow white and the seven dwarfs", "blanca nieves y los siete enanitos"],
+  ["sleeping beauty", "la bella durmiente"],
+  ["peter pan", "peter pan"],
+  ["alice in wonderland", "alicia en el pais de las maravillas"],
+  ["pinocchio", "pinocho"],
+  ["dumbo", "dumbo"],
+  ["bambi", "bambi"],
+  ["the jungle book", "el libro de la selva"],
+  ["101 dalmatians", "101 dalmatas / la noche de las narices frias"],
+  ["lady and the tramp", "la dama y el vagabundo"],
+  ["tangled", "enredados / rapunzel"],
+  ["frozen", "frozen una aventura congelada"],
+  ["frozen ii", "frozen 2"],
+  ["moana", "moana / vaiana"],
+  ["encanto", "encanto"],
+  ["zootopia", "zootopia / zootropolis"],
+  ["big hero 6", "grandes heroes / big hero 6"],
+  ["wreck it ralph", "ralph el demoledor / rompe ralph"],
+  ["toy story", "toy story"],
+  ["toy story 2", "toy story 2"],
+  ["toy story 3", "toy story 3"],
+  ["toy story 4", "toy story 4"],
+  ["finding nemo", "buscando a nemo"],
+  ["finding dory", "buscando a dory"],
+  ["monsters inc", "monsters inc / monstruos s a"],
+  ["monsters university", "monsters university"],
+  ["the incredibles", "los increibles"],
+  ["incredibles 2", "los increibles 2"],
+  ["up", "up una aventura de altura"],
+  ["wall e", "wall e"],
+  ["ratatouille", "ratatouille"],
+  ["inside out", "intensamente / del reves / inside out"],
+  ["inside out 2", "intensamente 2 / del reves 2 / inside out 2"],
+  ["coco", "coco"],
+  ["soul", "soul"],
+  ["cars", "cars / cars una aventura sobre ruedas"],
+  ["shrek", "shrek"],
+  ["shrek 2", "shrek 2"],
+  ["how to train your dragon", "como entrenar a tu dragon"],
+  ["kung fu panda", "kung fu panda"],
+  ["madagascar", "madagascar"],
+  ["ice age", "la era de hielo / ice age"],
+  ["despicable me", "mi villano favorito / despicable me"],
+  ["minions", "los minions / minions"],
+  ["spirited away", "el viaje de chihiro / sen to chihiro"],
+  ["my neighbor totoro", "mi vecino totoro / tonari no totoro"],
+  ["princess mononoke", "la princesa mononoke / mononoke hime"],
+  ["howl's moving castle", "el castillo vagabundo / el increible castillo vagabundo"],
+  ["coraline", "coraline y la puerta secreta / los mundos de coraline"],
+  ["the nightmare before christmas", "el extrano mundo de jack / pesadilla antes de navidad"],
+  ["corpse bride", "el cadaver de la novia / la novia cadaver"],
+  ["edward scissorhands", "el joven manos de tijera / eduardo manostijeras"],
+  ["beetlejuice", "beetlejuice el super fantasma / bitelchus"],
+
+  // --- COMEDIA, DRAMA, ROMANCE Y OTRAS JOYAS ---
+  ["la la land", "la la land una historia de amor / la ciudad de las estrellas"],
+  ["whiplash", "whiplash musica y obsesion"],
+  ["mean girls", "chicas pesadas / chicas malas"],
+  ["clueless", "ni idea / despistadas"],
+  ["legally blonde", "legalmente rubia / una rubia muy legal"],
+  ["the devil wears prada", "el diablo viste a la moda / el diablo viste de prada"],
+  ["the princess diaries", "el diario de la princesa / princesa por sorpresa"],
+  ["the hangover", "que paso ayer / resacon en las vegas"],
+  ["groundhog day", "el dia de la marmota / hechizo del tiempo / atrapado en el tiempo"],
+  ["home alone", "mi pobre angelito / solo en casa"],
+  ["home alone 2", "mi pobre angelito 2 / solo en casa 2"],
+  ["ghostbusters", "los cazafantasmas / cazafantasmas"],
+  ["jaws", "tiburon"],
+  ["black swan", "el cisne negro"],
+  ["birdman", "birdman / la inesperada virtud de la ignorancia"],
+  ["rain man", "cuando los hermanos se encuentran / rain man"],
+  ["parasite", "parasitos / gisaengchung"],
+  ["train to busan", "estacion zombie / tren a busan"],
+  ["oldboy", "oldboy cinco dias para vengarse / oldboy"],
+  ["cinema paradiso", "cinema paradiso"],
+  ["amelie", "amelie / el fabuloso destino de amelie poulain"],
+  ["kill bill", "kill bill la venganza / kill bill volumen 1"],
+  ["kill bill vol 2", "kill bill volumen 2 / kill bill 2"],
+  ["john wick", "john wick otro dia para matar / sin control"],
+  ["barbie", "barbie"],
+  ["poor things", "pobres criaturas / poor things"],
+  ["past lives", "vidas pasadas / past lives"],
+  ["the zone of interest", "zona de interes / la zona de interes"],
+  ["anatomy of a fall", "anatomia de una caida"],
+  ["the holdovers", "los que se quedan"],
+  ["godzilla minus one", "godzilla minus one / godzilla"],
+  ["amores perros", "amores perros"],
+  ["roma", "roma"],
+  ["cronos", "cronos"],
+  ["y tu mama tambien", "y tu mama tambien"],
+
+  // --- SERIES DE TELEVISIÓN DESTACADAS ---
+  ["breaking bad", "breaking bad"],
+  ["better call saul", "better call saul"],
+  ["game of thrones", "juego de tronos / got"],
+  ["house of the dragon", "la casa del dragon"],
+  ["stranger things", "stranger things"],
+  ["the sopranos", "los soprano"],
+  ["the wire", "los vigilantes / bajo escucha / the wire"],
+  ["the last of us", "the last of us"],
+  ["the bear", "el oso / the bear"],
+  ["succession", "succession"],
+  ["chernobyl", "chernobyl"],
+  ["peaky blinders", "peaky blinders"],
+  ["black mirror", "black mirror"],
+  ["the office", "la oficina / the office"],
+  ["friends", "amigos / friends"],
+  ["lost", "perdidos / lost"],
+  ["the boys", "the boys"],
+  ["severance", "separacion / severance"],
+  ["the mandalorian", "el mandaloriano / the mandalorian"],
+  ["arcane", "arcane"]
+];
+
+// Mapa contextual de vocabulario bilingüe inglés <-> español para desgloses por palabras
+const BILINGUAL_WORD_MAP: Record<string, string[]> = {
+  "dark": ["oscuro", "oscura", "noche"],
+  "knight": ["caballero"],
+  "king": ["rey"],
+  "queen": ["reina"],
+  "lord": ["senor"],
+  "lords": ["senores"],
+  "rings": ["anillos", "anillo"],
+  "ring": ["anillo", "anillos", "aro"],
+  "war": ["guerra"],
+  "wars": ["guerras", "guerra"],
+  "star": ["estrella", "galaxias"],
+  "stars": ["estrellas", "galaxias"],
+  "spider": ["arana"],
+  "iron": ["hierro"],
+  "bat": ["murcielago"],
+  "man": ["hombre"],
+  "men": ["hombres", "hombre"],
+  "woman": ["mujer"],
+  "women": ["mujeres"],
+  "dead": ["muerto", "muertos", "muerte"],
+  "death": ["muerte", "muertos"],
+  "shadow": ["sombra"],
+  "shadows": ["sombras"],
+  "blood": ["sangre", "sangriento"],
+  "bloody": ["sangriento"],
+  "city": ["ciudad"],
+  "world": ["mundo"],
+  "sun": ["sol"],
+  "moon": ["luna"],
+  "day": ["dia"],
+  "night": ["noche"],
+  "love": ["amor"],
+  "heart": ["corazon"],
+  "fire": ["fuego"],
+  "water": ["agua"],
+  "lost": ["perdido", "perdida", "perdidos"],
+  "game": ["juego"],
+  "games": ["juegos"],
+  "life": ["vida"],
+  "time": ["tiempo"],
+  "silent": ["silencio", "silencioso"],
+  "silence": ["silencio"],
+  "quiet": ["silencio", "tranquilo"],
+  "place": ["lugar"],
+  "story": ["historia"],
+  "future": ["futuro"],
+  "past": ["pasado"],
+  "dream": ["sueno"],
+  "dreams": ["suenos"],
+  "red": ["rojo", "roja"],
+  "black": ["negro", "negra"],
+  "white": ["blanco", "blanca"],
+  "blue": ["azul"],
+  "green": ["verde"],
+  "space": ["espacio"],
+  "planet": ["planeta"],
+  "witch": ["bruja"],
+  "ghost": ["fantasma", "cazafantasmas"],
+  "ghosts": ["fantasmas", "cazafantasmas"],
+  "island": ["isla"],
+  "park": ["parque"],
+  "river": ["rio"],
+  "sea": ["mar"],
+  "ocean": ["oceano"],
+  "road": ["camino", "carretera"],
+  "street": ["calle"],
+  "return": ["regreso", "retorno"],
+  "returns": ["regreso", "retorno"],
+  "rise": ["asciende", "renace", "origen"],
+  "rises": ["asciende", "renace", "origen"],
+  "last": ["ultimo", "ultima"],
+  "first": ["primer", "primero", "primera"],
+  "new": ["nuevo", "nueva"],
+  "old": ["viejo", "antiguo"],
+  "little": ["pequeno", "pequena", "pobre"],
+  "big": ["gran", "grande"],
+  "good": ["bueno", "buenos"],
+  "bad": ["malo", "malos"],
+  "ugly": ["feo"],
+  "beauty": ["bella", "belleza"],
+  "beast": ["bestia"],
+  "lion": ["leon"],
+  "wolf": ["lobo"],
+  "dog": ["perro"],
+  "cat": ["gato"],
+  "bird": ["pajaro", "ave", "cisne"],
+  "birds": ["pajaros", "aves"],
+  "swan": ["cisne"],
+  "girl": ["chica", "nina"],
+  "girls": ["chicas", "ninas"],
+  "boy": ["chico", "muchacho", "nino"],
+  "boys": ["chicos", "muchachos", "ninos"],
+  "soldier": ["soldado"],
+  "soldiers": ["soldados"],
+  "club": ["club"],
+  "house": ["casa"],
+  "room": ["habitacion", "cuarto"],
+  "door": ["puerta"],
+  "window": ["ventana"],
+  "clock": ["reloj"],
+  "mirror": ["espejo"],
+  "godfather": ["padrino"],
+  "pulp": ["tiempos"],
+  "fiction": ["violentos"],
+  "fight": ["pelea", "lucha"],
+  "shining": ["resplandor"],
+  "jaws": ["tiburon"],
+  "alien": ["octavo", "pasajero"],
+  "aliens": ["regreso"],
+  "terminator": ["exterminador"],
+  "incredibles": ["increibles"],
+  "monsters": ["monstruos"],
+  "furious": ["furiosos", "gas"],
+  "fast": ["rapidos", "gas"]
+};
+
+// Mapa inverso (español -> inglés) generado dinámicamente
+const REVERSE_WORD_MAP: Record<string, string[]> = {};
+for (const [enKey, esList] of Object.entries(BILINGUAL_WORD_MAP)) {
+  for (const esWord of esList) {
+    if (!REVERSE_WORD_MAP[esWord]) REVERSE_WORD_MAP[esWord] = [];
+    REVERSE_WORD_MAP[esWord].push(enKey);
+  }
+}
+
+// Precompilación estática del diccionario bilingüe al cargar el módulo (0ms en tiempo de ejecución)
+interface PrecompiledBilingualPair {
+  enClean: string;
+  enWithoutStop: string;
+  enTokens: string[];
+  esCleanList: string[];
+  esWithoutStopList: string[];
+  allAliases: string[];
+}
+
+const PRECOMPILED_BILINGUAL: PrecompiledBilingualPair[] = BILINGUAL_TITLE_EQUIVALENTS.map(([en, es]) => {
+  const enClean = cleanAlphanumeric(en);
+  const enWithoutStop = enClean.split(' ').filter(w => !SEARCH_STOP_WORDS.has(w) && Boolean(w)).join(' ');
+  const enTokens = enClean.split(' ').filter(w => !SEARCH_STOP_WORDS.has(w) && Boolean(w));
+  const esCleanList = es.split('/').map(s => cleanAlphanumeric(s)).filter(Boolean);
+  const esWithoutStopList = esCleanList.map(s => s.split(' ').filter(w => !SEARCH_STOP_WORDS.has(w) && Boolean(w)).join(' '));
+  const allAliases = [enClean, ...esCleanList];
+  return { enClean, enWithoutStop, enTokens, esCleanList, esWithoutStopList, allAliases };
+});
+
+/**
+ * Obtiene todas las variantes semánticas y numéricas para una palabra individual
+ */
+export const getWordEquivalents = (word: string): string[] => {
+  const norm = cleanAlphanumeric(word);
+  if (!norm) return [];
+  const results = new Set<string>([norm]);
+
+  // Equivalencias de números romanos / arábigos (2 <-> ii)
+  getNumberEquivalents(norm).forEach(eq => results.add(eq));
+
+  // Traducción inglés -> español
+  if (BILINGUAL_WORD_MAP[norm]) {
+    BILINGUAL_WORD_MAP[norm].forEach(w => results.add(w));
+  }
+
+  // Traducción español -> inglés
+  if (REVERSE_WORD_MAP[norm]) {
+    REVERSE_WORD_MAP[norm].forEach(w => results.add(w));
+  }
+
+  return Array.from(results);
+};
+
+/**
+ * Distancia de Levenshtein optimizada para tolerancia a pequeñas erratas (typos)
+ */
+export const levenshteinDistance = (a: string, b: string): number => {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  if (Math.abs(a.length - b.length) > 2) return 99; // Salida rápida si la diferencia de longitud es mayor a 2
+
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j = 1; j <= b.length; j++) {
+      const val = a[i - 1] === b[j - 1] ? row[j - 1] : Math.min(row[j - 1], prev, row[j]) + 1;
+      row[j - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+  return row[b.length];
+};
+
+/**
+ * Comprueba si un término buscado tiene coincidencia fuzzy en una frase (optimizado a títulos)
+ */
+export const hasFuzzyTokenMatch = (targetPhrase: string, queryToken: string): boolean => {
+  if (!queryToken || queryToken.length < 5 || !targetPhrase) return false;
+  const maxDistance = queryToken.length >= 8 ? 2 : 1;
+  const targetWords = targetPhrase.split(/\s+/).filter(Boolean);
+
+  for (let i = 0; i < targetWords.length; i++) {
+    const word = targetWords[i];
+    if (Math.abs(word.length - queryToken.length) <= maxDistance) {
+      if (levenshteinDistance(word, queryToken) <= maxDistance) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+/**
+ * Extrae alias bilingües bidireccionales inglés <-> español de forma instantánea usando el índice precompilado
+ */
+export const getBilingualAliases = (queryText: string): string[] => {
+  const cleanQ = cleanAlphanumeric(queryText);
+  if (!cleanQ || cleanQ.length < 2) return [];
+
+  const aliases = new Set<string>();
+  const qWithoutStopWords = cleanQ.split(' ').filter(w => !SEARCH_STOP_WORDS.has(w) && Boolean(w)).join(' ');
+
+  for (let i = 0; i < PRECOMPILED_BILINGUAL.length; i++) {
+    const pair = PRECOMPILED_BILINGUAL[i];
+
+    // 1. Coincidencia con el título en inglés
+    let matchEn = false;
+    if (pair.enClean === cleanQ || (pair.enWithoutStop && pair.enWithoutStop === qWithoutStopWords)) {
+      matchEn = true;
+    } else if (pair.enClean.includes(cleanQ) || (qWithoutStopWords.length >= 3 && pair.enWithoutStop.includes(qWithoutStopWords))) {
+      matchEn = true;
+    } else if (cleanQ.includes(pair.enClean) || (pair.enWithoutStop.length >= 3 && qWithoutStopWords.includes(pair.enWithoutStop))) {
+      matchEn = true;
+    }
+
+    if (matchEn) {
+      for (let j = 0; j < pair.allAliases.length; j++) {
+        aliases.add(pair.allAliases[j]);
+      }
+      continue;
+    }
+
+    // 2. Coincidencia con el título en español
+    for (let j = 0; j < pair.esCleanList.length; j++) {
+      const esClean = pair.esCleanList[j];
+      const esWithoutStop = pair.esWithoutStopList[j];
+      let matchEs = false;
+
+      if (esClean === cleanQ || (esWithoutStop && esWithoutStop === qWithoutStopWords)) {
+        matchEs = true;
+      } else if (esClean.includes(cleanQ) || (qWithoutStopWords.length >= 3 && esWithoutStop.includes(qWithoutStopWords))) {
+        matchEs = true;
+      } else if (cleanQ.includes(esClean) || (esWithoutStop.length >= 3 && qWithoutStopWords.includes(esWithoutStop))) {
+        matchEs = true;
+      }
+
+      if (matchEs) {
+        for (let k = 0; k < pair.allAliases.length; k++) {
+          aliases.add(pair.allAliases[k]);
+        }
+        break;
+      }
+    }
+  }
+
+  return Array.from(aliases);
+};
+
+// --- CACHÉ PERSISTENTE DE CAMPOS DE PELÍCULA (WEAKMAP: 0ms LATENCIA POR PELÍCULA) ---
+export interface CachedMovieSearchData {
+  titleClean: string;
+  titleCompact: string;
+  titleWithoutStop: string;
+  origClean: string;
+  origCompact: string;
+  origWithoutStop: string;
+  directorClean: string;
+  castClean: string;
+  genreClean: string;
+  yearStr: string;
+  synopsisClean: string;
+  allFields: string;
+  allTitlesCompact: string;
+}
+
+const movieSearchCache = new WeakMap<Movie, CachedMovieSearchData>();
+
+export const getCachedMovieSearchData = (m: Movie): CachedMovieSearchData => {
+  let cached = movieSearchCache.get(m);
+  if (cached) return cached;
+
+  const rawOriginalTitle = String(
+    m.originalTitle ||
+    (m as any).original_title ||
+    (m as any).title_en ||
+    (m as any).englishTitle ||
+    (m as any).english_title ||
+    (m as any).titulo_original ||
+    (m as any).tituloOriginal ||
+    (m as any).original_name ||
+    (m as any).originalName ||
+    ''
+  ).trim();
+
+  const effectiveOriginalTitle = /^(no disponible|original title|sin titulo|n\/a|desconocido|none)$/i.test(rawOriginalTitle) ? '' : rawOriginalTitle;
+  const rawTitle = String(m.title || (m as any).name || (m as any).titulo || '').trim();
+
+  const titleClean = cleanAlphanumeric(rawTitle);
+  const titleCompact = compactAlpha(rawTitle);
+  const titleWithoutStop = titleClean.split(' ').filter(w => !SEARCH_STOP_WORDS.has(w) && Boolean(w)).join(' ');
+
+  const origClean = cleanAlphanumeric(effectiveOriginalTitle);
+  const origCompact = compactAlpha(effectiveOriginalTitle);
+  const origWithoutStop = origClean.split(' ').filter(w => !SEARCH_STOP_WORDS.has(w) && Boolean(w)).join(' ');
+
+  const directorClean = cleanAlphanumeric(m.director);
+  const castRaw = Array.isArray(m.cast) ? m.cast.join(' ') : String(m.cast || '');
+  const castClean = cleanAlphanumeric(castRaw);
+  const genreRaw = Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || '');
+  const genreClean = cleanAlphanumeric(genreRaw);
+  const countryClean = cleanAlphanumeric(m.country);
+  const yearStr = String(m.year || "");
+  const synopsisClean = cleanAlphanumeric(m.synopsis || (m as any).description || '');
+
+  // Alias bilingües de la película calculados una sola vez
+  const movieAliasesSet = new Set<string>();
+  if (titleClean) getBilingualAliases(titleClean).forEach(a => movieAliasesSet.add(a));
+  if (origClean) getBilingualAliases(origClean).forEach(a => movieAliasesSet.add(a));
+  const movieAliasesStr = Array.from(movieAliasesSet).join(' ');
+  const compactAliasesStr = Array.from(movieAliasesSet).map(compactAlpha).join(' ');
+
+  const allFields = `${titleClean} ${origClean} ${movieAliasesStr} ${directorClean} ${yearStr} ${castClean} ${genreClean} ${countryClean} ${synopsisClean}`;
+  const allTitlesCompact = `${titleCompact} ${origCompact} ${compactAliasesStr}`;
+
+  cached = {
+    titleClean,
+    titleCompact,
+    titleWithoutStop,
+    origClean,
+    origCompact,
+    origWithoutStop,
+    directorClean,
+    castClean,
+    genreClean,
+    yearStr,
+    synopsisClean,
+    allFields,
+    allTitlesCompact
+  };
+
+  movieSearchCache.set(m, cached);
+  return cached;
+};
+
+// --- ESTRUCTURA PRECOMPILADA DE LA BÚSQUEDA DEL USUARIO (CALCULADA UNA SOLA VEZ) ---
+export interface QuerySearchContext {
+  cleanQ: string;
+  compactQ: string;
+  withoutStopQ: string;
+  coreTokens: string[];
+  tokenEquivalents: string[][];
+  queryAliases: string[];
+  compactAliases: string[];
+}
+
+export const compileQuerySearchContext = (rawQuery: string): QuerySearchContext | null => {
+  if (!rawQuery || !rawQuery.trim()) return null;
+  const cleanQ = cleanAlphanumeric(rawQuery);
+  const compactQ = compactAlpha(rawQuery);
+  if (!cleanQ) return null;
+
+  const withoutStopQ = cleanQ.split(' ').filter(w => !SEARCH_STOP_WORDS.has(w) && Boolean(w)).join(' ');
+  const queryTokens = cleanQ.split(/\s+/).filter(Boolean);
+  const coreTokens = queryTokens.filter(t => !SEARCH_STOP_WORDS.has(t));
+  const tokensToCheck = coreTokens.length > 0 ? coreTokens : queryTokens;
+
+  // Calculamos los equivalentes de cada token de la consulta UNA SOLA VEZ
+  const tokenEquivalents = tokensToCheck.map(tok => getWordEquivalents(tok));
+
+  // Calculamos los alias de la consulta UNA SOLA VEZ
+  const queryAliases = getBilingualAliases(cleanQ);
+  const compactAliases = queryAliases.map(compactAlpha).filter(a => a.length >= 3);
+
+  return {
+    cleanQ,
+    compactQ,
+    withoutStopQ,
+    coreTokens: tokensToCheck,
+    tokenEquivalents,
+    queryAliases,
+    compactAliases
+  };
+};
+
+/**
+ * Evaluación hiperrápida (sub-milisegundo) de coincidencia de película
+ */
+export const matchesMovieQueryWithContext = (movieData: CachedMovieSearchData, ctx: QuerySearchContext): boolean => {
+  const { cleanQ, compactQ, withoutStopQ, tokenEquivalents, queryAliases, compactAliases } = ctx;
+
+  // 1. Coincidencia directa completa en títulos o texto general
+  if (movieData.titleClean.includes(cleanQ) || movieData.origClean.includes(cleanQ) || movieData.allFields.includes(cleanQ)) {
+    return true;
+  }
+
+  // 2. Coincidencia compacta para términos pegados (ej. "spiderman" <-> "spider-man")
+  if (compactQ.length >= 3 && movieData.allTitlesCompact.includes(compactQ)) {
+    return true;
+  }
+
+  // 3. Coincidencia sin stop words (ej. "Dark Knight" <-> "The Dark Knight")
+  if (withoutStopQ.length >= 3) {
+    if (movieData.titleWithoutStop.includes(withoutStopQ) || movieData.origWithoutStop.includes(withoutStopQ)) {
+      return true;
+    }
+  }
+
+  // 4. Coincidencia por alias bilingües de la consulta
+  for (let i = 0; i < queryAliases.length; i++) {
+    const alias = queryAliases[i];
+    if (movieData.titleClean.includes(alias) || movieData.origClean.includes(alias) || movieData.allFields.includes(alias)) {
+      return true;
+    }
+  }
+  for (let i = 0; i < compactAliases.length; i++) {
+    if (movieData.allTitlesCompact.includes(compactAliases[i])) {
+      return true;
+    }
+  }
+
+  // 5. Coincidencia de tokens con traducción y números romanos / arábigos precalculados
+  let tokensMatch = true;
+  for (let i = 0; i < tokenEquivalents.length; i++) {
+    const equivalents = tokenEquivalents[i];
+    let found = false;
+    for (let j = 0; j < equivalents.length; j++) {
+      const eq = equivalents[j];
+      if (movieData.allFields.includes(eq)) {
+        found = true;
+        break;
+      }
+      if (eq.length >= 3 && movieData.allTitlesCompact.includes(eq)) {
+        found = true;
+        break;
+      }
+      // Tolerancia a pequeñas erratas únicamente en títulos o director
+      if (eq.length >= 5) {
+        if (hasFuzzyTokenMatch(movieData.titleClean, eq) || hasFuzzyTokenMatch(movieData.origClean, eq) || hasFuzzyTokenMatch(movieData.directorClean, eq)) {
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found) {
+      tokensMatch = false;
+      break;
+    }
+  }
+
+  return tokensMatch;
+};
+
+/**
+ * Validador público compatible
+ */
+export const matchesMovieQuery = (m: Movie, rawQuery: string): boolean => {
+  if (!rawQuery || !rawQuery.trim()) return true;
+  const ctx = compileQuerySearchContext(rawQuery);
+  if (!ctx) return true;
+  const movieData = getCachedMovieSearchData(m);
+  return matchesMovieQueryWithContext(movieData, ctx);
+};
+
+/**
+ * Algoritmo ultra-optimizado de puntuación y relevancia en el buscador completo
+ */
+export const getMovieSearchScoreWithContext = (m: Movie, movieData: CachedMovieSearchData, ctx: QuerySearchContext): number => {
+  const { cleanQ, compactQ, withoutStopQ, tokenEquivalents, queryAliases } = ctx;
+  const { titleClean, origClean, titleCompact, origCompact, titleWithoutStop, origWithoutStop, directorClean, castClean, genreClean, yearStr, synopsisClean } = movieData;
+
+  // 1. Coincidencia exacta de título en español o inglés (1000 pts)
+  if (titleClean === cleanQ || origClean === cleanQ) return 1000;
+  if (titleCompact === compactQ || origCompact === compactQ) return 990;
+
+  // 2. Coincidencia exacta eliminando stop words (980 pts)
+  if (withoutStopQ && (titleWithoutStop === withoutStopQ || origWithoutStop === withoutStopQ)) {
+    return 980;
+  }
+
+  // 3. Título comienza con la frase buscada (940 - 950 pts)
+  if (origClean.startsWith(cleanQ)) return 950;
+  if (titleClean.startsWith(cleanQ)) return 940;
+
+  // 4. Frase completa contenida en título o título original (880 - 900 pts)
+  if (origClean.includes(cleanQ)) return 900;
+  if (titleClean.includes(cleanQ)) return 880;
+
+  // 5. Coincidencia con alias bilingües precalculados (840 - 860 pts)
+  for (let i = 0; i < queryAliases.length; i++) {
+    const alias = queryAliases[i];
+    if (origClean === alias || titleClean === alias) return 860;
+    if (origClean.startsWith(alias) || titleClean.startsWith(alias)) return 850;
+    if (origClean.includes(alias) || titleClean.includes(alias)) return 840;
+  }
+
+  // 6. Palabras clave presentes en título o título original (800 - 820 pts)
+  if (tokenEquivalents.length > 0) {
+    let allInOrig = true;
+    let allInTitle = true;
+    for (let i = 0; i < tokenEquivalents.length; i++) {
+      const eqs = tokenEquivalents[i];
+      if (!eqs.some(eq => origClean.includes(eq))) allInOrig = false;
+      if (!eqs.some(eq => titleClean.includes(eq))) allInTitle = false;
+    }
+    if (allInOrig) return 820;
+    if (allInTitle) return 800;
+  }
+
+  // 7. Director (700 - 750 pts)
+  if (directorClean === cleanQ) return 750;
+  if (directorClean.startsWith(cleanQ)) return 720;
+  if (directorClean.includes(cleanQ)) return 700;
+
+  // 8. Reparto (500 pts)
+  if (castClean.includes(cleanQ)) return 500;
+
+  // 9. Año exacto (400 pts)
+  if (yearStr === cleanQ.trim()) return 400;
+
+  // 10. Género (300 pts)
+  if (genreClean.includes(cleanQ)) return 300;
+
+  // 11. Sinopsis u otros campos (150 pts)
+  if (synopsisClean.includes(cleanQ)) return 150;
+
+  return 50;
+};
+
+export const getMovieSearchScore = (m: Movie, rawQuery: string): number => {
+  if (!rawQuery || !rawQuery.trim()) return 0;
+  const ctx = compileQuerySearchContext(rawQuery);
+  if (!ctx) return 0;
+  const movieData = getCachedMovieSearchData(m);
+  return getMovieSearchScoreWithContext(m, movieData, ctx);
+};
+
 export const getNormalizedGenres = (genreData: any): string[] => {
   if (!genreData) return [];
   
@@ -861,16 +1832,18 @@ export default function App() {
     }
   };
 
-  // Debounce search input
+  // Debounce search input con ejecución fluida no bloqueante
   useEffect(() => {
     const timer = setTimeout(() => {
-      setSearchTerm(searchQuery);
-      if (searchQuery.trim() !== "") {
-        setIsDirectorFilterActive(false);
-        setIsFavoriteOfMonthActive(false);
-        setCurrentPage(1);
-      }
-    }, 50);
+      React.startTransition(() => {
+        setSearchTerm(searchQuery);
+        if (searchQuery.trim() !== "") {
+          setIsDirectorFilterActive(false);
+          setIsFavoriteOfMonthActive(false);
+          setCurrentPage(1);
+        }
+      });
+    }, 140);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
@@ -1022,6 +1995,7 @@ export default function App() {
       "PARA REVISIÓN": "Under Review",
       "NUEVA ENTRADA": "New Entry",
       "Buscar título o año...": "Search title or year...",
+      "Buscar título (español o inglés), director, año...": "Search title (Spanish or English), director, year...",
       "Cualquier Año": "Any Year",
       "Administrador": "Administrator",
       "Editor": "Editor",
@@ -1776,159 +2750,101 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
   }, []);
 
   const filteredMovies = useMemo(() => {
-    return movies.filter(m => {
-      const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/);
-      const matchSearch = searchTerms.every(term => {
-        if (!term) return true;
-        const normTerm = normalizeText(term);
-        const inTitle = normalizeText(m.title).includes(normTerm);
-        const inOriginalTitle = normalizeText(m.originalTitle).includes(normTerm);
-        const inDirector = normalizeText(m.director).includes(normTerm);
-        const isYearExact = String(m.year || "").includes(term);
-        const inCast = Array.isArray(m.cast)
-          ? m.cast.some(actor => normalizeText(actor).includes(normTerm))
-          : normalizeText(m.cast).includes(normTerm);
-        const inGenre = normalizeText(Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || '')).includes(normTerm);
-        const inCountry = normalizeText(m.country).includes(normTerm);
-        const inSynopsis = normalizeText(m.synopsis || (m as any).description || '').includes(normTerm);
-        const inScript = normalizeText(m.script).includes(normTerm);
-        const inCompanies = normalizeText(m.companies).includes(normTerm);
-        const inEstante = normalizeText(m.estante).includes(normTerm);
-        return inTitle || inOriginalTitle || inDirector || isYearExact || inCast || inGenre || inCountry || inSynopsis || inScript || inCompanies || inEstante;
-      });
-      const isSearching = searchTerm.trim() !== "";
-      const currentGenreLower = (selectedGenre || "").toLowerCase();
-      let matchGenre = true;
-      
+    const isSearching = searchTerm.trim() !== "";
+    const queryCtx = isSearching ? compileQuerySearchContext(searchTerm) : null;
+    const currentGenreLower = (selectedGenre || "").toLowerCase();
+
+    // 1. Filtrado de alta velocidad (0ms)
+    const matched = movies.filter(m => {
+      if (queryCtx) {
+        const movieData = getCachedMovieSearchData(m);
+        if (!matchesMovieQueryWithContext(movieData, queryCtx)) {
+          return false;
+        }
+      }
+
       if (!isSearching && selectedGenre !== "Todos" && selectedGenre !== "Clásico") {
         const movieNormalizedGenres = getNormalizedGenres(m.genre).map(g => g.toLowerCase());
         if (currentGenreLower === "mexicanas" && (movieNormalizedGenres.includes("mexicana") || movieNormalizedGenres.includes("mexicanas"))) {
-          matchGenre = true;
-        } else {
-          matchGenre = movieNormalizedGenres.includes(currentGenreLower);
+          // match
+        } else if (!movieNormalizedGenres.includes(currentGenreLower)) {
+          return false;
         }
       }
-      
+
       if (!isSearching && selectedGenre === "Clásico") {
-        matchGenre = String(m.genre || "").toLowerCase().includes("clásico") || (m.year < 1980);
+        const isClasico = String(m.genre || "").toLowerCase().includes("clásico") || (m.year < 1980);
+        if (!isClasico) return false;
       }
-      
+
       const movieTitle = String(m.title || "").trim();
-      let matchLetter = true;
       if (!isSearching && selectedLetter) {
         if (selectedLetter === "#") {
-          matchLetter = /^[0-9]/.test(movieTitle);
+          if (!/^[0-9]/.test(movieTitle)) return false;
         } else {
-          matchLetter = movieTitle.toUpperCase().startsWith(selectedLetter);
+          if (!movieTitle.toUpperCase().startsWith(selectedLetter)) return false;
         }
       }
-      
+
       const movieYear = m.year || 0;
-      const matchYear = isSearching || !selectedYearRange || (movieYear >= selectedYearRange.start && movieYear < selectedYearRange.end);
-      const matchReview = showReviewOnly ? !!m.needsReview : true;
+      if (!isSearching && selectedYearRange && (movieYear < selectedYearRange.start || movieYear >= selectedYearRange.end)) {
+        return false;
+      }
+
+      if (showReviewOnly && !m.needsReview) {
+        return false;
+      }
 
       const movieSec = String(m.section || 'peliculas').toLowerCase().trim();
-      const matchTab = (isSearching || showHistoryOnly)
-        ? true
-        : activeExploreTab === 'centauro'
-        ? movieSec === 'centauro'
-        : activeExploreTab === 'series'
-        ? movieSec === 'series'
-        : (movieSec === 'peliculas' || movieSec === '');
-
-      const matchHistory = showHistoryOnly ? dailyHistoryIds.includes(m.id) : true;
-
-      return matchSearch && matchGenre && matchLetter && matchYear && matchReview && matchTab && matchHistory;
-    }).sort((a, b) => {
-      if (searchTerm.trim() !== "") {
-        const normSearch = normalizeText(searchTerm);
-        
-        const getScore = (m: Movie) => {
-          const normTitle = normalizeText(m.title);
-          const normOrig = normalizeText(m.originalTitle);
-          const normDirector = normalizeText(m.director);
-
-          // 1. Exact matches (highest priority)
-          if (normTitle === normSearch) return 1000;
-          if (normOrig === normSearch) return 950;
-          if (normDirector === normSearch) return 900;
-          
-          // 2. Starts with phrase
-          if (normTitle.startsWith(normSearch)) return 880;
-          if (normOrig.startsWith(normSearch)) return 850;
-          if (normDirector.startsWith(normSearch)) return 820;
-
-          // 3. Substring containment of entire phrase
-          if (normTitle.includes(normSearch)) return 800;
-          if (normOrig.includes(normSearch)) return 750;
-          if (normDirector.includes(normSearch)) return 700;
-
-          // 4. Individual word matching counts on title/original title/director
-          const searchWords = normSearch.split(/\s+/).filter(Boolean);
-          if (searchWords.length > 0) {
-            let titleMatchCount = 0;
-            searchWords.forEach(w => {
-              if (normTitle.includes(w)) titleMatchCount++;
-            });
-            if (titleMatchCount === searchWords.length) return 650;
-            if (titleMatchCount > 0) return 400 + titleMatchCount * 10;
-          }
-
-          if (searchWords.length > 0) {
-            let origMatchCount = 0;
-            searchWords.forEach(w => {
-              if (normOrig.includes(w)) origMatchCount++;
-            });
-            if (origMatchCount === searchWords.length) return 600;
-            if (origMatchCount > 0) return 300 + origMatchCount * 10;
-          }
-
-          if (searchWords.length > 0) {
-            let dirMatchCount = 0;
-            searchWords.forEach(w => {
-              if (normDirector.includes(w)) dirMatchCount++;
-            });
-            if (dirMatchCount === searchWords.length) return 550;
-            if (dirMatchCount > 0) return 250 + dirMatchCount * 10;
-          }
-
-          // 5. Cast containing entire search phrase or words
-          const inCast = Array.isArray(m.cast)
-            ? m.cast.some(actor => normalizeText(actor).includes(normSearch))
-            : normalizeText(m.cast).includes(normSearch);
-          if (inCast) return 300;
-
-          // 6. Year matches
-          const mYear = String(m.year || "");
-          if (mYear === searchTerm.trim() || mYear.includes(searchTerm.trim())) return 250;
-
-          // 7. Genre matches
-          const rawGenre = normalizeText(Array.isArray(m.genre) ? m.genre.join(' ') : String(m.genre || ''));
-          if (rawGenre.includes(normSearch)) return 200;
-
-          return 50;
-        };
-
-        const scoreA = getScore(a);
-        const scoreB = getScore(b);
-        if (scoreA !== scoreB) {
-          return scoreB - scoreA; // Descending order of score
-        }
+      if (!isSearching && !showHistoryOnly) {
+        if (activeExploreTab === 'centauro' && movieSec !== 'centauro') return false;
+        if (activeExploreTab === 'series' && movieSec !== 'series') return false;
+        if (activeExploreTab === 'peliculas' && (movieSec !== 'peliculas' && movieSec !== '')) return false;
       }
 
-      if (showHistoryOnly) {
-        // En modo Historial, la última visualización de la ficha en la que el usuario dio clic aparece primero
+      if (showHistoryOnly && !dailyHistoryIds.includes(m.id)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // 2. Ordenación optimizada: Puntuación calculada exactamente UNA SOLA VEZ por película coincidente
+    if (queryCtx) {
+      const scoredList = matched.map(m => {
+        const movieData = getCachedMovieSearchData(m);
+        return {
+          movie: m,
+          score: getMovieSearchScoreWithContext(m, movieData, queryCtx)
+        };
+      });
+
+      scoredList.sort((a, b) => {
+        if (a.score !== b.score) {
+          return b.score - a.score; // Mayor relevancia primero
+        }
+        const timeA = a.movie.createdAt || a.movie.updatedAt || "";
+        const timeB = b.movie.createdAt || b.movie.updatedAt || "";
+        return timeB.localeCompare(timeA);
+      });
+
+      return scoredList.map(item => item.movie);
+    }
+
+    if (showHistoryOnly) {
+      return matched.sort((a, b) => {
         const indexA = dailyHistoryIds.indexOf(a.id);
         const indexB = dailyHistoryIds.indexOf(b.id);
         const orderA = indexA === -1 ? 999999 : indexA;
         const orderB = indexB === -1 ? 999999 : indexB;
         return orderA - orderB;
-      } else {
-        // En modo Archivo, mantenemos el orden inalterado por fecha de alta (createdAt)
-        const timeA = a.createdAt || a.updatedAt || "";
-        const timeB = b.createdAt || b.updatedAt || "";
-        return timeB.localeCompare(timeA);
-      }
+      });
+    }
+
+    return matched.sort((a, b) => {
+      const timeA = a.createdAt || a.updatedAt || "";
+      const timeB = b.createdAt || b.updatedAt || "";
+      return timeB.localeCompare(timeA);
     });
   }, [searchTerm, movies, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly, activeExploreTab, dailyHistoryIds]);
 
@@ -2307,7 +3223,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               <input 
                 id="sidebar-search-input"
                 type="text" 
-                placeholder={t("Buscar título o año...")} 
+                placeholder={t("Buscar título (español o inglés), director, año...")} 
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
                 onKeyDown={(e) => { e.stopPropagation(); if(e.key === 'Enter') setIsMobileMenuOpen(false); }} 

@@ -470,63 +470,146 @@ export const subscribeToMovies = (
   onError?: (err: any) => void
 ) => {
   movieSubscribers.add(callback);
+  let isCleanedUp = false;
+  let lastDeltaTime = "1970-01-01T00:00:00.000Z";
 
-  // 1. Cargar instantáneamente la memoria local y servidor (0ms de latencia inicial)
+  // 1. Cargar instantáneamente la memoria local (0ms de latencia inicial)
   getCachedMovies().then(async (offlineData) => {
+    if (isCleanedUp) return;
     const deletedIds = await syncDeletedMovieIds();
     const deletedSet = new Set(deletedIds);
     if (offlineData && offlineData.length > 0) {
       const cleaned = offlineData.filter(m => m && m.id && !deletedSet.has(m.id));
       callback(cleaned);
       notifyMovieSubscribers(cleaned);
-    }
-    // 2. Consulta y sincronización delta con Firestore
-    runSmartDeltaSyncOnce(callback, onError);
-  }).catch(() => {
-    runSmartDeltaSyncOnce(callback, onError);
-  });
-
-  // 3. Listener de cambios individuales en Firestore en segundo plano (Delta onSnapshot)
-  let unsubMovieDelta: (() => void) | null = null;
-  getCachedMovies().then((cached) => {
-    let maxTimestamp = "1970-01-01T00:00:00.000Z";
-    if (Array.isArray(cached) && cached.length > 0) {
-      for (const m of cached) {
-        const t = m?.updatedAt || m?.createdAt || "";
-        if (t && t > maxTimestamp) maxTimestamp = t;
+      for (const m of cleaned) {
+        const t = m.updatedAt || m.createdAt || "";
+        if (t > lastDeltaTime) lastDeltaTime = t;
       }
     }
+    // 2. Consulta delta inmediata con el servidor
+    syncDelta();
+  }).catch(() => {
+    syncDelta();
+  });
+
+  // Sincronizador Delta (Funciona entre todos los dispositivos sin consumir cuota)
+  const syncDelta = async () => {
+    if (isCleanedUp) return;
     try {
-      const qDelta = query(
-        collection(db, 'movies'),
-        where('updatedAt', '>', maxTimestamp)
-      );
-      unsubMovieDelta = onSnapshot(qDelta, async (snap) => {
-        if (!snap.empty) {
-          const deltaDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          const current = (await getCachedMovies()) || [];
-          const deletedIds = await syncDeletedMovieIds();
-          const merged = mergeMoviesPreservingLocal(current, deltaDocs, deletedIds);
-          await setCachedMovies(merged, true);
-          notifyMovieSubscribers(merged);
-          if (movieBroadcastChannel) {
-            movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: merged });
+      const url = `/api/sync/delta?since=${encodeURIComponent(lastDeltaTime)}`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (isCleanedUp) return;
+
+      if (data.timestamp) lastDeltaTime = data.timestamp;
+
+      const currentCached = (await getCachedMovies()) || [];
+      const serverDeletedIds = Array.isArray(data.deletedMovieIds) ? data.deletedMovieIds : [];
+      const localDeletedIds = (await get("videoteca_deleted_ids")) || [];
+      const allDeletedIds = Array.from(new Set([...serverDeletedIds, ...localDeletedIds]));
+      await set("videoteca_deleted_ids", allDeletedIds);
+
+      let hasChanges = false;
+      let workingList = [...currentCached];
+
+      if (Array.isArray(data.deltaMovies) && data.deltaMovies.length > 0) {
+        hasChanges = true;
+        const map = new Map<string, any>();
+        for (const m of workingList) {
+          if (m && m.id) map.set(m.id, m);
+        }
+        for (const dm of data.deltaMovies) {
+          if (!dm || !dm.id) continue;
+          const existing = map.get(dm.id);
+          if (!existing) {
+            map.set(dm.id, dm);
+          } else {
+            const existT = existing.updatedAt || existing.createdAt || "";
+            const deltaT = dm.updatedAt || dm.createdAt || "";
+            if (deltaT >= existT) {
+              map.set(dm.id, { ...existing, ...dm });
+            }
           }
         }
-      }, (err: any) => {
-        const isQuota = err?.message?.includes('Quota') || err?.code === 'resource-exhausted';
-        if (isQuota) {
-          if (onError) onError(new Error("QUOTA_EXCEEDED"));
-        } else {
-          if (onError) onError(err);
-        }
-      });
+        workingList = Array.from(map.values());
+      }
+
+      const delSet = new Set(allDeletedIds);
+      const beforeFilterCount = workingList.length;
+      workingList = workingList.filter(m => m && m.id && !delSet.has(m.id));
+      if (workingList.length !== beforeFilterCount) {
+        hasChanges = true;
+      }
+
+      if (currentCached.length === 0 && workingList.length > 0) {
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        workingList.sort((a, b) => {
+          const timeA = a.createdAt || a.updatedAt || "";
+          const timeB = b.createdAt || b.updatedAt || "";
+          return timeB.localeCompare(timeA);
+        });
+        await setCachedMovies(workingList, true);
+        callback(workingList);
+        notifyMovieSubscribers(workingList);
+      }
     } catch (_) {}
-  }).catch(() => {});
+  };
+
+  // 3. Listener directo de Firestore (cuando la cuota diaria esté disponible o se restablezca)
+  let unsubFirestore: (() => void) | null = null;
+  try {
+    unsubFirestore = onSnapshot(collection(db, 'movies'), async (snap) => {
+      if (isCleanedUp) return;
+      if (!snap.empty) {
+        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const currentCached = (await getCachedMovies()) || [];
+        const deletedIds = (await get("videoteca_deleted_ids")) || [];
+        const merged = mergeMoviesPreservingLocal(currentCached, docs, deletedIds);
+        await setCachedMovies(merged, true);
+        callback(merged);
+        notifyMovieSubscribers(merged);
+      }
+    }, (err: any) => {
+      if (!isQuotaExceeded(err)) {
+        console.warn("Aviso en onSnapshot de movies:", err);
+      }
+    });
+  } catch (_) {}
+
+  // 4. Polling delta pasivo cada 6s cuando la pestaña está visible
+  const intervalId = setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      syncDelta();
+    }
+  }, 6000);
+
+  const handleVisibilityOrFocus = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      syncDelta();
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+  }
 
   return () => {
+    isCleanedUp = true;
     movieSubscribers.delete(callback);
-    if (unsubMovieDelta) unsubMovieDelta();
+    clearInterval(intervalId);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    }
+    if (unsubFirestore) {
+      try { unsubFirestore(); } catch (_) {}
+    }
   };
 };
 
@@ -535,6 +618,18 @@ export const fetchMoviesOptimized = async (forceServer = false) => {
   if (!forceServer && offlineData && offlineData.length > 0) {
     return offlineData;
   }
+
+  // Consulta al servidor backend primero
+  try {
+    const res = await fetch('/api/movies');
+    if (res.ok) {
+      const serverData = await res.json();
+      if (Array.isArray(serverData) && serverData.length > 0) {
+        await setCachedMovies(serverData, true);
+        return serverData;
+      }
+    }
+  } catch (_) {}
 
   const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
 
@@ -576,7 +671,7 @@ export const upsertMovie = async (movie: any) => {
     updatedAt: nowIso
   };
   
-  // 1. Guardar de inmediato en la memoria local persistente y notificar a todas las pestañas (0ms)
+  // 1. Guardar de inmediato en la memoria local persistente y notificar pestañas (0ms)
   try {
     const offlineData = await getCachedMovies();
     let list: any[] = [];
@@ -608,11 +703,20 @@ export const upsertMovie = async (movie: any) => {
     console.error("Error actualizando la memoria local tras upsertMovie:", e);
   }
 
-  // 2. Guardar en Firestore directamente (Sin intermediarios de Vercel)
+  // 2. Guardar en el servidor backend para propagación multi-dispositivo inmediata
+  try {
+    fetch('/api/movies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(movieData)
+    }).catch(() => {});
+  } catch (_) {}
+
+  // 3. Guardar en Firestore directamente
   try {
     await setDoc(doc(db, 'movies', movieId), movieData, { merge: true });
   } catch (err) {
-    console.warn("Aviso al guardar en Firestore (registro asegurado en memoria local):", err);
+    console.warn("Aviso al guardar en Firestore (asegurado en servidor y memoria local):", err);
   }
 
   return movieData;
@@ -646,11 +750,20 @@ export const updateMovie = async (id: string, updates: any) => {
     }
   } catch (_) {}
 
+  // Sincronizar en el servidor backend
+  try {
+    fetch('/api/movies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...safeUpdates })
+    }).catch(() => {});
+  } catch (_) {}
+
   // Sincronizar en Firestore directamente
   try {
     await updateDoc(doc(db, 'movies', id), safeUpdates);
   } catch (err) {
-    console.warn("Aviso al actualizar en Firestore (actualizado en memoria local):", err);
+    console.warn("Aviso al actualizar en Firestore (actualizado en servidor y memoria local):", err);
   }
 
   return { id, ...updates };
@@ -674,11 +787,18 @@ export const deleteMovie = async (id: string) => {
     }
   } catch (_) {}
 
+  // Eliminar en el servidor backend
+  try {
+    fetch(`/api/movies/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    }).catch(() => {});
+  } catch (_) {}
+
   // Eliminar en Firestore directamente
   try {
     await deleteDoc(doc(db, 'movies', id));
   } catch (err) {
-    console.warn("Aviso al eliminar en Firestore (eliminado en memoria local):", err);
+    console.warn("Aviso al eliminar en Firestore (eliminado en servidor y memoria local):", err);
   }
 };
 
@@ -981,7 +1101,7 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
     }
   } catch (_) {}
 
-  // 3. Verificación directa en Firestore (sin intermediario de Vercel)
+  // 3. Verificación directa en Firestore
   try {
     const userDocRef = doc(db, 'authorized_users', normalized);
     const snap = await getDoc(userDocRef);
@@ -1002,6 +1122,23 @@ export const getAdminByEmail = async (email: string): Promise<{ id: string, role
       console.warn("Aviso consultando authorized_users en Firestore:", err);
     }
   }
+
+  // 4. Verificación de respaldo en el servidor si Firestore tiene cuota agotada
+  try {
+    const res = await fetch(`/api/admins/check/${encodeURIComponent(normalized)}`);
+    if (res.ok) {
+      const check = await res.json();
+      if (check.isAdmin) {
+        return {
+          id: normalized,
+          email: normalized,
+          role: check.role || 'editor',
+          name: check.name || '',
+          isPrimary: check.role === 'primary_admin' || normalized === primary
+        };
+      }
+    }
+  } catch (_) {}
 
   return null;
 };
@@ -1087,103 +1224,138 @@ export const subscribeToAuthorizedUsers = (
 ): (() => void) => {
   let isCleanedUp = false;
 
-  // 1. Carga instantánea desde Caché Nativa de Firestore y LocalStorage (0 ms de latencia inicial)
-  (async () => {
-    try {
-      const cachedSnap = await getDocsFromCache(collection(db, 'authorized_users'));
-      if (!cachedSnap.empty && !isCleanedUp) {
-        const cachedDocs = cachedSnap.docs.map(d => ({ id: d.id, ...d.data() } as AuthorizedUser));
-        onUsersUpdate(cachedDocs);
+  // 1. Carga instantánea desde almacenamiento local (0ms de latencia inicial)
+  try {
+    const cachedRaw = localStorage.getItem("videoteca_authorized_users_cache");
+    if (cachedRaw) {
+      const cachedUsers = JSON.parse(cachedRaw);
+      if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
+        onUsersUpdate(cachedUsers);
       }
-    } catch (_) {
-      try {
-        const cachedRaw = localStorage.getItem("videoteca_authorized_users_cache");
-        if (cachedRaw && !isCleanedUp) {
-          const cachedUsers = JSON.parse(cachedRaw);
-          if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
-            onUsersUpdate(cachedUsers);
-          }
-        }
-      } catch (_) {}
     }
-  })();
+  } catch (_) {}
 
-  // 2. Conexión 100% directa y pasiva con Firestore 'authorized_users' (0 lecturas en reposo)
+  // 2. Consulta y sincronización delta con el servidor
+  const syncAdminsFromServer = async () => {
+    if (isCleanedUp) return;
+    try {
+      const res = await fetch('/api/admins');
+      if (!res.ok) return;
+      const serverAdmins = await res.json();
+      if (!Array.isArray(serverAdmins) || isCleanedUp) return;
+
+      const formatted: AuthorizedUser[] = serverAdmins.map((a: any) => ({
+        id: a.email || a.id,
+        email: (a.email || a.id || '').toLowerCase().trim(),
+        name: a.name || '',
+        role: a.role || 'editor',
+        createdAt: a.createdAt || new Date().toISOString(),
+        updatedAt: a.updatedAt || new Date().toISOString(),
+        addedBy: a.addedBy || '',
+        photoURL: a.photoURL || ''
+      }));
+
+      // Asegurar que hay al menos un primary_admin
+      let hasPrimary = formatted.some(u => u.role === 'primary_admin');
+      if (!hasPrimary && formatted.length > 0) {
+        const prim = formatted.find(u => u.email === 'chapceligg@gmail.com') || formatted[0];
+        prim.role = 'primary_admin';
+      }
+
+      try {
+        localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(formatted));
+      } catch (_) {}
+
+      if (!isCleanedUp) {
+        onUsersUpdate(formatted);
+      }
+    } catch (_) {}
+  };
+
+  syncAdminsFromServer();
+
+  // 3. Listener directo de Firestore (cuando la cuota esté disponible o se restablezca)
   let unsubscribeFirestore: (() => void) | null = null;
   try {
     const usersCol = collection(db, 'authorized_users');
-    unsubscribeFirestore = onSnapshot(usersCol, { includeMetadataChanges: true }, async (snapshot) => {
+    unsubscribeFirestore = onSnapshot(usersCol, async (snapshot) => {
       if (isCleanedUp) return;
       try {
-        if (snapshot.empty) {
-          // Si la colección está vacía en la nube, entregamos y subimos los usuarios iniciales
-          onUsersUpdate(INITIAL_AUTHORIZED_USERS);
-          for (const u of INITIAL_AUTHORIZED_USERS) {
-            setDoc(doc(db, 'authorized_users', u.id), u, { merge: true }).catch(() => {});
+        if (!snapshot.empty) {
+          let primaryFound = false;
+          const users: AuthorizedUser[] = snapshot.docs.map(d => {
+            const data = d.data();
+            const email = (data.email || d.id || '').toLowerCase().trim();
+            let role: 'primary_admin' | 'admin' | 'editor' = data.role || 'editor';
+
+            if (role === 'primary_admin' || (data.isPrimary && !primaryFound)) {
+              role = 'primary_admin';
+              primaryFound = true;
+            }
+
+            return {
+              id: d.id,
+              email,
+              name: data.name || '',
+              role,
+              createdAt: data.createdAt || new Date().toISOString(),
+              updatedAt: data.updatedAt || new Date().toISOString(),
+              addedBy: data.addedBy || '',
+              photoURL: data.photoURL || ''
+            };
+          });
+
+          if (!primaryFound && users.length > 0) {
+            const candidate = users.find(u => u.email === 'chapceligg@gmail.com') || users.find(u => u.role === 'admin') || users[0];
+            candidate.role = 'primary_admin';
           }
-          return;
-        }
 
-        let primaryFound = false;
-        const existingEmails = new Set<string>();
-        const users: AuthorizedUser[] = snapshot.docs.map(d => {
-          const data = d.data();
-          const email = (data.email || d.id || '').toLowerCase().trim();
-          existingEmails.add(email);
-          let role: 'primary_admin' | 'admin' | 'editor' = data.role || 'editor';
+          try {
+            localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(users));
+          } catch (_) {}
 
-          if (role === 'primary_admin' || (data.isPrimary && !primaryFound)) {
-            role = 'primary_admin';
-            primaryFound = true;
+          if (!isCleanedUp) {
+            onUsersUpdate(users);
           }
-
-          return {
-            id: d.id,
-            email,
-            name: data.name || '',
-            role,
-            createdAt: data.createdAt || new Date().toISOString(),
-            updatedAt: data.updatedAt || new Date().toISOString(),
-            addedBy: data.addedBy || '',
-            photoURL: data.photoURL || ''
-          };
-        });
-
-        // Asegurar que las cuentas base iniciales queden en la nube si alguna falta
-        for (const seed of INITIAL_AUTHORIZED_USERS) {
-          if (!existingEmails.has(seed.email)) {
-            setDoc(doc(db, 'authorized_users', seed.id), seed, { merge: true }).catch(() => {});
-          }
-        }
-
-        if (!primaryFound && users.length > 0) {
-          const candidate = users.find(u => u.email === 'chapceligg@gmail.com') || users.find(u => u.role === 'admin') || users[0];
-          candidate.role = 'primary_admin';
-        }
-
-        try {
-          localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(users));
-        } catch (_) {}
-
-        if (!isCleanedUp) {
-          onUsersUpdate(users);
         }
       } catch (err) {
         console.warn("Aviso en onSnapshot de authorized_users:", err);
       }
     }, (err) => {
-      console.warn("Aviso de conexión con authorized_users en Firestore:", err);
-      if (onError) onError(err);
+      if (!isQuotaExceeded(err)) {
+        console.warn("Aviso de conexión con authorized_users en Firestore:", err);
+        if (onError) onError(err);
+      }
     });
   } catch (err) {
     console.warn("Aviso inicializando conexión Firestore authorized_users:", err);
   }
 
-  // Siembra inicial asíncrona no bloqueante
-  seedInitialAuthorizedUsersInFirestore().catch(() => {});
+  // 4. Polling delta pasivo cada 6s cuando la pestaña está visible
+  const intervalId = setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      syncAdminsFromServer();
+    }
+  }, 6000);
+
+  const handleVisibilityOrFocus = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      syncAdminsFromServer();
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+  }
 
   return () => {
     isCleanedUp = true;
+    clearInterval(intervalId);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    }
     if (unsubscribeFirestore) {
       try {
         unsubscribeFirestore();
@@ -1213,13 +1385,22 @@ export const addAuthorizedUserInFirestore = async (user: {
     addedBy: user.addedBy || auth.currentUser?.email || 'admin'
   };
 
+  // Guardar en el servidor backend para sincronización multi-dispositivo inmediata
+  try {
+    fetch('/api/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {});
+  } catch (_) {}
+
   // Guardar exclusivamente en la colección única 'authorized_users'
   try {
     const docRef = doc(db, 'authorized_users', normalizedEmail);
     await setDoc(docRef, payload, { merge: true });
   } catch (err) {
     if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al agregar cuenta.");
+      console.warn("Aviso: Cuota de Firestore excedida al agregar cuenta (asegurada en servidor y memoria local).");
     } else {
       console.warn("Aviso al guardar en Firestore authorized_users:", err);
       throw err;
@@ -1253,6 +1434,22 @@ export const updateAuthorizedUserInFirestore = async (
   if (!targetEmail || !targetEmail.includes('@') || !targetEmail.includes('.')) {
     throw new Error("Por favor introduce un correo electrónico válido.");
   }
+
+  const serverPayload = {
+    id: targetEmail,
+    email: targetEmail,
+    name: updates.name,
+    role: updates.role
+  };
+
+  // Sincronizar en el servidor backend
+  try {
+    fetch('/api/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serverPayload)
+    }).catch(() => {});
+  } catch (_) {}
 
   // Sincronizar en Firestore directamente en 'authorized_users'
   try {
@@ -1292,7 +1489,7 @@ export const updateAuthorizedUserInFirestore = async (
     }
   } catch (err) {
     if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al actualizar usuario.");
+      console.warn("Aviso: Cuota de Firestore excedida al actualizar usuario (asegurada en servidor y memoria local).");
     } else {
       console.warn("Aviso al actualizar en Firestore authorized_users:", err);
       throw err;
@@ -1315,13 +1512,20 @@ export const deleteAuthorizedUserInFirestore = async (userId: string) => {
     throw new Error("No se puede eliminar la cuenta de Administrador Principal.");
   }
 
+  // Eliminar en el servidor backend
+  try {
+    fetch(`/api/admins/${encodeURIComponent(currentId)}`, {
+      method: 'DELETE'
+    }).catch(() => {});
+  } catch (_) {}
+
   // Eliminar en Firestore directamente desde la colección única 'authorized_users'
   try {
     const docRef = doc(db, 'authorized_users', currentId);
     await deleteDoc(docRef);
   } catch (err) {
     if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al eliminar.");
+      console.warn("Aviso: Cuota de Firestore excedida al eliminar (eliminada en servidor y memoria local).");
     } else {
       console.warn("Aviso en Firestore al eliminar usuario de authorized_users:", err);
       throw err;
@@ -1356,6 +1560,15 @@ export const transferPrimarySuperAdminInFirestore = async (
 
   try {
     localStorage.setItem("videoteca_primary_superadmin", newEmail);
+  } catch (_) {}
+
+  // Sincronizar en el servidor backend
+  try {
+    fetch('/api/primary-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newEmail, current: currentEmail, keepPrevious: keepPreviousAsAdmin })
+    }).catch(() => {});
   } catch (_) {}
 
   // Traspaso atómico vía transacción (runTransaction) en la colección 'authorized_users'
@@ -1395,7 +1608,7 @@ export const transferPrimarySuperAdminInFirestore = async (
     });
   } catch (err) {
     if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al transferir titular.");
+      console.warn("Aviso: Cuota de Firestore excedida al transferir titular (asegurado en servidor y memoria local).");
     } else {
       console.warn("Aviso en Firestore al transferir titular:", err);
       throw err;

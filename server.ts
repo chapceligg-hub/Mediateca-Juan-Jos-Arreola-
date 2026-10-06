@@ -189,6 +189,7 @@ const TMP_DELETED_ADMINS_FILE = path.join("/tmp", "deleted-admins.json");
 let memoryAdminsCache: any[] | null = null;
 let memoryPrimaryAdminCache: string | null = null;
 let memoryDeletedAdminsCache: string[] | null = null;
+let globalSyncVersion = 1;
 
 function loadDeletedAdminIds(): string[] {
   if (memoryDeletedAdminsCache) return memoryDeletedAdminsCache;
@@ -370,7 +371,7 @@ function getActiveAdminsList(): any[] {
 
 // Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
 function broadcastAdminsUpdate() {
-  // Sincronización en tiempo real gestionada 100% de forma directa cliente-Firestore
+  globalSyncVersion++;
 }
 
 app.get("/api/primary-admin", (req, res) => {
@@ -684,7 +685,7 @@ function getActiveMoviesList(): any[] {
 
 // Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
 function broadcastMoviesUpdate(_eventType: string, _payload: any) {
-  // Sincronización en tiempo real gestionada 100% en el cliente con SDK modular de Firebase (onSnapshot)
+  globalSyncVersion++;
 }
 
 app.get("/api/movies", (req, res) => {
@@ -834,6 +835,38 @@ app.post("/api/movies/deleted", (req, res) => {
   saveServerMovies(movies);
   broadcastMoviesUpdate("movies_update", { count: movies.length });
   res.json({ success: true, count: updated.length, deleted: updated });
+});
+
+// --- DELTA SYNC UNIFICADO MULTI-DISPOSITIVO (0 LECTURAS FIRESTORE) ---
+app.get("/api/sync/delta", (req, res) => {
+  const since = (req.query.since as string) || "1970-01-01T00:00:00.000Z";
+  const allMovies = getActiveMoviesList();
+  const deletedMovieIds = loadDeletedMovieIds();
+  const allAdmins = getActiveAdminsList();
+  const primaryAdmin = loadPrimarySuperAdmin();
+  const deletedAdminIds = loadDeletedAdminIds();
+
+  // Si no se especifica 'since' o es época, entregar todas
+  let deltaMovies: any[] = [];
+  if (!since || since === "1970-01-01T00:00:00.000Z" || since === "0") {
+    deltaMovies = allMovies;
+  } else {
+    deltaMovies = allMovies.filter(m => {
+      const t = m.updatedAt || m.createdAt || "";
+      return t > since;
+    });
+  }
+
+  res.json({
+    timestamp: new Date().toISOString(),
+    version: globalSyncVersion,
+    deltaMovies,
+    deletedMovieIds,
+    admins: allAdmins,
+    primaryAdmin,
+    deletedAdminIds,
+    totalMoviesCount: allMovies.length
+  });
 });
 
    app.post("/api/catalog", async (req, res) => {
