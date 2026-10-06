@@ -15,10 +15,10 @@
   {
     "id": "uriel.cardenas@udgvirtual.udg.mx",
     "email": "uriel.cardenas@udgvirtual.udg.mx",
-    "role": "admin",
+    "role": "editor",
     "name": "uriel.cardenas",
     "createdAt": "2026-09-18T19:36:07.784Z",
-    "updatedAt": "2026-09-23T19:02:01.729Z",
+    "updatedAt": "2026-10-06T17:56:23.522Z",
     "photoURL": "",
     "addedBy": "chapceligg@gmail.com"
   },
@@ -40,6 +40,7 @@
     "name": "CG",
     "photoURL": "",
     "role": "editor",
-    "updatedAt": "2026-09-23T18:03:29.835Z"
+    "updatedAt": "2026-10-06T19:03:29.116Z",
+    "_rev": 4
   }
 ]

@@ -462,6 +462,7 @@ export const subscribeToMovies = (
   movieSubscribers.add(callback);
   let isCleanedUp = false;
   let lastDeltaTime = "1970-01-01T00:00:00.000Z";
+  let lastMovieRevision = 0;
 
   // 1. Cargar instantáneamente la memoria local (0ms de latencia inicial)
   getCachedMovies().then(async (offlineData) => {
@@ -475,6 +476,9 @@ export const subscribeToMovies = (
       for (const m of cleaned) {
         const t = m.updatedAt || m.createdAt || "";
         if (t > lastDeltaTime) lastDeltaTime = t;
+        if (typeof m._rev === 'number' && m._rev > lastMovieRevision) {
+          lastMovieRevision = m._rev;
+        }
       }
     }
     // 2. Consulta delta inmediata con el servidor
@@ -487,15 +491,28 @@ export const subscribeToMovies = (
   const syncDelta = async () => {
     if (isCleanedUp) return;
     try {
-      const url = `/api/delta?since=${encodeURIComponent(lastDeltaTime)}`;
+      const url = `/api/delta?since=${encodeURIComponent(lastDeltaTime)}&rev=${lastMovieRevision}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
       if (isCleanedUp) return;
 
       if (data.timestamp) lastDeltaTime = data.timestamp;
+      if (typeof data.movieRevision === 'number' && data.movieRevision > lastMovieRevision) {
+        lastMovieRevision = data.movieRevision;
+      }
 
       const currentCached = (await getCachedMovies()) || [];
+
+      // Auto-hidratación del servidor si la memoria del servidor está vacía pero el cliente tiene títulos locales
+      if (currentCached.length > 0 && data.totalMoviesCount === 0) {
+        fetch('/api/movies/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentCached)
+        }).catch(() => {});
+      }
+
       const serverDeletedIds = Array.isArray(data.deletedMovieIds) ? data.deletedMovieIds : [];
       const localDeletedIds = (await get("videoteca_deleted_ids")) || [];
       const allDeletedIds = Array.from(new Set([...serverDeletedIds, ...localDeletedIds]));
@@ -518,7 +535,7 @@ export const subscribeToMovies = (
           } else {
             const existT = existing.updatedAt || existing.createdAt || "";
             const deltaT = dm.updatedAt || dm.createdAt || "";
-            if (deltaT >= existT) {
+            if (deltaT >= existT || (dm._rev && (!existing._rev || dm._rev >= existing._rev))) {
               map.set(dm.id, { ...existing, ...dm });
             }
           }
@@ -576,7 +593,7 @@ export const subscribeToMovies = (
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
       syncDelta();
     }
-  }, 6000);
+  }, 2500);
 
   const handleVisibilityOrFocus = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -1190,10 +1207,78 @@ const isQuotaExceeded = (err: any): boolean => {
   );
 };
 
+// Candado Anti-Rebote (Anti-Rebound Lock) para mutaciones recientes de cuentas
+let lastAdminMutationTime = 0;
+const localPendingAdminMutations = new Map<string, { role?: 'primary_admin' | 'admin' | 'editor'; name?: string; email?: string; isDeleted?: boolean; timestamp: number }>();
+const authorizedUsersSubscribers = new Set<(users: AuthorizedUser[]) => void>();
+
+export const recordAdminMutationLock = (email: string, mutation: { role?: 'primary_admin' | 'admin' | 'editor'; name?: string; email?: string; isDeleted?: boolean }) => {
+  const norm = email.toLowerCase().trim();
+  lastAdminMutationTime = Date.now();
+  localPendingAdminMutations.set(norm, { ...mutation, timestamp: Date.now() });
+};
+
+const applyAntiReboundFilter = (incomingUsers: AuthorizedUser[]): AuthorizedUser[] => {
+  const now = Date.now();
+  if (now - lastAdminMutationTime > 3500 && localPendingAdminMutations.size === 0) {
+    return incomingUsers;
+  }
+
+  const map = new Map<string, AuthorizedUser>();
+  for (const u of incomingUsers) {
+    map.set((u.email || u.id || '').toLowerCase().trim(), u);
+  }
+
+  // Filtrar o preservar mutaciones recientes dentro del margen de 3500ms
+  for (const [key, mut] of localPendingAdminMutations.entries()) {
+    if (now - mut.timestamp < 3500) {
+      if (mut.isDeleted) {
+        map.delete(key);
+      } else {
+        const existing = map.get(key) || {
+          id: mut.email || key,
+          email: mut.email || key,
+          name: mut.name || '',
+          role: mut.role || 'editor',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } as AuthorizedUser;
+
+        map.set(key, {
+          ...existing,
+          ...(mut.role ? { role: mut.role } : {}),
+          ...(mut.name !== undefined ? { name: mut.name } : {}),
+          ...(mut.email ? { email: mut.email, id: mut.email } : {})
+        });
+      }
+    } else {
+      localPendingAdminMutations.delete(key);
+    }
+  }
+
+  return Array.from(map.values());
+};
+
+export const notifyAuthorizedUsersSubscribers = (users: AuthorizedUser[]) => {
+  if (!Array.isArray(users)) return;
+  const filtered = applyAntiReboundFilter(users);
+  try {
+    localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(filtered));
+  } catch (_) {}
+  for (const cb of authorizedUsersSubscribers) {
+    try {
+      cb(filtered);
+    } catch (e) {
+      console.warn("Error en suscriptor de authorized_users:", e);
+    }
+  }
+};
+
 export const subscribeToAuthorizedUsers = (
   onUsersUpdate: (users: AuthorizedUser[]) => void,
   onError?: (err: any) => void
 ): (() => void) => {
+  authorizedUsersSubscribers.add(onUsersUpdate);
   let isCleanedUp = false;
 
   // 1. Carga instantánea desde almacenamiento local (0ms de latencia inicial)
@@ -1202,7 +1287,7 @@ export const subscribeToAuthorizedUsers = (
     if (cachedRaw) {
       const cachedUsers = JSON.parse(cachedRaw);
       if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
-        onUsersUpdate(cachedUsers);
+        onUsersUpdate(applyAntiReboundFilter(cachedUsers));
       }
     }
   } catch (_) {}
@@ -1219,31 +1304,45 @@ export const subscribeToAuthorizedUsers = (
       const serverAdmins = Array.isArray(data.admins) ? data.admins : [];
       if (serverAdmins.length === 0) return;
 
-      const formatted: AuthorizedUser[] = serverAdmins.map((a: any) => ({
-        id: a.email || a.id,
-        email: (a.email || a.id || '').toLowerCase().trim(),
-        name: a.name || '',
-        role: a.role || 'editor',
-        createdAt: a.createdAt || new Date().toISOString(),
-        updatedAt: a.updatedAt || new Date().toISOString(),
-        addedBy: a.addedBy || '',
-        photoURL: a.photoURL || ''
-      }));
+      const primaryEmail = (data.primaryAdmin || 'chapceligg@gmail.com').toLowerCase().trim();
+      const deletedSet = new Set(Array.isArray(data.deletedAdminIds) ? data.deletedAdminIds.map((d: any) => String(d).toLowerCase().trim()) : []);
+
+      const formatted: AuthorizedUser[] = serverAdmins
+        .filter((a: any) => {
+          const email = (a.email || a.id || '').toLowerCase().trim();
+          return email && !deletedSet.has(email);
+        })
+        .map((a: any) => {
+          const email = (a.email || a.id || '').toLowerCase().trim();
+          const isPrimary = email === primaryEmail;
+          return {
+            id: email,
+            email,
+            name: a.name || '',
+            role: isPrimary ? ('primary_admin' as const) : (a.role === 'admin' ? ('admin' as const) : ('editor' as const)),
+            createdAt: a.createdAt || new Date().toISOString(),
+            updatedAt: a.updatedAt || new Date().toISOString(),
+            addedBy: a.addedBy || '',
+            photoURL: a.photoURL || ''
+          };
+        });
 
       // Asegurar que hay al menos un primary_admin
-      let hasPrimary = formatted.some(u => u.role === 'primary_admin');
+      let hasPrimary = formatted.some(u => u.role === 'primary_admin' || u.email === primaryEmail);
       if (!hasPrimary && formatted.length > 0) {
-        const prim = formatted.find(u => u.email === (data.primaryAdmin || 'chapceligg@gmail.com')) || formatted[0];
+        const prim = formatted.find(u => u.email === primaryEmail) || formatted[0];
         prim.role = 'primary_admin';
       }
 
+      // Aplicar candado anti-rebote a la captura de red
+      const protectedList = applyAntiReboundFilter(formatted);
+
       try {
-        localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(formatted));
+        localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(protectedList));
       } catch (_) {}
 
-      if (!isCleanedUp) {
-        onUsersUpdate(formatted);
-      }
+      notifyAuthorizedUsersSubscribers(protectedList);
+      notifyAdminSubscribers(protectedList);
     } catch (_) {}
   };
 
@@ -1285,13 +1384,15 @@ export const subscribeToAuthorizedUsers = (
             candidate.role = 'primary_admin';
           }
 
+          // Aplicar candado anti-rebote a la captura de Firestore
+          const protectedList = applyAntiReboundFilter(users);
+
           try {
-            localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(users));
+            localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(protectedList));
           } catch (_) {}
 
-          if (!isCleanedUp) {
-            onUsersUpdate(users);
-          }
+          notifyAuthorizedUsersSubscribers(protectedList);
+          notifyAdminSubscribers(protectedList);
         }
       } catch (err) {
         console.warn("Aviso en onSnapshot de authorized_users:", err);
@@ -1307,11 +1408,12 @@ export const subscribeToAuthorizedUsers = (
   }
 
   // 4. Temporizador delta en segundo plano hacia el SERVIDOR INTERNO (/api/delta), NUNCA a Firestore
+  // 2500ms para respuesta en tiempo real entre múltiples dispositivos
   const intervalId = setInterval(() => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
       syncAdminsFromServer();
     }
-  }, 6000);
+  }, 2500);
 
   const handleVisibilityOrFocus = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -1326,6 +1428,7 @@ export const subscribeToAuthorizedUsers = (
 
   return () => {
     isCleanedUp = true;
+    authorizedUsersSubscribers.delete(onUsersUpdate);
     clearInterval(intervalId);
     if (typeof window !== 'undefined') {
       window.removeEventListener('focus', handleVisibilityOrFocus);
@@ -1360,21 +1463,35 @@ export const addAuthorizedUserInFirestore = async (user: {
     addedBy: user.addedBy || auth.currentUser?.email || 'admin'
   };
 
-  // 1. Actualizar memoria local inmediata y broadcast
+  // 1. Candado Anti-Rebote inmediato (3500ms)
+  recordAdminMutationLock(normalizedEmail, {
+    role: payload.role,
+    name: payload.name,
+    email: normalizedEmail
+  });
+
+  // 2. Actualizar memoria local inmediata y notificar a todos los suscriptores (0ms)
+  let updatedUsers: AuthorizedUser[] = [];
   try {
     const raw = localStorage.getItem("videoteca_authorized_users_cache");
     const current: AuthorizedUser[] = raw ? JSON.parse(raw) : [];
     const idx = current.findIndex(u => u.email === normalizedEmail);
     if (idx > -1) current[idx] = payload;
     else current.push(payload);
+    updatedUsers = current;
     localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(current));
-  } catch (_) {}
-
-  if (adminBroadcastChannel) {
-    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
+  } catch (_) {
+    updatedUsers = [payload];
   }
 
-  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno (/api/admins)
+  notifyAuthorizedUsersSubscribers(updatedUsers);
+  notifyAdminSubscribers(updatedUsers);
+
+  if (adminBroadcastChannel) {
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: updatedUsers });
+  }
+
+  // 3. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno (/api/admins)
   await Promise.allSettled([
     setDoc(doc(db, 'authorized_users', normalizedEmail), payload, { merge: true }),
     setDoc(doc(db, 'admins', normalizedEmail), payload, { merge: true }),
@@ -1412,28 +1529,47 @@ export const updateAuthorizedUserInFirestore = async (
   if (updates.name !== undefined) serverPayload.name = updates.name.trim();
   if (updates.role !== undefined) serverPayload.role = updates.role;
 
-  // 1. Actualizar memoria local inmediata y broadcast
+  // 1. Candado Anti-Rebote inmediato (3500ms)
+  recordAdminMutationLock(targetEmail, {
+    role: updates.role,
+    name: updates.name,
+    email: targetEmail
+  });
+  if (targetEmail !== currentId) {
+    recordAdminMutationLock(currentId, { isDeleted: true });
+  }
+
+  // 2. Actualizar memoria local inmediata y notificar suscriptores (0ms)
+  let updatedUsers: AuthorizedUser[] = [];
   try {
     const raw = localStorage.getItem("videoteca_authorized_users_cache");
     let current: AuthorizedUser[] = raw ? JSON.parse(raw) : [];
+    const prevEntry = current.find(u => u.id === currentId || u.email === currentId);
     current = current.filter(u => u.id !== currentId && u.email !== currentId);
-    current.push({
+    const newEntry: AuthorizedUser = {
       id: targetEmail,
       email: targetEmail,
-      name: updates.name !== undefined ? updates.name.trim() : '',
-      role: updates.role || 'editor',
-      createdAt: nowIso,
+      name: updates.name !== undefined ? updates.name.trim() : (prevEntry?.name || ''),
+      role: updates.role || prevEntry?.role || 'editor',
+      createdAt: prevEntry?.createdAt || nowIso,
       updatedAt: nowIso,
-      addedBy: auth.currentUser?.email || 'admin'
-    });
+      addedBy: prevEntry?.addedBy || auth.currentUser?.email || 'admin'
+    };
+    current.push(newEntry);
+    updatedUsers = current;
     localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(current));
-  } catch (_) {}
-
-  if (adminBroadcastChannel) {
-    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
+  } catch (_) {
+    updatedUsers = [serverPayload];
   }
 
-  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
+  notifyAuthorizedUsersSubscribers(updatedUsers);
+  notifyAdminSubscribers(updatedUsers);
+
+  if (adminBroadcastChannel) {
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: updatedUsers });
+  }
+
+  // 3. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
   if (targetEmail !== currentId) {
     await Promise.allSettled([
       (async () => {
@@ -1485,21 +1621,28 @@ export const deleteAuthorizedUserInFirestore = async (userId: string) => {
     throw new Error("No se puede eliminar la cuenta de Administrador Principal.");
   }
 
-  // 1. Actualizar copia local de respaldo y broadcast
+  // 1. Candado Anti-Rebote inmediato (3500ms)
+  recordAdminMutationLock(currentId, { isDeleted: true });
+
+  // 2. Actualizar copia local de respaldo y notificar suscriptores (0ms)
+  let updatedUsers: AuthorizedUser[] = [];
   try {
     const raw = localStorage.getItem("videoteca_authorized_users_cache");
     if (raw) {
       const current: AuthorizedUser[] = JSON.parse(raw);
-      const filtered = current.filter(u => u.email !== currentId && u.id !== currentId);
-      localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(filtered));
+      updatedUsers = current.filter(u => u.email !== currentId && u.id !== currentId);
+      localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(updatedUsers));
     }
   } catch (_) {}
 
+  notifyAuthorizedUsersSubscribers(updatedUsers);
+  notifyAdminSubscribers(updatedUsers);
+
   if (adminBroadcastChannel) {
-    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: updatedUsers });
   }
 
-  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno (/api/admins/:email)
+  // 3. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno (/api/admins/:email)
   await Promise.allSettled([
     deleteDoc(doc(db, 'authorized_users', currentId)),
     deleteDoc(doc(db, 'admins', currentId)),
@@ -1524,15 +1667,57 @@ export const transferPrimarySuperAdminInFirestore = async (
     throw new Error("Este correo ya es el Administrador Principal actual.");
   }
 
+  // 1. Candado Anti-Rebote inmediato (3500ms)
+  recordAdminMutationLock(newEmail, { role: 'primary_admin', email: newEmail });
+  recordAdminMutationLock(currentEmail, { role: keepPreviousAsAdmin ? 'admin' : undefined, isDeleted: !keepPreviousAsAdmin });
+
   try {
     localStorage.setItem("videoteca_primary_superadmin", newEmail);
   } catch (_) {}
 
+  // 2. Actualizar memoria local y notificar suscriptores (0ms)
+  let updatedUsers: AuthorizedUser[] = [];
+  try {
+    const raw = localStorage.getItem("videoteca_authorized_users_cache");
+    let current: AuthorizedUser[] = raw ? JSON.parse(raw) : [];
+    const nowIso = new Date().toISOString();
+    let foundNew = false;
+    current = current.map(u => {
+      if (u.email === newEmail || u.id === newEmail) {
+        foundNew = true;
+        return { ...u, role: 'primary_admin' as const, updatedAt: nowIso };
+      }
+      if (u.email === currentEmail || u.id === currentEmail) {
+        return { ...u, role: (keepPreviousAsAdmin ? 'admin' : 'editor') as any, updatedAt: nowIso };
+      }
+      return u;
+    });
+    if (!foundNew) {
+      current.unshift({
+        id: newEmail,
+        email: newEmail,
+        name: newEmail.split('@')[0],
+        role: 'primary_admin',
+        createdAt: nowIso,
+        updatedAt: nowIso
+      });
+    }
+    if (!keepPreviousAsAdmin) {
+      current = current.filter(u => u.email !== currentEmail && u.id !== currentEmail);
+    }
+    updatedUsers = current;
+    localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(current));
+  } catch (_) {}
+
+  notifyAuthorizedUsersSubscribers(updatedUsers);
+  notifyAdminSubscribers(updatedUsers);
+  notifyPrimarySuperAdminSubscribers(newEmail);
+
   if (adminBroadcastChannel) {
-    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: updatedUsers, primaryEmail: newEmail });
   }
 
-  // ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (transacción atómica) + Servidor Backend Interno (/api/primary-admin)
+  // 3. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (transacción atómica) + Servidor Backend Interno (/api/primary-admin)
   await Promise.allSettled([
     // Transacción Firestore en authorized_users
     runTransaction(db, async (transaction) => {
@@ -1634,8 +1819,14 @@ const initAdminRealtimeStream = () => {
 
 if (adminBroadcastChannel) {
   adminBroadcastChannel.onmessage = async (event: MessageEvent) => {
-    if (event.data?.type === 'ADMINS_UPDATED' && Array.isArray(event.data.admins)) {
-      notifyAdminSubscribers(event.data.admins);
+    if (event.data?.type === 'ADMINS_UPDATED') {
+      if (Array.isArray(event.data.admins)) {
+        notifyAuthorizedUsersSubscribers(event.data.admins);
+        notifyAdminSubscribers(event.data.admins);
+      }
+      if (event.data.primaryEmail) {
+        notifyPrimarySuperAdminSubscribers(event.data.primaryEmail);
+      }
     } else if (event.data?.type === 'PRIMARY_ADMIN_UPDATED' && event.data.primaryEmail) {
       notifyPrimarySuperAdminSubscribers(event.data.primaryEmail);
     }

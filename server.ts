@@ -190,6 +190,8 @@ let memoryAdminsCache: any[] | null = null;
 let memoryPrimaryAdminCache: string | null = null;
 let memoryDeletedAdminsCache: string[] | null = null;
 let globalSyncVersion = 1;
+let globalMovieRevision = 1;
+let globalAdminRevision = 1;
 
 function loadDeletedAdminIds(): string[] {
   if (memoryDeletedAdminsCache) return memoryDeletedAdminsCache;
@@ -372,6 +374,7 @@ function getActiveAdminsList(): any[] {
 // Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
 function broadcastAdminsUpdate() {
   globalSyncVersion++;
+  globalAdminRevision++;
 }
 
 app.get("/api/primary-admin", (req, res) => {
@@ -392,16 +395,21 @@ app.post("/api/primary-admin", (req, res) => {
   const deleted = loadDeletedAdminIds().filter(d => d !== email);
   saveDeletedAdminIds(deleted);
 
+  const nowIso = new Date().toISOString();
   const idx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === email);
   if (idx > -1) {
-    admins[idx].role = "admin";
+    admins[idx].role = "primary_admin";
+    admins[idx].updatedAt = nowIso;
+    admins[idx]._rev = ++globalAdminRevision;
   } else {
     admins.unshift({
       id: email,
       email,
-      role: "admin",
+      role: "primary_admin",
       name: "",
-      createdAt: new Date().toISOString()
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      _rev: ++globalAdminRevision
     });
   }
 
@@ -411,6 +419,8 @@ app.post("/api/primary-admin", (req, res) => {
       const curIdx = admins.findIndex(a => (a.email || a.id || "").trim().toLowerCase() === current);
       if (curIdx > -1) {
         admins[curIdx].role = "admin";
+        admins[curIdx].updatedAt = nowIso;
+        admins[curIdx]._rev = ++globalAdminRevision;
       }
     } else {
       admins = admins.filter(a => (a.email || a.id || "").trim().toLowerCase() !== current);
@@ -494,7 +504,8 @@ app.post("/api/admins", (req, res) => {
     email: email,
     name: incomingName,
     role: adminData.role || (idx > -1 ? admins[idx].role : "editor"),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    _rev: ++globalAdminRevision
   };
   if (idx > -1) {
     admins[idx] = updatedEntry;
@@ -686,6 +697,7 @@ function getActiveMoviesList(): any[] {
 // Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
 function broadcastMoviesUpdate(_eventType: string, _payload: any) {
   globalSyncVersion++;
+  globalMovieRevision++;
 }
 
 app.get("/api/movies", (req, res) => {
@@ -708,7 +720,8 @@ app.post("/api/movies", (req, res) => {
   const nowIso = new Date().toISOString();
   const updatedMovie = {
     ...movie,
-    updatedAt: movie.updatedAt || nowIso
+    updatedAt: nowIso,
+    _rev: ++globalMovieRevision
   };
 
   if (idx > -1) {
@@ -745,13 +758,13 @@ app.post("/api/movies/sync", (req, res) => {
     if (!cm || !cm.id || deletedSet.has(cm.id)) continue;
     const existing = map.get(cm.id);
     if (!existing) {
-      map.set(cm.id, cm);
+      map.set(cm.id, { ...cm, _rev: ++globalMovieRevision });
       updatedCount++;
     } else {
       const serverTime = existing.updatedAt || existing.createdAt || "";
       const clientTime = cm.updatedAt || cm.createdAt || "";
       if (clientTime > serverTime) {
-        map.set(cm.id, { ...existing, ...cm });
+        map.set(cm.id, { ...existing, ...cm, _rev: ++globalMovieRevision });
         updatedCount++;
       } else {
         map.set(cm.id, { ...cm, ...existing });
@@ -840,26 +853,32 @@ app.post("/api/movies/deleted", (req, res) => {
 // --- DELTA SYNC UNIFICADO MULTI-DISPOSITIVO (0 LECTURAS FIRESTORE) ---
 app.get(["/api/delta", "/api/sync/delta"], (req, res) => {
   const since = (req.query.since as string) || "1970-01-01T00:00:00.000Z";
+  const rev = parseInt((req.query.rev as string) || "0", 10);
   const allMovies = getActiveMoviesList();
   const deletedMovieIds = loadDeletedMovieIds();
   const allAdmins = getActiveAdminsList();
   const primaryAdmin = loadPrimarySuperAdmin();
   const deletedAdminIds = loadDeletedAdminIds();
 
-  // Si no se especifica 'since' o es época, entregar todas
+  // Si no se especifica 'since' o es época o rev=0, entregar todas
   let deltaMovies: any[] = [];
-  if (!since || since === "1970-01-01T00:00:00.000Z" || since === "0") {
+  if (!since || since === "1970-01-01T00:00:00.000Z" || since === "0" || rev === 0) {
     deltaMovies = allMovies;
   } else {
+    // Margen de seguridad de 15 segundos para compensar desfases horarios entre dispositivos
+    const safetySince = since ? new Date(Math.max(0, new Date(since).getTime() - 15000)).toISOString() : "1970-01-01T00:00:00.000Z";
     deltaMovies = allMovies.filter(m => {
-      const t = m.updatedAt || m.createdAt || "";
-      return t > since;
+      const matchRev = rev > 0 && typeof m._rev === 'number' && m._rev > rev;
+      const matchTime = (m.updatedAt || m.createdAt || "") > safetySince;
+      return matchRev || matchTime;
     });
   }
 
   res.json({
     timestamp: new Date().toISOString(),
     version: globalSyncVersion,
+    movieRevision: globalMovieRevision,
+    adminRevision: globalAdminRevision,
     deltaMovies,
     deletedMovieIds,
     admins: allAdmins,
