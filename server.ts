@@ -838,7 +838,7 @@ app.post("/api/movies/deleted", (req, res) => {
 });
 
 // --- DELTA SYNC UNIFICADO MULTI-DISPOSITIVO (0 LECTURAS FIRESTORE) ---
-app.get("/api/sync/delta", (req, res) => {
+app.get(["/api/delta", "/api/sync/delta"], (req, res) => {
   const since = (req.query.since as string) || "1970-01-01T00:00:00.000Z";
   const allMovies = getActiveMoviesList();
   const deletedMovieIds = loadDeletedMovieIds();

@@ -66,17 +66,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   return errInfo;
 }
 
-// Validar conexión a Firestore al iniciar
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Aviso de conectividad Firebase: el cliente está operando en modo offline.");
-    }
-  }
-}
-testConnection().catch(() => {});
+// Conexión pasiva de Firestore inicializada (sin lecturas especulativas al iniciar)
 
 export const signInWithGoogle = async () => {
   const result = await signInWithPopup(auth, provider);
@@ -493,11 +483,11 @@ export const subscribeToMovies = (
     syncDelta();
   });
 
-  // Sincronizador Delta (Funciona entre todos los dispositivos sin consumir cuota)
+  // Sincronizador Delta (Funciona entre todos los dispositivos sin consumir cuota de Firestore)
   const syncDelta = async () => {
     if (isCleanedUp) return;
     try {
-      const url = `/api/sync/delta?since=${encodeURIComponent(lastDeltaTime)}`;
+      const url = `/api/delta?since=${encodeURIComponent(lastDeltaTime)}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
@@ -560,7 +550,7 @@ export const subscribeToMovies = (
     } catch (_) {}
   };
 
-  // 3. Listener directo de Firestore (cuando la cuota diaria esté disponible o se restablezca)
+  // 3. Listener pasivo directo de Firestore (100% pasivo vía WebSocket onSnapshot, 0 lecturas en reposo)
   let unsubFirestore: (() => void) | null = null;
   try {
     unsubFirestore = onSnapshot(collection(db, 'movies'), async (snap) => {
@@ -576,12 +566,12 @@ export const subscribeToMovies = (
       }
     }, (err: any) => {
       if (!isQuotaExceeded(err)) {
-        console.warn("Aviso en onSnapshot de movies:", err);
+        console.warn("Aviso en onSnapshot pasivo de movies:", err);
       }
     });
   } catch (_) {}
 
-  // 4. Polling delta pasivo cada 6s cuando la pestaña está visible
+  // 4. Temporizador delta en segundo plano hacia el SERVIDOR INTERNO (/api/delta), NUNCA a Firestore
   const intervalId = setInterval(() => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
       syncDelta();
@@ -703,21 +693,15 @@ export const upsertMovie = async (movie: any) => {
     console.error("Error actualizando la memoria local tras upsertMovie:", e);
   }
 
-  // 2. Guardar en el servidor backend para propagación multi-dispositivo inmediata
-  try {
+  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
+  await Promise.allSettled([
+    setDoc(doc(db, 'movies', movieId), movieData, { merge: true }),
     fetch('/api/movies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(movieData)
-    }).catch(() => {});
-  } catch (_) {}
-
-  // 3. Guardar en Firestore directamente
-  try {
-    await setDoc(doc(db, 'movies', movieId), movieData, { merge: true });
-  } catch (err) {
-    console.warn("Aviso al guardar en Firestore (asegurado en servidor y memoria local):", err);
-  }
+    })
+  ]);
 
   return movieData;
 };
@@ -750,21 +734,15 @@ export const updateMovie = async (id: string, updates: any) => {
     }
   } catch (_) {}
 
-  // Sincronizar en el servidor backend
-  try {
+  // ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
+  await Promise.allSettled([
+    setDoc(doc(db, 'movies', id), safeUpdates, { merge: true }),
     fetch('/api/movies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...safeUpdates })
-    }).catch(() => {});
-  } catch (_) {}
-
-  // Sincronizar en Firestore directamente
-  try {
-    await updateDoc(doc(db, 'movies', id), safeUpdates);
-  } catch (err) {
-    console.warn("Aviso al actualizar en Firestore (actualizado en servidor y memoria local):", err);
-  }
+    })
+  ]);
 
   return { id, ...updates };
 };
@@ -787,19 +765,13 @@ export const deleteMovie = async (id: string) => {
     }
   } catch (_) {}
 
-  // Eliminar en el servidor backend
-  try {
+  // ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
+  await Promise.allSettled([
+    deleteDoc(doc(db, 'movies', id)),
     fetch(`/api/movies/${encodeURIComponent(id)}`, {
       method: 'DELETE'
-    }).catch(() => {});
-  } catch (_) {}
-
-  // Eliminar en Firestore directamente
-  try {
-    await deleteDoc(doc(db, 'movies', id));
-  } catch (err) {
-    console.warn("Aviso al eliminar en Firestore (eliminado en servidor y memoria local):", err);
-  }
+    })
+  ]);
 };
 
 // ==========================================
@@ -1235,14 +1207,17 @@ export const subscribeToAuthorizedUsers = (
     }
   } catch (_) {}
 
-  // 2. Consulta y sincronización delta con el servidor
+  // 2. Consulta y sincronización delta con el servidor interno (/api/delta o /api/admins)
   const syncAdminsFromServer = async () => {
     if (isCleanedUp) return;
     try {
-      const res = await fetch('/api/admins');
+      const res = await fetch('/api/delta?since=0');
       if (!res.ok) return;
-      const serverAdmins = await res.json();
-      if (!Array.isArray(serverAdmins) || isCleanedUp) return;
+      const data = await res.json();
+      if (isCleanedUp) return;
+
+      const serverAdmins = Array.isArray(data.admins) ? data.admins : [];
+      if (serverAdmins.length === 0) return;
 
       const formatted: AuthorizedUser[] = serverAdmins.map((a: any) => ({
         id: a.email || a.id,
@@ -1258,7 +1233,7 @@ export const subscribeToAuthorizedUsers = (
       // Asegurar que hay al menos un primary_admin
       let hasPrimary = formatted.some(u => u.role === 'primary_admin');
       if (!hasPrimary && formatted.length > 0) {
-        const prim = formatted.find(u => u.email === 'chapceligg@gmail.com') || formatted[0];
+        const prim = formatted.find(u => u.email === (data.primaryAdmin || 'chapceligg@gmail.com')) || formatted[0];
         prim.role = 'primary_admin';
       }
 
@@ -1274,7 +1249,7 @@ export const subscribeToAuthorizedUsers = (
 
   syncAdminsFromServer();
 
-  // 3. Listener directo de Firestore (cuando la cuota esté disponible o se restablezca)
+  // 3. Listener pasivo directo de Firestore (100% pasivo vía onSnapshot, 0 lecturas en reposo)
   let unsubscribeFirestore: (() => void) | null = null;
   try {
     const usersCol = collection(db, 'authorized_users');
@@ -1331,7 +1306,7 @@ export const subscribeToAuthorizedUsers = (
     console.warn("Aviso inicializando conexión Firestore authorized_users:", err);
   }
 
-  // 4. Polling delta pasivo cada 6s cuando la pestaña está visible
+  // 4. Temporizador delta en segundo plano hacia el SERVIDOR INTERNO (/api/delta), NUNCA a Firestore
   const intervalId = setInterval(() => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
       syncAdminsFromServer();
@@ -1385,29 +1360,7 @@ export const addAuthorizedUserInFirestore = async (user: {
     addedBy: user.addedBy || auth.currentUser?.email || 'admin'
   };
 
-  // Guardar en el servidor backend para sincronización multi-dispositivo inmediata
-  try {
-    fetch('/api/admins', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).catch(() => {});
-  } catch (_) {}
-
-  // Guardar exclusivamente en la colección única 'authorized_users'
-  try {
-    const docRef = doc(db, 'authorized_users', normalizedEmail);
-    await setDoc(docRef, payload, { merge: true });
-  } catch (err) {
-    if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al agregar cuenta (asegurada en servidor y memoria local).");
-    } else {
-      console.warn("Aviso al guardar en Firestore authorized_users:", err);
-      throw err;
-    }
-  }
-
-  // Actualizar copia local de respaldo
+  // 1. Actualizar memoria local inmediata y broadcast
   try {
     const raw = localStorage.getItem("videoteca_authorized_users_cache");
     const current: AuthorizedUser[] = raw ? JSON.parse(raw) : [];
@@ -1416,6 +1369,21 @@ export const addAuthorizedUserInFirestore = async (user: {
     else current.push(payload);
     localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(current));
   } catch (_) {}
+
+  if (adminBroadcastChannel) {
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
+  }
+
+  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno (/api/admins)
+  await Promise.allSettled([
+    setDoc(doc(db, 'authorized_users', normalizedEmail), payload, { merge: true }),
+    setDoc(doc(db, 'admins', normalizedEmail), payload, { merge: true }),
+    fetch('/api/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+  ]);
 
   return payload;
 };
@@ -1435,67 +1403,72 @@ export const updateAuthorizedUserInFirestore = async (
     throw new Error("Por favor introduce un correo electrónico válido.");
   }
 
-  const serverPayload = {
+  const nowIso = new Date().toISOString();
+  const serverPayload: any = {
     id: targetEmail,
     email: targetEmail,
-    name: updates.name,
-    role: updates.role
+    updatedAt: nowIso
   };
+  if (updates.name !== undefined) serverPayload.name = updates.name.trim();
+  if (updates.role !== undefined) serverPayload.role = updates.role;
 
-  // Sincronizar en el servidor backend
+  // 1. Actualizar memoria local inmediata y broadcast
   try {
-    fetch('/api/admins', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(serverPayload)
-    }).catch(() => {});
+    const raw = localStorage.getItem("videoteca_authorized_users_cache");
+    let current: AuthorizedUser[] = raw ? JSON.parse(raw) : [];
+    current = current.filter(u => u.id !== currentId && u.email !== currentId);
+    current.push({
+      id: targetEmail,
+      email: targetEmail,
+      name: updates.name !== undefined ? updates.name.trim() : '',
+      role: updates.role || 'editor',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      addedBy: auth.currentUser?.email || 'admin'
+    });
+    localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(current));
   } catch (_) {}
 
-  // Sincronizar en Firestore directamente en 'authorized_users'
-  try {
-    if (targetEmail !== currentId) {
-      const batch = writeBatch(db);
-      const oldDocRef = doc(db, 'authorized_users', currentId);
-      const newDocRef = doc(db, 'authorized_users', targetEmail);
-
-      const oldSnap = await getDoc(oldDocRef);
-      const oldData = oldSnap.exists() ? oldSnap.data() : {};
-
-      const newData: AuthorizedUser = {
-        ...oldData,
-        id: targetEmail,
-        email: targetEmail,
-        name: updates.name !== undefined ? updates.name.trim() : (oldData.name || ''),
-        role: updates.role || oldData.role || 'editor',
-        createdAt: oldData.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        addedBy: oldData.addedBy || auth.currentUser?.email || 'admin'
-      };
-
-      batch.set(newDocRef, newData, { merge: true });
-      batch.delete(oldDocRef);
-      await batch.commit();
-      return newData;
-    } else {
-      const docRef = doc(db, 'authorized_users', currentId);
-      const payload: any = {
-        updatedAt: new Date().toISOString()
-      };
-      if (updates.name !== undefined) payload.name = updates.name.trim();
-      if (updates.role !== undefined) payload.role = updates.role;
-
-      await updateDoc(docRef, payload);
-      return { id: currentId, ...payload };
-    }
-  } catch (err) {
-    if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al actualizar usuario (asegurada en servidor y memoria local).");
-    } else {
-      console.warn("Aviso al actualizar en Firestore authorized_users:", err);
-      throw err;
-    }
-    return { id: targetEmail, email: targetEmail, ...updates };
+  if (adminBroadcastChannel) {
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
   }
+
+  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
+  if (targetEmail !== currentId) {
+    await Promise.allSettled([
+      (async () => {
+        const batch = writeBatch(db);
+        const oldDocRef = doc(db, 'authorized_users', currentId);
+        const newDocRef = doc(db, 'authorized_users', targetEmail);
+        const oldAdminRef = doc(db, 'admins', currentId);
+        const newAdminRef = doc(db, 'admins', targetEmail);
+
+        batch.set(newDocRef, serverPayload, { merge: true });
+        batch.delete(oldDocRef);
+        batch.set(newAdminRef, serverPayload, { merge: true });
+        batch.delete(oldAdminRef);
+        await batch.commit();
+      })(),
+      fetch('/api/admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serverPayload)
+      }),
+      fetch(`/api/admins/${encodeURIComponent(currentId)}`, { method: 'DELETE' })
+    ]);
+  } else {
+    await Promise.allSettled([
+      setDoc(doc(db, 'authorized_users', currentId), serverPayload, { merge: true }),
+      setDoc(doc(db, 'admins', currentId), serverPayload, { merge: true }),
+      fetch('/api/admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serverPayload)
+      })
+    ]);
+  }
+
+  return { id: targetEmail, email: targetEmail, ...updates };
 };
 
 export const deleteAuthorizedUserInFirestore = async (userId: string) => {
@@ -1512,27 +1485,7 @@ export const deleteAuthorizedUserInFirestore = async (userId: string) => {
     throw new Error("No se puede eliminar la cuenta de Administrador Principal.");
   }
 
-  // Eliminar en el servidor backend
-  try {
-    fetch(`/api/admins/${encodeURIComponent(currentId)}`, {
-      method: 'DELETE'
-    }).catch(() => {});
-  } catch (_) {}
-
-  // Eliminar en Firestore directamente desde la colección única 'authorized_users'
-  try {
-    const docRef = doc(db, 'authorized_users', currentId);
-    await deleteDoc(docRef);
-  } catch (err) {
-    if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al eliminar (eliminada en servidor y memoria local).");
-    } else {
-      console.warn("Aviso en Firestore al eliminar usuario de authorized_users:", err);
-      throw err;
-    }
-  }
-
-  // Actualizar copia local de respaldo
+  // 1. Actualizar copia local de respaldo y broadcast
   try {
     const raw = localStorage.getItem("videoteca_authorized_users_cache");
     if (raw) {
@@ -1541,6 +1494,19 @@ export const deleteAuthorizedUserInFirestore = async (userId: string) => {
       localStorage.setItem("videoteca_authorized_users_cache", JSON.stringify(filtered));
     }
   } catch (_) {}
+
+  if (adminBroadcastChannel) {
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
+  }
+
+  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno (/api/admins/:email)
+  await Promise.allSettled([
+    deleteDoc(doc(db, 'authorized_users', currentId)),
+    deleteDoc(doc(db, 'admins', currentId)),
+    fetch(`/api/admins/${encodeURIComponent(currentId)}`, {
+      method: 'DELETE'
+    })
+  ]);
 };
 
 export const transferPrimarySuperAdminInFirestore = async (
@@ -1562,18 +1528,14 @@ export const transferPrimarySuperAdminInFirestore = async (
     localStorage.setItem("videoteca_primary_superadmin", newEmail);
   } catch (_) {}
 
-  // Sincronizar en el servidor backend
-  try {
-    fetch('/api/primary-admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: newEmail, current: currentEmail, keepPrevious: keepPreviousAsAdmin })
-    }).catch(() => {});
-  } catch (_) {}
+  if (adminBroadcastChannel) {
+    adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED' });
+  }
 
-  // Traspaso atómico vía transacción (runTransaction) en la colección 'authorized_users'
-  try {
-    await runTransaction(db, async (transaction) => {
+  // ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (transacción atómica) + Servidor Backend Interno (/api/primary-admin)
+  await Promise.allSettled([
+    // Transacción Firestore en authorized_users
+    runTransaction(db, async (transaction) => {
       const newDocRef = doc(db, 'authorized_users', newEmail);
       const currentDocRef = doc(db, 'authorized_users', currentEmail);
 
@@ -1605,15 +1567,20 @@ export const transferPrimarySuperAdminInFirestore = async (
       } else {
         transaction.delete(currentDocRef);
       }
-    });
-  } catch (err) {
-    if (isQuotaExceeded(err)) {
-      console.warn("Aviso: Cuota de Firestore excedida al transferir titular (asegurado en servidor y memoria local).");
-    } else {
-      console.warn("Aviso en Firestore al transferir titular:", err);
-      throw err;
-    }
-  }
+    }),
+    // Actualizar registro en colección admins de Firestore
+    setDoc(doc(db, 'admins', '_primary_config'), {
+      email: newEmail,
+      transferredBy: currentEmail,
+      transferredAt: new Date().toISOString()
+    }, { merge: true }),
+    // Servidor Backend Interno
+    fetch('/api/primary-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newEmail, current: currentEmail, keepPrevious: keepPreviousAsAdmin })
+    })
+  ]);
 
   return newEmail;
 };
@@ -1772,30 +1739,25 @@ export const upsertAdmin = async (admin: any) => {
     adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: updatedList });
   }
 
-  // 2. Guardar en el servidor backend (< 2KB)
-  try {
-    await fetch('/api/admins', {
+  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno
+  await Promise.allSettled([
+    setDoc(doc(db, 'authorized_users', adminId), adminData, { merge: true }),
+    setDoc(doc(db, 'admins', adminId), adminData, { merge: true }),
+    setDoc(doc(db, 'admins', '_registry'), {
+      list: updatedList,
+      updatedAt: new Date().toISOString()
+    }, { merge: true }),
+    fetch('/api/admins', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(adminData)
-    });
-    await fetch('/api/admins/sync', {
+    }),
+    fetch('/api/admins/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedList)
-    });
-  } catch (_) {}
-
-  // 3. Guardar en Firestore
-  try {
-    await setDoc(doc(db, 'admins', adminId), adminData, { merge: true });
-    await setDoc(doc(db, 'admins', '_registry'), {
-      list: updatedList,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (err) {
-    console.warn("Aviso al guardar admin en Firestore (asegurado en memoria local y servidor):", err);
-  }
+    })
+  ]);
 
   return adminData;
 };
@@ -1819,21 +1781,16 @@ export const deleteAdmin = async (idOrEmail: string) => {
     adminBroadcastChannel.postMessage({ type: 'ADMINS_UPDATED', admins: filteredList });
   }
 
-  // 2. Eliminar en el servidor
-  try {
-    await fetch(`/api/admins/${encodeURIComponent(adminId)}`, { method: 'DELETE' });
-  } catch (_) {}
-
-  // 3. Eliminar de Firestore
-  try {
-    await deleteDoc(doc(db, 'admins', adminId));
+  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore (authorized_users + admins) + Servidor Backend Interno
+  await Promise.allSettled([
+    deleteDoc(doc(db, 'authorized_users', adminId)),
+    deleteDoc(doc(db, 'admins', adminId)),
     setDoc(doc(db, 'admins', '_registry'), {
       list: filteredList,
       updatedAt: new Date().toISOString()
-    }, { merge: true }).catch(() => {});
-  } catch (err) {
-    console.warn("Aviso al eliminar admin en Firestore (eliminado en memoria local y servidor):", err);
-  }
+    }, { merge: true }),
+    fetch(`/api/admins/${encodeURIComponent(adminId)}`, { method: 'DELETE' })
+  ]);
 };
 
 export const getPrimarySuperAdminEmail = async (): Promise<string> => {
@@ -1883,23 +1840,19 @@ export const transferPrimarySuperAdmin = async (newEmail: string, currentSuperAd
     throw new Error("El correo ingresado no es válido.");
   }
 
-  // 1. Servidor backend
-  try {
-    await fetch('/api/primary-admin', {
+  // ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Servidor backend (/api/primary-admin) + Firestore
+  await Promise.allSettled([
+    fetch('/api/primary-admin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: normalizedNew, current: normalizedCurrent, keepPrevious: keepPreviousAsAdmin })
-    });
-  } catch (_) {}
-
-  // 2. Firestore
-  try {
-    await setDoc(doc(db, 'admins', '_primary_config'), {
+    }),
+    setDoc(doc(db, 'admins', '_primary_config'), {
       email: normalizedNew,
       transferredBy: normalizedCurrent,
       transferredAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (_) {}
+    }, { merge: true })
+  ]);
 
   const permAdmins = getPermanentLocalAdmins();
   const existingNewObj = permAdmins.find((a: any) => (a.email || a.id || '').toLowerCase().trim() === normalizedNew);
