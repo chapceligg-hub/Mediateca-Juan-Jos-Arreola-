@@ -3263,14 +3263,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
          setKeyInput("");
          setShowKeyLoginModal(true);
        }} 
-       className={`app-login-btn flex items-center justify-center gap-3 pt-2 cursor-pointer p-2.5 rounded-xl transition-colors font-bold w-full border ${
+       className={`app-login-btn flex items-center justify-center gap-3 cursor-pointer p-3 rounded-xl transition-all duration-300 font-extrabold uppercase tracking-wider text-xs w-full border ${
          isDayMode 
            ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-950 border-zinc-300' 
-           : 'bg-white/5 hover:bg-white/10 text-white border-white/10'
+           : 'bg-white/5 hover:bg-white/10 text-white border-white/10 hover:border-red-500/30'
        }`}
-       title="Ingresar con Clave Maestra o PIN de Editor"
+       title="Acceso a Editores y Administración"
      >
-        <LogIn size={17} /> Acceso con Clave
+        <Users size={17} className="text-red-500" /> ACCESO A EDITORES
      </button>
   )}
         </div>
