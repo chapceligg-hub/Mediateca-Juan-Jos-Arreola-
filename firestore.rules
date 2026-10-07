@@ -10,6 +10,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /settings/{settingId} {
+      // Documentos de control y sincronización de estado (sync delta)
+      allow read, write: if true;
+    }
+
     // Ruta de verificación de conectividad de la plataforma
     match /test/{testId} {
       allow read: if true;

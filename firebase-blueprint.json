@@ -42,6 +42,10 @@
     "/movies/{movieId}": {
       "schema": { "$ref": "#/entities/movie" },
       "description": "Catalog of movies."
+    },
+    "/settings/{settingId}": {
+      "schema": { "type": "object" },
+      "description": "System control and delta sync metadata."
     }
   }
 }

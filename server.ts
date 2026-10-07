@@ -3,6 +3,22 @@ import path from "path";
 import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+
+// Inicializar cliente Firestore del servidor
+let serverDb: any = null;
+try {
+  const firebaseConfigFile = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(firebaseConfigFile)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, "utf-8"));
+    const fbApp = initializeApp(firebaseConfig, "server-app-" + Date.now());
+    serverDb = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId);
+    console.log("Firestore inicializado en el servidor para notificaciones y mutaciones.");
+  }
+} catch (e) {
+  console.warn("Aviso inicializando Firestore en server.ts:", e);
+}
 
 export function sanitizeMovieData(rawData: any): any {
   if (!rawData || typeof rawData !== 'object') {
@@ -177,65 +193,81 @@ export const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- SISTEMA PURO DE DOS LLAVES DE ACCESO DIRECTAS (SIN CORREOS NI CUENTAS) ---
-const KEYS_CONFIG_FILE = path.join(process.cwd(), "keys-config.json");
-const TMP_KEYS_CONFIG_FILE = path.join("/tmp", "keys-config.json");
+// --- SISTEMA PURO DE DOS LLAVES DE ACCESO PERSISTIDAS EN FIRESTORE (settings/auth) ---
+const DEFAULT_MASTER_KEY = process.env.MASTER_KEY || "AdminMaster2026#";
+const DEFAULT_EDITOR_PIN = process.env.EDITOR_PIN || "123456";
 
-const DEFAULT_MASTER_KEY = "AdminMaster2026#";
-const DEFAULT_EDITOR_PIN = "123456";
-
-let activeMasterKey = DEFAULT_MASTER_KEY;
-let activeEditorPin = DEFAULT_EDITOR_PIN;
+// 1. VARIABLE GLOBAL DE CACHÉ
+let cachedKeys: { masterKey: string; editorPin: string } | null = null;
 let globalSyncVersion = 1;
 let globalMovieRevision = 1;
 
-function loadKeysConfig() {
+// 2. LÓGICA DE OBTENCIÓN DE CLAVES (getAuthKeys):
+// - SI cachedKeys NO ES NULL: Retorna cachedKeys inmediatamente (0 llamadas a Firestore).
+// - SI cachedKeys ES NULL:
+//   * Intenta leer doc(db, "settings", "auth").
+//   * Si la lectura es exitosa: Guarda el resultado en cachedKeys.
+//   * SI OCURRE UN ERROR (ej. Quota Exceeded): Asigna a cachedKeys los valores por defecto (process.env.MASTER_KEY y process.env.EDITOR_PIN) para evitar que las siguientes peticiones vuelvan a intentar consultar Firestore.
+async function getAuthKeys(): Promise<{ masterKey: string; editorPin: string }> {
+  if (cachedKeys !== null) {
+    return cachedKeys;
+  }
+
+  if (!serverDb) {
+    cachedKeys = {
+      masterKey: DEFAULT_MASTER_KEY,
+      editorPin: DEFAULT_EDITOR_PIN
+    };
+    return cachedKeys;
+  }
+
   try {
-    const fileToRead = fs.existsSync(TMP_KEYS_CONFIG_FILE)
-      ? TMP_KEYS_CONFIG_FILE
-      : (fs.existsSync(KEYS_CONFIG_FILE) ? KEYS_CONFIG_FILE : null);
-    if (fileToRead) {
-      const raw = fs.readFileSync(fileToRead, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed.masterKey === 'string' && parsed.masterKey.trim()) {
-        activeMasterKey = parsed.masterKey.trim();
-      }
-      if (parsed && typeof parsed.editorPin === 'string' && parsed.editorPin.trim()) {
-        activeEditorPin = parsed.editorPin.trim();
-      }
+    const authDocRef = doc(serverDb, "settings", "auth");
+    const snap = await getDoc(authDocRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      const mKey = (typeof data?.masterKey === 'string' && data.masterKey.trim()) ? data.masterKey.trim() : DEFAULT_MASTER_KEY;
+      const ePin = (typeof data?.editorPin === 'string' && data.editorPin.trim()) ? data.editorPin.trim() : DEFAULT_EDITOR_PIN;
+      cachedKeys = {
+        masterKey: mKey,
+        editorPin: ePin
+      };
+    } else {
+      // Si el documento settings/auth no existe en Firestore, créalo con las claves por defecto
+      await setDoc(authDocRef, {
+        masterKey: DEFAULT_MASTER_KEY,
+        editorPin: DEFAULT_EDITOR_PIN,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      cachedKeys = {
+        masterKey: DEFAULT_MASTER_KEY,
+        editorPin: DEFAULT_EDITOR_PIN
+      };
+      console.log("Documento settings/auth creado en Firestore con claves por defecto.");
     }
-  } catch (e) {
-    console.warn("Error leyendo keys-config.json:", e);
+  } catch (err) {
+    console.warn("Error leyendo settings/auth de Firestore. Asignando claves por defecto a caché:", err);
+    // En caso de error (ej. Quota Exceeded), asignar valores por defecto a cachedKeys para evitar reintentos continuos
+    cachedKeys = {
+      masterKey: DEFAULT_MASTER_KEY,
+      editorPin: DEFAULT_EDITOR_PIN
+    };
   }
+
+  return cachedKeys;
 }
 
-function saveKeysConfig(newMasterKey: string, newEditorPin: string) {
-  activeMasterKey = newMasterKey.trim();
-  activeEditorPin = newEditorPin.trim();
-  const payload = JSON.stringify({
-    masterKey: activeMasterKey,
-    editorPin: activeEditorPin,
-    updatedAt: new Date().toISOString()
-  }, null, 2);
-
-  try {
-    fs.writeFileSync(KEYS_CONFIG_FILE, payload, "utf-8");
-  } catch (e) {
-    try {
-      fs.writeFileSync(TMP_KEYS_CONFIG_FILE, payload, "utf-8");
-    } catch (_) {}
-  }
-}
-
-// Inicializar claves en arranque
-loadKeysConfig();
+// Al arrancar server.ts, precargar cachedKeys
+getAuthKeys().catch((e) => console.warn("Aviso al precargar claves de inicio:", e));
 
 // Middleware de Autorización por Header HTTP 'x-access-key'
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
+  const keys = await getAuthKeys();
   const accessKey = (req.headers['x-access-key'] as string || '').trim();
-  if (accessKey && accessKey === activeMasterKey) {
+  if (accessKey && accessKey === keys.masterKey) {
     (req as any).userRole = 'owner';
-  } else if (accessKey && accessKey === activeEditorPin) {
+  } else if (accessKey && accessKey === keys.editorPin) {
     (req as any).userRole = 'editor';
   } else {
     (req as any).userRole = 'viewer';
@@ -244,30 +276,36 @@ app.use((req, res, next) => {
 });
 
 // POST /api/auth/login-key: Valida clave y retorna rol ('owner' | 'editor')
-app.post("/api/auth/login-key", (req, res) => {
+app.post("/api/auth/login-key", async (req, res) => {
+  const keys = await getAuthKeys();
   const key = (req.body?.key || '').trim();
-  if (key === activeMasterKey) {
+  if (key && key === keys.masterKey) {
     return res.json({ valid: true, role: 'owner' });
   }
-  if (key === activeEditorPin) {
+  if (key && key === keys.editorPin) {
     return res.json({ valid: true, role: 'editor' });
   }
+
   return res.status(401).json({ valid: false, message: "CLAVE_INVALIDA" });
 });
 
 // GET /api/auth/keys (PROTEGIDO - Solo 'owner')
-app.get("/api/auth/keys", (req, res) => {
+app.get("/api/auth/keys", async (req, res) => {
   if ((req as any).userRole !== 'owner') {
     return res.status(403).json({ message: "NO_ACCESS" });
   }
+  const keys = await getAuthKeys();
   return res.json({
-    masterKey: activeMasterKey,
-    editorPin: activeEditorPin
+    masterKey: keys.masterKey,
+    editorPin: keys.editorPin
   });
 });
 
 // POST /api/auth/change-keys (PROTEGIDO - Solo 'owner')
-app.post("/api/auth/change-keys", (req, res) => {
+// 3. AL CAMBIAR CLAVES:
+//    - Actualiza el documento en Firestore.
+//    - Actualiza de inmediato cachedKeys = { masterKey: newMaster, editorPin: newPin }.
+app.post("/api/auth/change-keys", async (req, res) => {
   if ((req as any).userRole !== 'owner') {
     return res.status(403).json({ message: "NO_ACCESS" });
   }
@@ -279,72 +317,48 @@ app.post("/api/auth/change-keys", (req, res) => {
     return res.status(400).json({ error: "El PIN de Editor no puede estar vacío" });
   }
 
-  saveKeysConfig(newMasterKey.trim(), newEditorPin.trim());
+  const newMaster = newMasterKey.trim();
+  const newPin = newEditorPin.trim();
+
+  // Actualiza de inmediato cachedKeys
+  cachedKeys = {
+    masterKey: newMaster,
+    editorPin: newPin
+  };
+
+  // Actualiza el documento doc(db, "settings", "auth") en Firestore con las nuevas llaves
+  if (serverDb) {
+    try {
+      const authDocRef = doc(serverDb, "settings", "auth");
+      await setDoc(authDocRef, {
+        masterKey: newMaster,
+        editorPin: newPin,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.error("Error guardando settings/auth en Firestore:", e);
+      return res.status(500).json({ error: "Error persistiendo claves en Firestore" });
+    }
+  }
+
   return res.json({
     success: true,
-    masterKey: activeMasterKey,
-    editorPin: activeEditorPin
+    masterKey: cachedKeys.masterKey,
+    editorPin: cachedKeys.editorPin
   });
 });
 
-// --- REGISTRO Y GESTIÓN DE PELÍCULAS ---
-const MOVIES_FILE = path.join(process.cwd(), "movies-registry.json");
-const TMP_MOVIES_FILE = path.join("/tmp", "movies-registry.json");
-let memoryMoviesCache: any[] | null = null;
-
-function loadServerMovies(): any[] {
-  if (memoryMoviesCache && Array.isArray(memoryMoviesCache) && memoryMoviesCache.length > 0) {
-    return memoryMoviesCache;
-  }
-  try {
-    const fileToRead = fs.existsSync(TMP_MOVIES_FILE) ? TMP_MOVIES_FILE : (fs.existsSync(MOVIES_FILE) ? MOVIES_FILE : null);
-    if (fileToRead) {
-      const raw = fs.readFileSync(fileToRead, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        memoryMoviesCache = parsed;
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.warn("Error leyendo movies-registry.json:", e);
-  }
-  return memoryMoviesCache || [];
-}
-
-function saveServerMovies(movies: any[]) {
-  memoryMoviesCache = movies;
-  const payload = JSON.stringify(movies, null, 2);
-  try {
-    fs.writeFileSync(MOVIES_FILE, payload, "utf-8");
-  } catch (e) {
-    try {
-      fs.writeFileSync(TMP_MOVIES_FILE, payload, "utf-8");
-    } catch (_) {}
-  }
-}
-
-function getActiveMoviesList(): any[] {
-  const movies = loadServerMovies();
-  const deleted = new Set(loadDeletedMovieIds());
-  return movies.filter(m => m && m.id && !deleted.has(m.id));
-}
-
-// Cero conexiones SSE / Streaming en Vercel (eliminación de consumo Fast Origin Transfer)
-function broadcastMoviesUpdate(_eventType: string, _payload: any) {
-  globalSyncVersion++;
-  globalMovieRevision++;
-}
-
-app.get("/api/movies", (req, res) => {
-  const active = getActiveMoviesList();
-  res.json(active);
+// --- SERVIDOR STATELESS RESPECTO A LAS PELÍCULAS ---
+// La fuente única de verdad es Firestore (colección 'movies') y la memoria caché local es IndexedDB.
+// server.ts no almacena películas en RAM ni en disco.
+app.get("/api/movies", (_req, res) => {
+  res.json([]);
 });
 
-app.post("/api/movies", (req, res) => {
+app.post("/api/movies", async (req, res) => {
   const role = (req as any).userRole;
   if (role !== 'owner' && role !== 'editor') {
-    return res.status(403).json({ error: "NO_ACCESS", message: "Acceso no autorizado para agregar o editar películas." });
+    return res.status(403).json({ error: "NO_ACCESS", message: "Acceso no autorizado para guardar películas." });
   }
 
   const movie = req.body;
@@ -352,82 +366,37 @@ app.post("/api/movies", (req, res) => {
     return res.status(400).json({ error: "Película inválida o sin ID" });
   }
 
-  // Quitar de deleted-movies si se vuelve a crear o editar
-  const deleted = loadDeletedMovieIds().filter(id => id !== movie.id);
-  saveDeletedMovieIds(deleted);
+  try {
+    if (serverDb) {
+      const movieRef = doc(serverDb, "movies", movie.id);
+      const movieData = {
+        ...movie,
+        updatedAt: serverTimestamp()
+      };
+      await setDoc(movieRef, movieData, { merge: true });
 
-  const movies = loadServerMovies();
-  const idx = movies.findIndex(m => m && m.id === movie.id);
-  const nowIso = new Date().toISOString();
-  const updatedMovie = {
-    ...movie,
-    updatedAt: nowIso,
-    _rev: ++globalMovieRevision
-  };
+      const syncRef = doc(serverDb, "settings", "sync");
+      await setDoc(syncRef, {
+        lastUpdated: serverTimestamp(),
+        lastUpdate: new Date().toISOString(),
+        action: 'upsert',
+        updatedMovieId: movie.id
+      }, { merge: true });
 
-  if (idx > -1) {
-    movies[idx] = { ...movies[idx], ...updatedMovie };
-  } else {
-    movies.unshift(updatedMovie);
+      return res.json({ success: true, movie: movieData });
+    }
+    return res.json({ success: true, stateless: true });
+  } catch (err: any) {
+    console.error("Error al persistir película en Firestore desde server.ts:", err);
+    return res.status(500).json({ error: "Error interno al sincronizar con Firestore", message: err?.message });
   }
-
-  saveServerMovies(movies);
-  broadcastMoviesUpdate("movie_upsert", updatedMovie);
-  res.json({ success: true, movie: updatedMovie });
 });
 
-app.post("/api/movies/sync", (req, res) => {
-  const clientMovies = req.body;
-  if (!Array.isArray(clientMovies)) {
-    return res.status(400).json({ error: "Se esperaba un array de películas" });
-  }
-
-  const deletedSet = new Set(loadDeletedMovieIds());
-  const serverMovies = loadServerMovies();
-  const map = new Map<string, any>();
-
-  // Cargar películas del servidor
-  for (const m of serverMovies) {
-    if (m && m.id && !deletedSet.has(m.id)) {
-      map.set(m.id, m);
-    }
-  }
-
-  // Fusionar con películas del cliente respetando la versión más reciente
-  let updatedCount = 0;
-  for (const cm of clientMovies) {
-    if (!cm || !cm.id || deletedSet.has(cm.id)) continue;
-    const existing = map.get(cm.id);
-    if (!existing) {
-      map.set(cm.id, { ...cm, _rev: ++globalMovieRevision });
-      updatedCount++;
-    } else {
-      const serverTime = existing.updatedAt || existing.createdAt || "";
-      const clientTime = cm.updatedAt || cm.createdAt || "";
-      if (clientTime > serverTime) {
-        map.set(cm.id, { ...existing, ...cm, _rev: ++globalMovieRevision });
-        updatedCount++;
-      } else {
-        map.set(cm.id, { ...cm, ...existing });
-      }
-    }
-  }
-
-  const merged = Array.from(map.values());
-  merged.sort((a, b) => {
-    const timeA = a.createdAt || a.updatedAt || "";
-    const timeB = b.createdAt || b.updatedAt || "";
-    return timeB.localeCompare(timeA);
-  });
-
-  saveServerMovies(merged);
-  if (updatedCount > 0) {
-    broadcastMoviesUpdate("movies_update", { count: merged.length });
-  }
-  res.json({ success: true, count: merged.length, movies: merged });
+app.post("/api/movies/sync", (_req, res) => {
+  res.json({ success: true, count: 0, movies: [] });
 });
 
-app.delete("/api/movies/:id", (req, res) => {
+app.delete("/api/movies/:id", async (req, res) => {
   const role = (req as any).userRole;
   if (role !== 'owner') {
     return res.status(403).json({ error: "NO_ACCESS", message: "Solo el Dueño (Clave Maestra) puede eliminar películas." });
@@ -436,99 +405,42 @@ app.delete("/api/movies/:id", (req, res) => {
   const id = req.params.id;
   if (!id) return res.status(400).json({ error: "ID requerido" });
 
-  const deleted = loadDeletedMovieIds();
-  if (!deleted.includes(id)) {
-    deleted.push(id);
-    saveDeletedMovieIds(deleted.slice(-1000));
-  }
-
-  const movies = loadServerMovies().filter(m => m && m.id !== id);
-  saveServerMovies(movies);
-  broadcastMoviesUpdate("movie_deleted", { id });
-  res.json({ success: true });
-});
-
-// --- REGISTRO DE PELÍCULAS ELIMINADAS (Sincronización multi-dispositivo sin lecturas Firestore) ---
-const DELETED_MOVIES_FILE = path.join(process.cwd(), "deleted-movies.json");
-
-function loadDeletedMovieIds(): string[] {
   try {
-    if (fs.existsSync(DELETED_MOVIES_FILE)) {
-      const raw = fs.readFileSync(DELETED_MOVIES_FILE, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+    if (serverDb) {
+      const movieRef = doc(serverDb, "movies", id);
+      await deleteDoc(movieRef);
+
+      const syncRef = doc(serverDb, "settings", "sync");
+      await setDoc(syncRef, {
+        lastUpdated: serverTimestamp(),
+        lastUpdate: new Date().toISOString(),
+        action: 'delete',
+        deletedMovieId: id
+      }, { merge: true });
+
+      return res.json({ success: true, id });
     }
-  } catch (e) {
-    console.warn("Error leyendo deleted-movies.json:", e);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Error al eliminar película en Firestore desde server.ts:", err);
+    return res.status(500).json({ error: "Error interno al eliminar de Firestore", message: err?.message });
   }
-  return [];
-}
-
-function saveDeletedMovieIds(ids: string[]) {
-  try {
-    fs.writeFileSync(DELETED_MOVIES_FILE, JSON.stringify(ids, null, 2), "utf-8");
-  } catch (e) {
-    console.warn("Error guardando deleted-movies.json:", e);
-  }
-}
-
-app.get("/api/movies/deleted", (req, res) => {
-  const ids = loadDeletedMovieIds();
-  res.json(ids);
 });
 
-app.post("/api/movies/deleted", (req, res) => {
-  const role = (req as any).userRole;
-  if (role !== 'owner') {
-    return res.status(403).json({ error: "NO_ACCESS", message: "Solo el Dueño (Clave Maestra) puede eliminar películas." });
-  }
-
-  const { id, ids } = req.body || {};
-  const current = loadDeletedMovieIds();
-  const setIds = new Set(current);
-  if (id && typeof id === "string") setIds.add(id);
-  if (Array.isArray(ids)) {
-    for (const item of ids) {
-      if (item && typeof item === "string") setIds.add(item);
-    }
-  }
-  const updated = Array.from(setIds).slice(-1000);
-  saveDeletedMovieIds(updated);
-
-  const movies = loadServerMovies().filter(m => m && m.id && !setIds.has(m.id));
-  saveServerMovies(movies);
-  broadcastMoviesUpdate("movies_update", { count: movies.length });
-  res.json({ success: true, count: updated.length, deleted: updated });
+app.get("/api/movies/deleted", (_req, res) => {
+  res.json([]);
 });
 
-// --- DELTA SYNC UNIFICADO MULTI-DISPOSITIVO (0 LECTURAS FIRESTORE) ---
-app.get(["/api/delta", "/api/sync/delta"], (req, res) => {
-  const since = (req.query.since as string) || "1970-01-01T00:00:00.000Z";
-  const rev = parseInt((req.query.rev as string) || "0", 10);
-  const allMovies = getActiveMoviesList();
-  const deletedMovieIds = loadDeletedMovieIds();
+app.post("/api/movies/deleted", (_req, res) => {
+  res.json({ success: true, count: 0, deleted: [] });
+});
 
-  // Si no se especifica 'since' o es época o rev=0, entregar todas
-  let deltaMovies: any[] = [];
-  if (!since || since === "1970-01-01T00:00:00.000Z" || since === "0" || rev === 0) {
-    deltaMovies = allMovies;
-  } else {
-    // Margen de seguridad de 15 segundos para compensar desfases horarios entre dispositivos
-    const safetySince = since ? new Date(Math.max(0, new Date(since).getTime() - 15000)).toISOString() : "1970-01-01T00:00:00.000Z";
-    deltaMovies = allMovies.filter(m => {
-      const matchRev = rev > 0 && typeof m._rev === 'number' && m._rev > rev;
-      const matchTime = (m.updatedAt || m.createdAt || "") > safetySince;
-      return matchRev || matchTime;
-    });
-  }
-
+app.get(["/api/delta", "/api/sync/delta"], (_req, res) => {
   res.json({
     timestamp: new Date().toISOString(),
-    version: globalSyncVersion,
-    movieRevision: globalMovieRevision,
-    deltaMovies,
-    deletedMovieIds,
-    totalMoviesCount: allMovies.length
+    deltaMovies: [],
+    deletedMovieIds: [],
+    totalMoviesCount: 0
   });
 });
 

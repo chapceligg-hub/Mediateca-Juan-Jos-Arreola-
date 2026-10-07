@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, doc, getDocs, setDoc, deleteDoc,
-  getDocsFromCache, query, orderBy, onSnapshot
+  query, orderBy, onSnapshot, where, Timestamp, serverTimestamp
 } from 'firebase/firestore';
 import { get, set } from 'idb-keyval';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -203,7 +203,7 @@ export const changeSystemKeys = async (
 
 // ==========================================
 // PERSISTENCIA Y SINCRONIZACIÓN DE PELÍCULAS
-// (Local-First 0ms IndexedDB + Servidor + Firestore)
+// (Local-First 0ms IndexedDB + Firestore Delta Event-Driven)
 // ==========================================
 
 export const requestPersistentStorage = async () => {
@@ -225,189 +225,12 @@ try {
   }
 } catch (_) {}
 
-const CACHE_STORAGE_NAME = 'videoteca_permanent_catalog_v1';
-const CACHE_STORAGE_URL = '/__videoteca_catalog_cache_store.json';
+const IDB_MOVIES_KEY = "videoteca_movies_cache";
+const LOCAL_SYNC_KEY = "lastLocalSyncTimestamp";
 let lastKnownMoviesList: any[] = [];
 const movieSubscribers = new Set<(movies: any[]) => void>();
 
-export const getMoviesCacheKey = () => "videoteca_movies_cache";
-
-export const shouldUpdateCache = (currentMovies: any[], newMovies: any[]): boolean => {
-  if (!currentMovies || currentMovies.length === 0) return true;
-  if (newMovies.length === 0 && currentMovies.length > 0) {
-    console.warn(`[Integrity Check] Se bloqueó intento de vaciar la memoria. Actual: ${currentMovies.length}, Nuevo: ${newMovies.length}`);
-    return false;
-  }
-  return true;
-};
-
-const saveToCacheStorage = async (movies: any[]) => {
-  try {
-    if (typeof window !== 'undefined' && 'caches' in window && Array.isArray(movies) && movies.length > 0) {
-      const cache = await window.caches.open(CACHE_STORAGE_NAME);
-      const response = new Response(JSON.stringify(movies), {
-        headers: { 'Content-Type': 'application/json', 'X-Cache-Date': new Date().toISOString() }
-      });
-      await cache.put(CACHE_STORAGE_URL, response);
-    }
-  } catch (_) {}
-};
-
-const getFromCacheStorage = async (): Promise<any[] | null> => {
-  try {
-    if (typeof window !== 'undefined' && 'caches' in window) {
-      const cache = await window.caches.open(CACHE_STORAGE_NAME);
-      const response = await cache.match(CACHE_STORAGE_URL);
-      if (response) {
-        const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) return data;
-      }
-    }
-  } catch (_) {}
-  return null;
-};
-
-export const getCachedMovies = async (): Promise<any[] | null> => {
-  if (lastKnownMoviesList && Array.isArray(lastKnownMoviesList) && lastKnownMoviesList.length > 0) {
-    return lastKnownMoviesList;
-  }
-
-  try {
-    const cache = await get("videoteca_movies_cache");
-    if (cache) {
-      const parsed = typeof cache === 'string' ? JSON.parse(cache) : cache;
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        lastKnownMoviesList = parsed;
-        saveToCacheStorage(parsed).catch(() => {});
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.warn("Aviso leyendo IndexedDB de películas:", e);
-  }
-
-  const altKeys = ["videoteca_movies", "videoteca_catalog", "movies_cache", "movies"];
-  for (const altKey of altKeys) {
-    try {
-      const altData = await get(altKey);
-      if (altData) {
-        const parsed = typeof altData === 'string' ? JSON.parse(altData) : altData;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          lastKnownMoviesList = parsed;
-          await set("videoteca_movies_cache", parsed);
-          saveToCacheStorage(parsed).catch(() => {});
-          return parsed;
-        }
-      }
-    } catch (_) {}
-  }
-
-  try {
-    const fromCacheStorage = await getFromCacheStorage();
-    if (fromCacheStorage && fromCacheStorage.length > 0) {
-      lastKnownMoviesList = fromCacheStorage;
-      set("videoteca_movies_cache", fromCacheStorage).catch(() => {});
-      return fromCacheStorage;
-    }
-  } catch (_) {}
-
-  const lsKeys = ["videoteca_movies_cache", "videoteca_movies", "videoteca_catalog", "videoteca_backup_catalog"];
-  for (const lsKey of lsKeys) {
-    try {
-      const raw = localStorage.getItem(lsKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          lastKnownMoviesList = parsed;
-          await set("videoteca_movies_cache", parsed);
-          saveToCacheStorage(parsed).catch(() => {});
-          return parsed;
-        }
-      }
-    } catch (_) {}
-  }
-
-  return null;
-};
-
-export const setCachedMovies = async (newMovies: any[], bypassIntegrity = false) => {
-  try {
-    if (!Array.isArray(newMovies) || newMovies.length === 0) return;
-    const currentCache = await getCachedMovies();
-    let currentMovies: any[] = currentCache || [];
-    
-    if (bypassIntegrity || shouldUpdateCache(currentMovies, newMovies)) {
-      lastKnownMoviesList = newMovies;
-      await set("videoteca_movies_cache", newMovies);
-      await saveToCacheStorage(newMovies);
-
-      try {
-        const serialized = JSON.stringify(newMovies);
-        if (serialized.length < 3.5 * 1024 * 1024) {
-          localStorage.setItem("videoteca_movies_cache", serialized);
-        }
-      } catch (_) {}
-    }
-  } catch (e) {
-    console.error("Error al escribir en la memoria local:", e);
-  }
-};
-
-export const mergeMoviesPreservingLocal = (localList: any[], incomingList: any[], deletedIds: string[] = []): any[] => {
-  const map = new Map<string, any>();
-  const deletedSet = new Set(deletedIds);
-
-  for (const m of localList) {
-    if (m && m.id && !deletedSet.has(m.id)) {
-      map.set(m.id, m);
-    }
-  }
-
-  for (const inc of incomingList) {
-    if (!inc || !inc.id || deletedSet.has(inc.id)) continue;
-    const existing = map.get(inc.id);
-    if (!existing) {
-      map.set(inc.id, inc);
-    } else {
-      const localTime = existing.updatedAt || existing.createdAt || "";
-      const incomingTime = inc.updatedAt || inc.createdAt || "";
-
-      if (incomingTime >= localTime || !localTime) {
-        const finalPoster = (inc.poster && inc.poster !== "No disponible" && inc.poster !== "No encontrado")
-          ? inc.poster
-          : (existing.poster || inc.poster);
-        map.set(inc.id, { ...existing, ...inc, poster: finalPoster });
-      } else {
-        const finalPoster = (existing.poster && existing.poster !== "No disponible" && existing.poster !== "No encontrado")
-          ? existing.poster
-          : (inc.poster || existing.poster);
-        map.set(inc.id, { ...inc, ...existing, poster: finalPoster });
-      }
-    }
-  }
-
-  const merged = Array.from(map.values());
-  merged.sort((a, b) => {
-    const timeA = a.createdAt || a.updatedAt || "";
-    const timeB = b.createdAt || b.updatedAt || "";
-    return timeB.localeCompare(timeA);
-  });
-
-  return merged;
-};
-
-export const syncDeletedMovieIds = async (): Promise<string[]> => {
-  let localDeleted: string[] = [];
-  try {
-    const raw = await get("videoteca_deleted_ids");
-    if (raw) {
-      localDeleted = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (!Array.isArray(localDeleted)) localDeleted = [];
-    }
-  } catch (_) {}
-
-  return localDeleted;
-};
+export const getMoviesCacheKey = () => IDB_MOVIES_KEY;
 
 export const notifyMovieSubscribers = (movies: any[]) => {
   if (!Array.isArray(movies)) return;
@@ -424,222 +247,259 @@ export const notifyMovieSubscribers = (movies: any[]) => {
 if (movieBroadcastChannel) {
   movieBroadcastChannel.onmessage = async (event: MessageEvent) => {
     if (event.data?.type === 'MOVIES_UPDATED' && Array.isArray(event.data.movies)) {
-      await setCachedMovies(event.data.movies, true);
+      lastKnownMoviesList = event.data.movies;
+      await set(IDB_MOVIES_KEY, event.data.movies).catch(() => {});
       notifyMovieSubscribers(event.data.movies);
     }
   };
 }
 
+export const getCachedMovies = async (): Promise<any[] | null> => {
+  if (lastKnownMoviesList && Array.isArray(lastKnownMoviesList) && lastKnownMoviesList.length > 0) {
+    return lastKnownMoviesList;
+  }
+
+  try {
+    const cached = await get(IDB_MOVIES_KEY);
+    if (cached) {
+      const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        lastKnownMoviesList = parsed;
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("Aviso leyendo IndexedDB de películas:", e);
+  }
+
+  // Búsqueda en claves de respaldo de versiones previas
+  const altKeys = ["videoteca_movies", "videoteca_catalog", "movies_cache", "movies"];
+  for (const altKey of altKeys) {
+    try {
+      const altData = await get(altKey);
+      if (altData) {
+        const parsed = typeof altData === 'string' ? JSON.parse(altData) : altData;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          lastKnownMoviesList = parsed;
+          await set(IDB_MOVIES_KEY, parsed);
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Respaldo en localStorage
+  if (typeof window !== 'undefined') {
+    const lsKeys = ["videoteca_movies_cache", "videoteca_movies", "videoteca_catalog"];
+    for (const lsKey of lsKeys) {
+      try {
+        const raw = localStorage.getItem(lsKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            lastKnownMoviesList = parsed;
+            await set(IDB_MOVIES_KEY, parsed);
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  return null;
+};
+
+export const setCachedMovies = async (newMovies: any[]) => {
+  try {
+    if (!Array.isArray(newMovies)) return;
+    lastKnownMoviesList = newMovies;
+    await set(IDB_MOVIES_KEY, newMovies);
+  } catch (e) {
+    console.error("Error guardando películas en IndexedDB:", e);
+  }
+};
+
+/**
+ * Sincronización Pública Universal (Event-Driven / 0 Temporizadores / Memory-Safe)
+ * Aplica para 'viewer', 'editor' y 'owner'.
+ */
 export const subscribeToMovies = (
-  callback: (movies: any[]) => void, 
+  callback: (movies: any[]) => void,
   onError?: (err: any) => void
 ) => {
   movieSubscribers.add(callback);
   let isCleanedUp = false;
-  let lastDeltaTime = "1970-01-01T00:00:00.000Z";
-  let lastMovieRevision = 0;
+  let unsubSyncDoc: (() => void) | null = null;
 
-  // 1. Cargar instantáneamente la memoria local (0ms de latencia inicial)
-  getCachedMovies().then(async (offlineData) => {
-    if (isCleanedUp) return;
-    const deletedIds = await syncDeletedMovieIds();
-    const deletedSet = new Set(deletedIds);
-    if (offlineData && offlineData.length > 0) {
-      const cleaned = offlineData.filter(m => m && m.id && !deletedSet.has(m.id));
-      callback(cleaned);
-      notifyMovieSubscribers(cleaned);
-      for (const m of cleaned) {
-        const t = m.updatedAt || m.createdAt || "";
-        if (t > lastDeltaTime) lastDeltaTime = t;
-        if (typeof m._rev === 'number' && m._rev > lastMovieRevision) {
-          lastMovieRevision = m._rev;
+  const dispatchMovies = (movies: any[]) => {
+    if (isCleanedUp || !Array.isArray(movies)) return;
+    movies.sort((a, b) => {
+      const timeA = a.createdAt || a.updatedAt || "";
+      const timeB = b.createdAt || b.updatedAt || "";
+      return timeB.localeCompare(timeA);
+    });
+    callback(movies);
+    notifyMovieSubscribers(movies);
+  };
+
+  (async () => {
+    try {
+      const localCached = await getCachedMovies();
+      const localCount = Array.isArray(localCached) ? localCached.length : 0;
+
+      if (localCount > 0) {
+        // SI INDEXEDDB TIENE > 0 PELÍCULAS:
+        // * Carga inmediatamente el catálogo local al estado de React (setMovies) a 0 ms.
+        // * Queda ESTRICTAMENTE PROHIBIDO ejecutar getDocs o onSnapshot sobre la colección entera movies.
+        // * Conecta UN SOLO onSnapshot pasivo a doc(db, "settings", "sync") (1 sola lectura por sesión).
+        dispatchMovies(localCached);
+        if (typeof window !== 'undefined' && !localStorage.getItem(LOCAL_SYNC_KEY)) {
+          localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+        }
+      } else {
+        // SI INDEXEDDB TIENE STRICTAMENTE 0 PELÍCULAS:
+        // * Ejecuta getDocs(collection(db, "movies")) por ÚNICA VEZ para llenar IndexedDB y guarda localStorage.setItem('lastLocalSyncTimestamp', Date.now()).
+        try {
+          const q = query(collection(db, "movies"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty && !isCleanedUp) {
+            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            await setCachedMovies(data);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+            }
+            dispatchMovies(data);
+          } else if (typeof window !== 'undefined') {
+            localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+          }
+        } catch (fetchErr: any) {
+          console.warn("Aviso en consulta inicial de Firestore (0 películas locales):", fetchErr);
+          onError?.(fetchErr);
         }
       }
-    }
-    // 2. Consulta delta inmediata con el servidor
-    syncDelta();
-  }).catch(() => {
-    syncDelta();
-  });
 
-  // Sincronizador Delta (Funciona entre todos los dispositivos sin consumir cuota de Firestore)
-  const syncDelta = async () => {
-    if (isCleanedUp) return;
-    try {
-      const url = `/api/delta?since=${encodeURIComponent(lastDeltaTime)}&rev=${lastMovieRevision}`;
-      const res = await fetch(url);
-      if (!res.ok) return;
-      const data = await res.json();
       if (isCleanedUp) return;
 
-      if (data.timestamp) lastDeltaTime = data.timestamp;
-      if (typeof data.movieRevision === 'number' && data.movieRevision > lastMovieRevision) {
-        lastMovieRevision = data.movieRevision;
-      }
+      // Conecta UN SOLO escuchador pasivo onSnapshot apuntando ÚNICAMENTE al documento de control doc(db, "settings", "sync") (1 sola lectura por sesión)
+      unsubSyncDoc = onSnapshot(doc(db, "settings", "sync"), async (syncSnap) => {
+        if (isCleanedUp || !syncSnap.exists()) return;
+        const syncData = syncSnap.data();
 
-      const currentCached = (await getCachedMovies()) || [];
+        try {
+          const currentLocal = (await getCachedMovies()) || [];
+          let workingList = [...currentLocal];
+          let hasLocalChanges = false;
 
-      // Auto-hidratación del servidor si la memoria del servidor está vacía pero el cliente tiene títulos locales
-      if (currentCached.length > 0 && data.totalMoviesCount === 0) {
-        fetch('/api/movies/sync', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            ...getAuthHeaders()
-          },
-          body: JSON.stringify(currentCached)
-        }).catch(() => {});
-      }
-
-      const serverDeletedIds = Array.isArray(data.deletedMovieIds) ? data.deletedMovieIds : [];
-      const localDeletedIds = (await get("videoteca_deleted_ids")) || [];
-      const allDeletedIds = Array.from(new Set([...serverDeletedIds, ...localDeletedIds]));
-      await set("videoteca_deleted_ids", allDeletedIds);
-
-      let hasChanges = false;
-      let workingList = [...currentCached];
-
-      if (Array.isArray(data.deltaMovies) && data.deltaMovies.length > 0) {
-        hasChanges = true;
-        const map = new Map<string, any>();
-        for (const m of workingList) {
-          if (m && m.id) map.set(m.id, m);
-        }
-        for (const dm of data.deltaMovies) {
-          if (!dm || !dm.id) continue;
-          const existing = map.get(dm.id);
-          if (!existing) {
-            map.set(dm.id, dm);
-          } else {
-            const existT = existing.updatedAt || existing.createdAt || "";
-            const deltaT = dm.updatedAt || dm.createdAt || "";
-            if (deltaT >= existT || (dm._rev && (!existing._rev || dm._rev >= existing._rev))) {
-              map.set(dm.id, { ...existing, ...dm });
+          // Manejo de eliminación
+          if (syncData?.action === 'delete') {
+            const delId = syncData.deletedMovieId;
+            if (delId) {
+              const beforeCount = workingList.length;
+              workingList = workingList.filter(m => m.id !== delId);
+              if (workingList.length !== beforeCount) {
+                hasLocalChanges = true;
+              }
             }
           }
+
+          // Consulta Delta a Firestore: where("updatedAt", ">", lastLocalSyncTimestamp)
+          const rawSync = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_SYNC_KEY) : null;
+          const syncNum = Number(rawSync) || 0;
+          const safetyDate = new Date(Math.max(0, syncNum - 2000));
+          const safetyTimestamp = Timestamp.fromDate(safetyDate);
+          const safetyIso = safetyDate.toISOString();
+
+          let deltaMovies: any[] = [];
+          try {
+            const deltaSnap = await getDocs(query(
+              collection(db, "movies"),
+              where("updatedAt", ">", safetyTimestamp)
+            ));
+            if (!deltaSnap.empty) {
+              deltaMovies = deltaSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            }
+          } catch (_) {
+            try {
+              const deltaSnapStr = await getDocs(query(
+                collection(db, "movies"),
+                where("updatedAt", ">", safetyIso)
+              ));
+              if (!deltaSnapStr.empty) {
+                deltaMovies = deltaSnapStr.docs.map(d => ({ id: d.id, ...d.data() }));
+              }
+            } catch (_) {}
+          }
+
+          if (deltaMovies.length === 0) {
+            try {
+              const deltaSnapStr = await getDocs(query(
+                collection(db, "movies"),
+                where("updatedAt", ">", safetyIso)
+              ));
+              if (!deltaSnapStr.empty) {
+                deltaMovies = deltaSnapStr.docs.map(d => ({ id: d.id, ...d.data() }));
+              }
+            } catch (_) {}
+          }
+
+          if (deltaMovies.length > 0) {
+            const map = new Map<string, any>();
+            for (const m of workingList) {
+              if (m && m.id) map.set(m.id, m);
+            }
+
+            for (const dm of deltaMovies) {
+              if (!dm || !dm.id) continue;
+              const existing = map.get(dm.id);
+              if (!existing) {
+                map.set(dm.id, dm);
+                hasLocalChanges = true;
+              } else {
+                map.set(dm.id, { ...existing, ...dm });
+                hasLocalChanges = true;
+              }
+            }
+            workingList = Array.from(map.values());
+          }
+
+          if (hasLocalChanges) {
+            await setCachedMovies(workingList);
+            dispatchMovies(workingList);
+          }
+
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+          }
+        } catch (deltaErr: any) {
+          console.warn("Aviso en procesamiento delta:", deltaErr);
+          onError?.(deltaErr);
         }
-        workingList = Array.from(map.values());
-      }
+      }, (listenerErr: any) => {
+        console.warn("Aviso en onSnapshot pasivo de settings/sync:", listenerErr);
+        onError?.(listenerErr);
+      });
 
-      const delSet = new Set(allDeletedIds);
-      const beforeFilterCount = workingList.length;
-      workingList = workingList.filter(m => m && m.id && !delSet.has(m.id));
-      if (workingList.length !== beforeFilterCount) {
-        hasChanges = true;
-      }
-
-      if (currentCached.length === 0 && workingList.length > 0) {
-        hasChanges = true;
-      }
-
-      if (hasChanges) {
-        workingList.sort((a, b) => {
-          const timeA = a.createdAt || a.updatedAt || "";
-          const timeB = b.createdAt || b.updatedAt || "";
-          return timeB.localeCompare(timeA);
-        });
-        await setCachedMovies(workingList, true);
-        callback(workingList);
-        notifyMovieSubscribers(workingList);
-      }
-    } catch (_) {}
-  };
-
-  // 3. Listener pasivo directo de Firestore (100% pasivo vía WebSocket onSnapshot)
-  let unsubFirestore: (() => void) | null = null;
-  try {
-    unsubFirestore = onSnapshot(collection(db, 'movies'), async (snap) => {
-      if (isCleanedUp) return;
-      if (!snap.empty) {
-        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const currentCached = (await getCachedMovies()) || [];
-        const deletedIds = (await get("videoteca_deleted_ids")) || [];
-        const merged = mergeMoviesPreservingLocal(currentCached, docs, deletedIds);
-        await setCachedMovies(merged, true);
-        callback(merged);
-        notifyMovieSubscribers(merged);
-      }
-    }, (err: any) => {
-      console.warn("Aviso en onSnapshot pasivo de movies:", err);
-    });
-  } catch (_) {}
-
-  // 4. Temporizador delta en segundo plano hacia el servidor interno
-  const intervalId = setInterval(() => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      syncDelta();
+    } catch (outerErr: any) {
+      console.warn("Error en inicio de suscripción:", outerErr);
+      onError?.(outerErr);
     }
-  }, 2500);
+  })();
 
-  const handleVisibilityOrFocus = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      syncDelta();
-    }
-  };
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('focus', handleVisibilityOrFocus);
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-  }
-
+  // Limpieza estricta para evitar fugas de memoria y acumulación de listeners
   return () => {
     isCleanedUp = true;
     movieSubscribers.delete(callback);
-    clearInterval(intervalId);
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('focus', handleVisibilityOrFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-    }
-    if (unsubFirestore) {
-      try { unsubFirestore(); } catch (_) {}
+    if (unsubSyncDoc) {
+      try {
+        unsubSyncDoc();
+      } catch (_) {}
+      unsubSyncDoc = null;
     }
   };
 };
 
-export const fetchMoviesOptimized = async (forceServer = false) => {
-  const offlineData = await getCachedMovies();
-  if (!forceServer && offlineData && offlineData.length > 0) {
-    return offlineData;
-  }
-
-  // Consulta al servidor backend primero
-  try {
-    const res = await fetch('/api/movies', {
-      headers: { ...getAuthHeaders() }
-    });
-    if (res.ok) {
-      const serverData = await res.json();
-      if (Array.isArray(serverData) && serverData.length > 0) {
-        await setCachedMovies(serverData, true);
-        return serverData;
-      }
-    }
-  } catch (_) {}
-
-  const q = query(collection(db, 'movies'), orderBy('createdAt', 'desc'));
-
-  if (!forceServer) {
-    try {
-      const cachedSnap = await getDocsFromCache(q);
-      if (!cachedSnap.empty) {
-        const data = cachedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        await setCachedMovies(data);
-        return data;
-      }
-    } catch (_) {}
-  }
-
-  try {
-    const snapshot = await getDocs(q);
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    await setCachedMovies(data, true);
-    return data;
-  } catch (err) {
-    if (offlineData && offlineData.length > 0) {
-      return offlineData;
-    }
-    return [];
-  }
+export const fetchMoviesOptimized = async () => {
+  return (await getCachedMovies()) || [];
 };
 
 export const generateMovieId = () => {
@@ -649,66 +509,65 @@ export const generateMovieId = () => {
 export const upsertMovie = async (movie: any) => {
   const movieId = movie.id || generateMovieId();
   const nowIso = new Date().toISOString();
-  const movieData = { 
-    ...movie, 
+  const nowTimestamp = Date.now();
+  const movieData = {
+    ...movie,
     id: movieId,
     createdAt: movie.createdAt || nowIso,
     updatedAt: nowIso
   };
-  
-  // 1. Guardar de inmediato en la memoria local persistente y notificar pestañas (0ms)
+
+  // 1. Optimistic UI local instantáneo a 0ms en IndexedDB y pestañas abiertas
   try {
-    const offlineData = await getCachedMovies();
-    let list: any[] = [];
-    if (offlineData) {
-      list = [...offlineData];
+    const current = (await getCachedMovies()) || [];
+    const map = new Map<string, any>();
+    for (const m of current) {
+      if (m && m.id) map.set(m.id, m);
     }
-    const index = list.findIndex((m: any) => m.id === movieId);
-    if (index > -1) {
-      list[index] = { ...list[index], ...movieData };
-    } else {
-      list.unshift(movieData);
-    }
-    list.sort((a, b) => {
+    map.set(movieId, { ...(map.get(movieId) || {}), ...movieData });
+    const updatedList = Array.from(map.values()).sort((a, b) => {
       const timeA = a.createdAt || a.updatedAt || "";
       const timeB = b.createdAt || b.updatedAt || "";
       return timeB.localeCompare(timeA);
     });
-    await setCachedMovies(list, true);
-    notifyMovieSubscribers(list);
+    await setCachedMovies(updatedList);
+    notifyMovieSubscribers(updatedList);
     if (movieBroadcastChannel) {
-      movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: list });
+      movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: updatedList });
     }
-
-    const deletedList: string[] = (await get("videoteca_deleted_ids")) || [];
-    if (deletedList.includes(movieId)) {
-      await set("videoteca_deleted_ids", deletedList.filter(id => id !== movieId));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_SYNC_KEY, nowTimestamp.toString());
     }
   } catch (e) {
-    console.error("Error actualizando la memoria local tras upsertMovie:", e);
+    console.error("Error actualizando memoria local tras upsertMovie:", e);
   }
 
-  // 2. ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
-  const results = await Promise.allSettled([
-    setDoc(doc(db, 'movies', movieId), movieData, { merge: true }),
+  // 2. Persistencia en Firestore (colección movies) y documento de control (settings/sync)
+  try {
+    await setDoc(doc(db, 'movies', movieId), {
+      ...movieData,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    await setDoc(doc(db, 'settings', 'sync'), {
+      lastUpdated: serverTimestamp(),
+      lastUpdate: nowIso,
+      timestamp: nowTimestamp,
+      action: 'upsert',
+      updatedMovieId: movieId
+    }, { merge: true });
+
+    // Notificar al servidor Express para mutación respaldada
     fetch('/api/movies', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders()
       },
       body: JSON.stringify(movieData)
-    })
-  ]);
-
-  // Verificar si el servidor devolvió 401/403
-  const serverResult = results[1];
-  if (serverResult.status === 'fulfilled') {
-    const res = serverResult.value;
-    if (res.status === 401 || res.status === 403) {
-      notifyAuthExpiredOrDenied();
-      throw new Error('AUTH_DENIED');
-    }
+    }).catch(() => {});
+  } catch (err) {
+    console.warn("Aviso escribiendo en Firestore (los datos persisten en la memoria local):", err);
   }
 
   return movieData;
@@ -716,92 +575,104 @@ export const upsertMovie = async (movie: any) => {
 
 export const updateMovie = async (id: string, updates: any) => {
   const nowIso = new Date().toISOString();
+  const nowTimestamp = Date.now();
   const safeUpdates = {
     ...updates,
     updatedAt: updates.updatedAt || nowIso
   };
 
+  // 1. Optimistic UI local instantáneo
   try {
-    const offlineData = await getCachedMovies();
-    if (offlineData) {
-      let list: any[] = [...offlineData];
-      const index = list.findIndex((m: any) => m.id === id);
-      if (index > -1) {
-        list[index] = { ...list[index], ...safeUpdates };
-        list.sort((a, b) => {
-          const timeA = a.createdAt || a.updatedAt || "";
-          const timeB = b.createdAt || b.updatedAt || "";
-          return timeB.localeCompare(timeA);
-        });
-        await setCachedMovies(list, true);
-        notifyMovieSubscribers(list);
-        if (movieBroadcastChannel) {
-          movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: list });
-        }
+    const current = (await getCachedMovies()) || [];
+    const idx = current.findIndex((m: any) => m.id === id);
+    if (idx > -1) {
+      current[idx] = { ...current[idx], ...safeUpdates };
+      current.sort((a: any, b: any) => {
+        const timeA = a.createdAt || a.updatedAt || "";
+        const timeB = b.createdAt || b.updatedAt || "";
+        return timeB.localeCompare(timeA);
+      });
+      await setCachedMovies(current);
+      notifyMovieSubscribers(current);
+      if (movieBroadcastChannel) {
+        movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: current });
       }
     }
-  } catch (_) {}
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_SYNC_KEY, nowTimestamp.toString());
+    }
+  } catch (e) {
+    console.error("Error actualizando memoria local tras updateMovie:", e);
+  }
 
-  // ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
-  const results = await Promise.allSettled([
-    setDoc(doc(db, 'movies', id), safeUpdates, { merge: true }),
+  // 2. Persistencia en Firestore
+  try {
+    await setDoc(doc(db, 'movies', id), {
+      ...safeUpdates,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    await setDoc(doc(db, 'settings', 'sync'), {
+      lastUpdated: serverTimestamp(),
+      lastUpdate: nowIso,
+      timestamp: nowTimestamp,
+      action: 'upsert',
+      updatedMovieId: id
+    }, { merge: true });
+
     fetch('/api/movies', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders()
       },
       body: JSON.stringify({ id, ...safeUpdates })
-    })
-  ]);
-
-  const serverResult = results[1];
-  if (serverResult.status === 'fulfilled') {
-    const res = serverResult.value;
-    if (res.status === 401 || res.status === 403) {
-      notifyAuthExpiredOrDenied();
-      throw new Error('AUTH_DENIED');
-    }
+    }).catch(() => {});
+  } catch (err) {
+    console.warn("Aviso actualizando en Firestore (los datos persisten en memoria local):", err);
   }
 
   return { id, ...updates };
 };
 
 export const deleteMovie = async (id: string) => {
-  try {
-    const offlineData = await getCachedMovies();
-    if (offlineData) {
-      let list: any[] = offlineData.filter((m: any) => m.id !== id);
-      await setCachedMovies(list, true);
-      notifyMovieSubscribers(list);
-      if (movieBroadcastChannel) {
-        movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: list });
-      }
-    }
-    const deletedList: string[] = (await get("videoteca_deleted_ids")) || [];
-    if (!deletedList.includes(id)) {
-      deletedList.push(id);
-      await set("videoteca_deleted_ids", deletedList.slice(-1000));
-    }
-  } catch (_) {}
+  const nowIso = new Date().toISOString();
+  const nowTimestamp = Date.now();
 
-  // ESCRITURA DOBLE GARANTIZADA Y SIMULTÁNEA: Firestore + Servidor Backend Interno
-  const results = await Promise.allSettled([
-    deleteDoc(doc(db, 'movies', id)),
+  // 1. Optimistic UI local instantáneo
+  try {
+    const current = (await getCachedMovies()) || [];
+    const filtered = current.filter((m: any) => m.id !== id);
+    await setCachedMovies(filtered);
+    notifyMovieSubscribers(filtered);
+    if (movieBroadcastChannel) {
+      movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: filtered });
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_SYNC_KEY, nowTimestamp.toString());
+    }
+  } catch (e) {
+    console.error("Error eliminando de la memoria local:", e);
+  }
+
+  // 2. Persistencia en Firestore
+  try {
+    await deleteDoc(doc(db, 'movies', id));
+    await setDoc(doc(db, 'settings', 'sync'), {
+      lastUpdated: serverTimestamp(),
+      lastUpdate: nowIso,
+      timestamp: nowTimestamp,
+      action: 'delete',
+      deletedMovieId: id
+    }, { merge: true });
+
     fetch(`/api/movies/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: {
         ...getAuthHeaders()
       }
-    })
-  ]);
-
-  const serverResult = results[1];
-  if (serverResult.status === 'fulfilled') {
-    const res = serverResult.value;
-    if (res.status === 401 || res.status === 403) {
-      notifyAuthExpiredOrDenied();
-      throw new Error('AUTH_DENIED');
-    }
+    }).catch(() => {});
+  } catch (err) {
+    console.warn("Aviso eliminando en Firestore:", err);
   }
 };

@@ -2564,8 +2564,6 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     });
   }, [searchTerm, movies, selectedGenre, selectedLetter, selectedYearRange, showReviewOnly, showHistoryOnly, activeExploreTab, dailyHistoryIds]);
 
-  console.log('RENDER', { movies: movies.length, filtered: filteredMovies.length });
-
   const totalPages = Math.max(1, Math.ceil(filteredMovies.length / moviesPerPage));
 
   // Si la página actual excede el total de páginas de la pestaña/filtro activo, corregir automáticamente

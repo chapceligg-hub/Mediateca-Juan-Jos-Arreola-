@@ -6,12 +6,14 @@ export function useAutoScrollVertical(disabled: boolean = false) {
   const scrollIntensity = useRef<number>(0);
 
   const startScrolling = () => {
-    if (disabled) return;
+    if (disabled || scrollIntensity.current === 0) return;
     if (scrollAnimationFrame.current === null) {
       const scrollStep = () => {
-        if (containerRef.current && scrollIntensity.current !== 0) {
-          containerRef.current.scrollTop += scrollIntensity.current;
+        if (!containerRef.current || scrollIntensity.current === 0) {
+          stopScrolling();
+          return;
         }
+        containerRef.current.scrollTop += scrollIntensity.current;
         scrollAnimationFrame.current = requestAnimationFrame(scrollStep);
       };
       scrollAnimationFrame.current = requestAnimationFrame(scrollStep);
@@ -55,7 +57,11 @@ export function useAutoScrollVertical(disabled: boolean = false) {
       scrollIntensity.current = 0;
     }
     
-    startScrolling();
+    if (scrollIntensity.current !== 0) {
+      startScrolling();
+    } else {
+      stopScrolling();
+    }
   };
 
   const handleMouseLeave = () => {
