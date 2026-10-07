@@ -8,7 +8,7 @@ import {
   ArrowDownAZ, CalendarDays, LayoutGrid, Users, Menu, Eye, Library, ClipboardList, FilePlus2, Music, Tv,
   Play, Compass, Heart, Skull, Smile, Laugh, Fingerprint, Flame, Sun, Moon, BookOpen, Shield, Orbit, Flag, Activity,
   Award, Palette, Swords, Rocket, HeartCrack, Home, Wand2, HelpCircle, Mountain, FileSpreadsheet, Table, FileCode,
-  Mail, RotateCcw, Crown, KeyRound
+  Mail, RotateCcw, Crown, KeyRound, ShieldCheck
 } from 'lucide-react';
 import { 
   UserRole,
@@ -1324,8 +1324,8 @@ export default function App() {
   const isAdmin = isEditor;
 
   const sidebarDisplayName = useMemo(() => {
-    if (userRole === 'owner') return "Dueño (Clave Maestra)";
-    if (userRole === 'editor') return "Editor (PIN Acceso)";
+    if (userRole === 'owner') return "Administrador";
+    if (userRole === 'editor') return "Editor de Mediateca";
     return "Modo Lector";
   }, [userRole]);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
@@ -3244,7 +3244,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
            {sidebarDisplayName}
          </span>
          <span className={`text-[11px] truncate ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
-           {isOwner ? 'Control Total & Claves' : 'Catalogación y Edición'}
+           {isOwner ? 'Gestión y Control total' : 'Edición y catalogación'}
          </span>
       </div>
       <button 
@@ -3407,7 +3407,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </h3>
 
             <p className="text-xs text-zinc-300 font-medium leading-relaxed mb-5">
-              Ingresa la Clave Maestra (Dueño) o el PIN de Editor para acceder a los permisos de catalogación y administración.
+              Ingresa la Clave de Administrador o la Clave de Editor para acceder a los permisos de catalogación y administración.
             </p>
 
             <form
@@ -3418,7 +3418,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               <div className="flex flex-col text-left">
                 <label htmlFor="input-access-key" className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <KeyRound size={12} className="text-zinc-400" />
-                  <span>Clave Maestra o PIN de Editor</span>
+                  <span>Clave de Administrador o Clave de Editor</span>
                 </label>
                 <div className="relative">
                   <input
@@ -3429,7 +3429,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                       setKeyInput(e.target.value);
                       if (keyLoginError) setKeyLoginError("");
                     }}
-                    placeholder="Introduce tu clave o PIN"
+                    placeholder="Introduce tu clave de acceso"
                     required
                     autoFocus
                     className="w-full bg-zinc-900 border border-white/15 focus:border-[#b41d1d] focus:ring-1 focus:ring-[#b41d1d]/30 rounded-xl px-3.5 py-2.5 pr-10 text-xs font-mono text-white placeholder:text-zinc-600 outline-none transition-all"
@@ -5801,15 +5801,22 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             >
               <X size={20}/>
             </button>
-            <h3 className={`text-xl font-black uppercase tracking-tighter flex items-center gap-2 mb-2 ${
-              isDayMode ? 'text-zinc-900' : 'text-white'
-            }`}>
-              <Crown className="text-amber-500" size={24} /> Administración de Claves
-            </h3>
-            <p className={`text-xs mb-6 font-medium leading-relaxed ${
+            <div className="flex items-center gap-3 mb-1.5 pr-8">
+              <div className={`p-2 rounded-xl border ${
+                isDayMode ? 'bg-zinc-100 border-zinc-200 text-zinc-800' : 'bg-white/5 border-white/10 text-red-500'
+              }`}>
+                <ShieldCheck size={20} />
+              </div>
+              <h3 className={`text-lg font-bold tracking-tight ${
+                isDayMode ? 'text-zinc-900' : 'text-zinc-100'
+              }`}>
+                Administración de Claves
+              </h3>
+            </div>
+            <p className={`text-xs mb-5 font-normal leading-relaxed ${
               isDayMode ? 'text-zinc-600' : 'text-zinc-400'
             }`}>
-              Gestiona directamente la Clave Maestra (Dueño) y el PIN de Editor sin correos ni cuentas. Los cambios se persisten inmediatamente en el servidor.
+              Configura las claves de acceso para el Administrador y el equipo editorial autorizado para catalogar obras en la Mediateca.
             </p>
             <KeysAdminManager isDayMode={isDayMode} />
           </div>
