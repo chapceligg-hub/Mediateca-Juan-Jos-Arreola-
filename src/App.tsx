@@ -2949,7 +2949,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               <input 
                 id="sidebar-search-input"
                 type="text" 
-                placeholder={t("Buscar título (español o inglés), director, año...")} 
+                placeholder={t("Buscar título")} 
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
                 onKeyDown={(e) => { e.stopPropagation(); if(e.key === 'Enter') setIsMobileMenuOpen(false); }} 
