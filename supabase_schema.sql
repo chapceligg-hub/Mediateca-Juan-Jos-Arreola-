@@ -1,57 +1,191 @@
--- Script para crear las tablas necesarias en Supabase
--- Copia y pega esto en el SQL Editor de tu proyecto de Supabase
+-- ======================================================================
+-- ESQUEMA DE BASE DE DATOS SUPABASE - VIDEOTECA PROFESIONAL
+-- 4 TABLAS: peliculas, series, centauro, settings
+-- ======================================================================
 
--- 1. Tabla de Películas
-CREATE TABLE IF NOT EXISTS public.movies (
+-- 1. TABLA: peliculas
+CREATE TABLE IF NOT EXISTS public.peliculas (
     id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    "originalTitle" TEXT,
-    year INTEGER,
-    rating DECIMAL,
-    duration TEXT,
-    country TEXT,
-    director TEXT,
-    genre TEXT,
-    "ageRating" TEXT,
-    format TEXT,
-    poster TEXT,
-    synopsis TEXT,
-    "cast" JSONB DEFAULT '[]'::jsonb,
-    script TEXT,
-    music TEXT,
-    photography TEXT,
-    companies TEXT,
-    reviews TEXT,
-    awards TEXT,
-    "createdAt" TIMESTAMPTZ DEFAULT NOW(),
-    "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
-    "needsReview" BOOLEAN DEFAULT FALSE,
-    "filmaffinityId" TEXT,
-    "tmdbId" TEXT,
+    title TEXT NOT NULL DEFAULT '',
+    "originalTitle" TEXT DEFAULT '',
+    year INTEGER DEFAULT 0,
+    rating NUMERIC DEFAULT 0,
+    duration TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    director TEXT DEFAULT '',
+    genre TEXT DEFAULT '',
+    "ageRating" TEXT DEFAULT '',
+    format TEXT DEFAULT '',
+    poster TEXT DEFAULT '',
+    synopsis TEXT DEFAULT '',
+    cast JSONB DEFAULT '[]'::jsonb,
+    script TEXT DEFAULT '',
+    music TEXT DEFAULT '',
+    photography TEXT DEFAULT '',
+    companies TEXT DEFAULT '',
+    reviews TEXT DEFAULT '',
+    awards TEXT DEFAULT '',
+    estante TEXT DEFAULT '',
+    season TEXT DEFAULT '',
+    section TEXT DEFAULT 'peliculas',
+    "needsReview" BOOLEAN DEFAULT false,
+    "favoriteOfMonth" BOOLEAN DEFAULT false,
+    "filmaffinityId" TEXT DEFAULT '',
+    "tmdbId" TEXT DEFAULT '',
     "posterCandidates" JSONB DEFAULT '[]'::jsonb,
-    estante TEXT
+    "isLatestSaved" BOOLEAN DEFAULT false,
+    "latestSavedAt" TEXT DEFAULT '',
+    "createdAt" TEXT DEFAULT '',
+    "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Tabla de Administradores
-CREATE TABLE IF NOT EXISTS public.admins (
-    email TEXT PRIMARY KEY,
-    "createdAt" TIMESTAMPTZ DEFAULT NOW(),
-    "addedBy" TEXT,
-    name TEXT,
-    "photoURL" TEXT,
-    role TEXT DEFAULT 'editor'
+-- 2. TABLA: series
+CREATE TABLE IF NOT EXISTS public.series (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    "originalTitle" TEXT DEFAULT '',
+    year INTEGER DEFAULT 0,
+    rating NUMERIC DEFAULT 0,
+    duration TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    director TEXT DEFAULT '',
+    genre TEXT DEFAULT '',
+    "ageRating" TEXT DEFAULT '',
+    format TEXT DEFAULT '',
+    poster TEXT DEFAULT '',
+    synopsis TEXT DEFAULT '',
+    cast JSONB DEFAULT '[]'::jsonb,
+    script TEXT DEFAULT '',
+    music TEXT DEFAULT '',
+    photography TEXT DEFAULT '',
+    companies TEXT DEFAULT '',
+    reviews TEXT DEFAULT '',
+    awards TEXT DEFAULT '',
+    estante TEXT DEFAULT '',
+    season TEXT DEFAULT '',
+    section TEXT DEFAULT 'series',
+    "needsReview" BOOLEAN DEFAULT false,
+    "favoriteOfMonth" BOOLEAN DEFAULT false,
+    "filmaffinityId" TEXT DEFAULT '',
+    "tmdbId" TEXT DEFAULT '',
+    "posterCandidates" JSONB DEFAULT '[]'::jsonb,
+    "isLatestSaved" BOOLEAN DEFAULT false,
+    "latestSavedAt" TEXT DEFAULT '',
+    "createdAt" TEXT DEFAULT '',
+    "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Habilitar Realtime para ambas tablas
-ALTER PUBLICATION supabase_realtime ADD TABLE public.movies;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.admins;
+-- 3. TABLA: centauro
+CREATE TABLE IF NOT EXISTS public.centauro (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    "originalTitle" TEXT DEFAULT '',
+    year INTEGER DEFAULT 0,
+    rating NUMERIC DEFAULT 0,
+    duration TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    director TEXT DEFAULT '',
+    genre TEXT DEFAULT '',
+    "ageRating" TEXT DEFAULT '',
+    format TEXT DEFAULT '',
+    poster TEXT DEFAULT '',
+    synopsis TEXT DEFAULT '',
+    cast JSONB DEFAULT '[]'::jsonb,
+    script TEXT DEFAULT '',
+    music TEXT DEFAULT '',
+    photography TEXT DEFAULT '',
+    companies TEXT DEFAULT '',
+    reviews TEXT DEFAULT '',
+    awards TEXT DEFAULT '',
+    estante TEXT DEFAULT '',
+    season TEXT DEFAULT '',
+    section TEXT DEFAULT 'centauro',
+    "needsReview" BOOLEAN DEFAULT false,
+    "favoriteOfMonth" BOOLEAN DEFAULT false,
+    "filmaffinityId" TEXT DEFAULT '',
+    "tmdbId" TEXT DEFAULT '',
+    "posterCandidates" JSONB DEFAULT '[]'::jsonb,
+    "isLatestSaved" BOOLEAN DEFAULT false,
+    "latestSavedAt" TEXT DEFAULT '',
+    "createdAt" TEXT DEFAULT '',
+    "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+);
 
--- Configurar Políticas de Seguridad (RLS)
-ALTER TABLE public.movies ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
+-- 4. TABLA: settings (Persistencia de claves y control de sincronización)
+CREATE TABLE IF NOT EXISTS public.settings (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-CREATE POLICY "Lectura pública de películas" ON public.movies FOR SELECT USING (true);
-CREATE POLICY "Escritura para todos (temporal para la migración)" ON public.movies FOR ALL USING (true) WITH CHECK (true);
+-- Valores iniciales para settings
+INSERT INTO public.settings (key, value)
+VALUES 
+    ('auth', '{"masterKey": "AdminMaster2026#", "editorPin": "123456"}'::jsonb),
+    ('sync', '{"lastUpdated": "2026-10-08T00:00:00.000Z", "action": "init"}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
 
-CREATE POLICY "Lectura pública de admins" ON public.admins FOR SELECT USING (true);
-CREATE POLICY "Escritura para todos (temporal para la migración)" ON public.admins FOR ALL USING (true) WITH CHECK (true);
+-- ======================================================================
+-- ÍNDICES DE RENDIMIENTO (Búsqueda rápida y sincronización delta)
+-- ======================================================================
+CREATE INDEX IF NOT EXISTS idx_peliculas_updated_at ON public.peliculas ("updatedAt");
+CREATE INDEX IF NOT EXISTS idx_peliculas_year ON public.peliculas (year);
+CREATE INDEX IF NOT EXISTS idx_peliculas_title ON public.peliculas (title);
+
+CREATE INDEX IF NOT EXISTS idx_series_updated_at ON public.series ("updatedAt");
+CREATE INDEX IF NOT EXISTS idx_series_year ON public.series (year);
+CREATE INDEX IF NOT EXISTS idx_series_title ON public.series (title);
+
+CREATE INDEX IF NOT EXISTS idx_centauro_updated_at ON public.centauro ("updatedAt");
+CREATE INDEX IF NOT EXISTS idx_centauro_year ON public.centauro (year);
+CREATE INDEX IF NOT EXISTS idx_centauro_title ON public.centauro (title);
+
+-- ======================================================================
+-- POLÍTICAS DE SEGURIDAD (ROW LEVEL SECURITY - RLS)
+-- ======================================================================
+-- Habilitar RLS en todas las tablas
+ALTER TABLE public.peliculas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.series ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.centauro ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+
+-- 1. Políticas para peliculas:
+-- Lectura pública para cualquier usuario con la anon key
+CREATE POLICY "Lectura publica peliculas" ON public.peliculas
+    FOR SELECT USING (true);
+
+-- Escritura y edición permitida para el rol de servicio del servidor (service_role)
+CREATE POLICY "Acceso total service_role peliculas" ON public.peliculas
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- 2. Políticas para series:
+CREATE POLICY "Lectura publica series" ON public.series
+    FOR SELECT USING (true);
+
+CREATE POLICY "Acceso total service_role series" ON public.series
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- 3. Políticas para centauro:
+CREATE POLICY "Lectura publica centauro" ON public.centauro
+    FOR SELECT USING (true);
+
+CREATE POLICY "Acceso total service_role centauro" ON public.centauro
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- 4. Políticas para settings:
+-- settings/auth es privado (solo accesible por el backend via service_role)
+-- settings/sync puede ser leído públicamente para que los clientes detecten actualizaciones
+CREATE POLICY "Lectura publica settings sync" ON public.settings
+    FOR SELECT USING (key = 'sync');
+
+CREATE POLICY "Acceso total service_role settings" ON public.settings
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- ======================================================================
+-- ACTIVAR PUBLICACIÓN EN TIEMPO REAL (SUPABASE REALTIME)
+-- Permite que los cambios se sincronicen en vivo a todos los dispositivos
+-- ======================================================================
+ALTER PUBLICATION supabase_realtime ADD TABLE public.peliculas;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.series;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.centauro;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.settings;
