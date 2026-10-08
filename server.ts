@@ -424,15 +424,15 @@ app.post("/api/movies", async (req, res) => {
       }, { onConflict: "id" });
 
       await supabaseServer.from("settings").upsert({
-        id: "sync",
-        data: {
+        key: "sync",
+        value: {
           lastUpdate: new Date().toISOString(),
           action: "upsert",
           movieId: movie.id,
           table: targetTable
         },
-        updatedAt: new Date().toISOString()
-      }, { onConflict: "id" });
+        updated_at: new Date().toISOString()
+      }, { onConflict: "key" });
     } catch (supaErr) {
       console.warn("Aviso guardando en Supabase desde server.ts:", supaErr);
     }
@@ -468,6 +468,37 @@ app.post("/api/movies/sync", (_req, res) => {
   res.json({ success: true, count: 0, movies: [] });
 });
 
+// Endpoint para migración masiva por lotes utilizando las credenciales de servicio (Service Role)
+app.post("/api/movies/batch-migrate", async (req, res) => {
+  const role = (req as any).userRole;
+  if (role !== 'owner' && role !== 'editor') {
+    return res.status(403).json({ error: "NO_ACCESS", message: "Acceso no autorizado para ejecutar migración masiva." });
+  }
+
+  const { table, items } = req.body || {};
+  if (!table || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Parámetros inválidos. Se requiere 'table' y un arreglo 'items'." });
+  }
+
+  const validTable = ['peliculas', 'series', 'centauro'].includes(table) ? table : 'peliculas';
+
+  if (!supabaseServer) {
+    return res.status(500).json({ error: "Cliente Supabase del servidor no inicializado." });
+  }
+
+  try {
+    const { data, error } = await supabaseServer.from(validTable).upsert(items, { onConflict: "id" });
+    if (error) {
+      console.error(`Error en batch-migrate en tabla ${validTable}:`, error);
+      return res.status(500).json({ error: error.message, details: error });
+    }
+    return res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    console.error(`Error inesperado en batch-migrate:`, err);
+    return res.status(500).json({ error: err?.message || "Error procesando lote de migración" });
+  }
+});
+
 app.delete("/api/movies/:id", async (req, res) => {
   const role = (req as any).userRole;
   if (role !== 'owner') {
@@ -487,14 +518,14 @@ app.delete("/api/movies/:id", async (req, res) => {
       ]);
 
       await supabaseServer.from("settings").upsert({
-        id: "sync",
-        data: {
+        key: "sync",
+        value: {
           lastUpdate: new Date().toISOString(),
           action: "delete",
           deletedMovieId: id
         },
-        updatedAt: new Date().toISOString()
-      }, { onConflict: "id" });
+        updated_at: new Date().toISOString()
+      }, { onConflict: "key" });
     } catch (supaErr) {
       console.warn("Aviso eliminando en Supabase desde server.ts:", supaErr);
     }

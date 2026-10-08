@@ -520,11 +520,43 @@ export const migrateIndexedDBToSupabase = async (
       const BATCH_SIZE = 50;
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
         const batch = items.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from(tableName).upsert(batch, { onConflict: 'id' });
-        if (error) {
-          console.error(`Error migrando lote en ${tableName}:`, error);
-          throw error;
+        let uploadSucceeded = false;
+
+        // 1. Intentar directamente desde el cliente con supabase
+        try {
+          const { error } = await supabase.from(tableName).upsert(batch, { onConflict: 'id' });
+          if (!error) {
+            uploadSucceeded = true;
+          } else {
+            console.warn(`Aviso RLS/cliente en ${tableName}, probando fallback por servidor de servicio:`, error.message);
+          }
+        } catch (clientErr: any) {
+          console.warn(`Error cliente en lote de ${tableName}:`, clientErr?.message);
         }
+
+        // 2. Si falla por RLS o permisos del anon key, usar el endpoint de migración del servidor (Service Role)
+        if (!uploadSucceeded) {
+          const authKey = typeof window !== 'undefined' ? localStorage.getItem('app_key') || '' : '';
+          const response = await fetch('/api/movies/batch-migrate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(authKey ? { 'x-access-key': authKey } : {})
+            },
+            body: JSON.stringify({
+              table: tableName,
+              items: batch
+            })
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            const errMsg = errData.error || `HTTP ${response.status} en migración de ${tableName}`;
+            console.error(`Error en fallback servidor para ${tableName}:`, errMsg);
+            throw new Error(errMsg);
+          }
+        }
+
         processed += batch.length;
         const percent = Math.min(100, Math.round((processed / total) * 100));
         onProgress?.({

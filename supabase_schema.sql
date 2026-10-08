@@ -154,36 +154,36 @@ DROP POLICY IF EXISTS "Lectura publica peliculas" ON public.peliculas;
 CREATE POLICY "Lectura publica peliculas" ON public.peliculas
     FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Acceso total service_role peliculas" ON public.peliculas;
-CREATE POLICY "Acceso total service_role peliculas" ON public.peliculas
-    FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Escritura peliculas" ON public.peliculas;
+CREATE POLICY "Escritura peliculas" ON public.peliculas
+    FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- 2. Políticas para series
 DROP POLICY IF EXISTS "Lectura publica series" ON public.series;
 CREATE POLICY "Lectura publica series" ON public.series
     FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Acceso total service_role series" ON public.series;
-CREATE POLICY "Acceso total service_role series" ON public.series
-    FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Escritura series" ON public.series;
+CREATE POLICY "Escritura series" ON public.series
+    FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- 3. Políticas para centauro
 DROP POLICY IF EXISTS "Lectura publica centauro" ON public.centauro;
 CREATE POLICY "Lectura publica centauro" ON public.centauro
     FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Acceso total service_role centauro" ON public.centauro;
-CREATE POLICY "Acceso total service_role centauro" ON public.centauro
-    FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Escritura centauro" ON public.centauro;
+CREATE POLICY "Escritura centauro" ON public.centauro
+    FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- 4. Políticas para settings
 DROP POLICY IF EXISTS "Lectura publica settings sync" ON public.settings;
 CREATE POLICY "Lectura publica settings sync" ON public.settings
-    FOR SELECT USING (key = 'sync');
+    FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Acceso total service_role settings" ON public.settings;
-CREATE POLICY "Acceso total service_role settings" ON public.settings
-    FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Escritura settings" ON public.settings;
+CREATE POLICY "Escritura settings" ON public.settings
+    FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- ======================================================================
 -- ACTIVAR PUBLICACIÓN EN TIEMPO REAL (SUPABASE REALTIME)
