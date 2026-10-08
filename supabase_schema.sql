@@ -1,6 +1,7 @@
 -- ======================================================================
 -- ESQUEMA DE BASE DE DATOS SUPABASE - VIDEOTECA PROFESIONAL
 -- 4 TABLAS: peliculas, series, centauro, settings
+-- Totalmente idempotente (se puede ejecutar múltiples veces sin error)
 -- ======================================================================
 
 -- 1. TABLA: peliculas
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.peliculas (
     format TEXT DEFAULT '',
     poster TEXT DEFAULT '',
     synopsis TEXT DEFAULT '',
-    cast JSONB DEFAULT '[]'::jsonb,
+    "cast" JSONB DEFAULT '[]'::jsonb,
     script TEXT DEFAULT '',
     music TEXT DEFAULT '',
     photography TEXT DEFAULT '',
@@ -54,7 +55,7 @@ CREATE TABLE IF NOT EXISTS public.series (
     format TEXT DEFAULT '',
     poster TEXT DEFAULT '',
     synopsis TEXT DEFAULT '',
-    cast JSONB DEFAULT '[]'::jsonb,
+    "cast" JSONB DEFAULT '[]'::jsonb,
     script TEXT DEFAULT '',
     music TEXT DEFAULT '',
     photography TEXT DEFAULT '',
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS public.centauro (
     format TEXT DEFAULT '',
     poster TEXT DEFAULT '',
     synopsis TEXT DEFAULT '',
-    cast JSONB DEFAULT '[]'::jsonb,
+    "cast" JSONB DEFAULT '[]'::jsonb,
     script TEXT DEFAULT '',
     music TEXT DEFAULT '',
     photography TEXT DEFAULT '',
@@ -143,49 +144,70 @@ CREATE INDEX IF NOT EXISTS idx_centauro_title ON public.centauro (title);
 -- ======================================================================
 -- POLÍTICAS DE SEGURIDAD (ROW LEVEL SECURITY - RLS)
 -- ======================================================================
--- Habilitar RLS en todas las tablas
 ALTER TABLE public.peliculas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.series ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.centauro ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 
--- 1. Políticas para peliculas:
--- Lectura pública para cualquier usuario con la anon key
+-- 1. Políticas para peliculas
+DROP POLICY IF EXISTS "Lectura publica peliculas" ON public.peliculas;
 CREATE POLICY "Lectura publica peliculas" ON public.peliculas
     FOR SELECT USING (true);
 
--- Escritura y edición permitida para el rol de servicio del servidor (service_role)
+DROP POLICY IF EXISTS "Acceso total service_role peliculas" ON public.peliculas;
 CREATE POLICY "Acceso total service_role peliculas" ON public.peliculas
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- 2. Políticas para series:
+-- 2. Políticas para series
+DROP POLICY IF EXISTS "Lectura publica series" ON public.series;
 CREATE POLICY "Lectura publica series" ON public.series
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Acceso total service_role series" ON public.series;
 CREATE POLICY "Acceso total service_role series" ON public.series
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- 3. Políticas para centauro:
+-- 3. Políticas para centauro
+DROP POLICY IF EXISTS "Lectura publica centauro" ON public.centauro;
 CREATE POLICY "Lectura publica centauro" ON public.centauro
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Acceso total service_role centauro" ON public.centauro;
 CREATE POLICY "Acceso total service_role centauro" ON public.centauro
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- 4. Políticas para settings:
--- settings/auth es privado (solo accesible por el backend via service_role)
--- settings/sync puede ser leído públicamente para que los clientes detecten actualizaciones
+-- 4. Políticas para settings
+DROP POLICY IF EXISTS "Lectura publica settings sync" ON public.settings;
 CREATE POLICY "Lectura publica settings sync" ON public.settings
     FOR SELECT USING (key = 'sync');
 
+DROP POLICY IF EXISTS "Acceso total service_role settings" ON public.settings;
 CREATE POLICY "Acceso total service_role settings" ON public.settings
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- ======================================================================
 -- ACTIVAR PUBLICACIÓN EN TIEMPO REAL (SUPABASE REALTIME)
--- Permite que los cambios se sincronicen en vivo a todos los dispositivos
 -- ======================================================================
-ALTER PUBLICATION supabase_realtime ADD TABLE public.peliculas;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.series;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.centauro;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.settings;
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.peliculas;
+    EXCEPTION WHEN duplicate_object THEN
+        NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.series;
+    EXCEPTION WHEN duplicate_object THEN
+        NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.centauro;
+    EXCEPTION WHEN duplicate_object THEN
+        NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.settings;
+    EXCEPTION WHEN duplicate_object THEN
+        NULL;
+    END;
+END $$;

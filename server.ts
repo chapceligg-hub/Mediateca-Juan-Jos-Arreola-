@@ -5,8 +5,21 @@ import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { createClient } from "@supabase/supabase-js";
 
-// Inicializar cliente Firestore del servidor
+// Inicializar cliente Supabase del servidor
+const SUPABASE_URL = (process.env.SUPABASE_URL || "https://hwvxmcpgrgdjyxofsmll.supabase.co").replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3dnhtY3Bncmdkanl4b2ZzbWxsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDc4MzI0MCwiZXhwIjoyMTA2MzU5MjQwfQ.cmWiZhZ7PYLA50FkKQAArgjdBYf4YDw9vF-yCafPLa8";
+
+let supabaseServer: any = null;
+try {
+  supabaseServer = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  console.log("Supabase inicializado en el servidor.");
+} catch (e) {
+  console.warn("Aviso inicializando Supabase en server.ts:", e);
+}
+
+// Inicializar cliente Firestore del servidor como respaldo
 let serverDb: any = null;
 try {
   const firebaseConfigFile = path.join(process.cwd(), "firebase-applet-config.json");
@@ -213,6 +226,25 @@ async function getAuthKeys(): Promise<{ masterKey: string; editorPin: string }> 
     return cachedKeys;
   }
 
+  // 1. Intentar leer desde Supabase (tabla settings, key 'auth')
+  if (supabaseServer) {
+    try {
+      const { data, error } = await supabaseServer.from("settings").select("value").eq("key", "auth").single();
+      if (!error && data?.value) {
+        const val = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+        const mKey = (typeof val?.masterKey === 'string' && val.masterKey.trim()) ? val.masterKey.trim() : DEFAULT_MASTER_KEY;
+        const ePin = (typeof val?.editorPin === 'string' && val.editorPin.trim()) ? val.editorPin.trim() : DEFAULT_EDITOR_PIN;
+        cachedKeys = {
+          masterKey: mKey,
+          editorPin: ePin
+        };
+        return cachedKeys;
+      }
+    } catch (supaErr) {
+      console.warn("Aviso leyendo auth de Supabase:", supaErr);
+    }
+  }
+
   if (!serverDb) {
     cachedKeys = {
       masterKey: DEFAULT_MASTER_KEY,
@@ -326,7 +358,24 @@ app.post("/api/auth/change-keys", async (req, res) => {
     editorPin: newPin
   };
 
-  // Actualiza el documento doc(db, "settings", "auth") en Firestore con las nuevas llaves
+  // Actualiza el documento en Supabase (tabla settings, key 'auth')
+  if (supabaseServer) {
+    try {
+      await supabaseServer.from("settings").upsert({
+        key: "auth",
+        value: {
+          masterKey: newMaster,
+          editorPin: newPin,
+          updatedAt: new Date().toISOString()
+        },
+        updated_at: new Date().toISOString()
+      }, { onConflict: "key" });
+    } catch (e) {
+      console.warn("Error guardando settings/auth en Supabase:", e);
+    }
+  }
+
+  // Actualiza el documento doc(db, "settings", "auth") en Firestore como respaldo
   if (serverDb) {
     try {
       const authDocRef = doc(serverDb, "settings", "auth");
@@ -337,7 +386,6 @@ app.post("/api/auth/change-keys", async (req, res) => {
       }, { merge: true });
     } catch (e) {
       console.error("Error guardando settings/auth en Firestore:", e);
-      return res.status(500).json({ error: "Error persistiendo claves en Firestore" });
     }
   }
 
@@ -349,8 +397,7 @@ app.post("/api/auth/change-keys", async (req, res) => {
 });
 
 // --- SERVIDOR STATELESS RESPECTO A LAS PELÍCULAS ---
-// La fuente única de verdad es Firestore (colección 'movies') y la memoria caché local es IndexedDB.
-// server.ts no almacena películas en RAM ni en disco.
+// Supabase es la base de datos principal, Firestore el respaldo y la memoria caché local es IndexedDB.
 app.get("/api/movies", (_req, res) => {
   res.json([]);
 });
@@ -364,6 +411,31 @@ app.post("/api/movies", async (req, res) => {
   const movie = req.body;
   if (!movie || !movie.id) {
     return res.status(400).json({ error: "Película inválida o sin ID" });
+  }
+
+  // Persistir en Supabase
+  if (supabaseServer) {
+    try {
+      const sec = (movie.section || 'peliculas').toLowerCase().trim();
+      const targetTable = sec === 'series' ? 'series' : sec === 'centauro' ? 'centauro' : 'peliculas';
+      await supabaseServer.from(targetTable).upsert({
+        ...movie,
+        updatedAt: new Date().toISOString()
+      }, { onConflict: "id" });
+
+      await supabaseServer.from("settings").upsert({
+        id: "sync",
+        data: {
+          lastUpdate: new Date().toISOString(),
+          action: "upsert",
+          movieId: movie.id,
+          table: targetTable
+        },
+        updatedAt: new Date().toISOString()
+      }, { onConflict: "id" });
+    } catch (supaErr) {
+      console.warn("Aviso guardando en Supabase desde server.ts:", supaErr);
+    }
   }
 
   try {
@@ -388,7 +460,7 @@ app.post("/api/movies", async (req, res) => {
     return res.json({ success: true, stateless: true });
   } catch (err: any) {
     console.error("Error al persistir película en Firestore desde server.ts:", err);
-    return res.status(500).json({ error: "Error interno al sincronizar con Firestore", message: err?.message });
+    return res.status(500).json({ error: "Error interno al sincronizar con base de datos", message: err?.message });
   }
 });
 
@@ -404,6 +476,29 @@ app.delete("/api/movies/:id", async (req, res) => {
 
   const id = req.params.id;
   if (!id) return res.status(400).json({ error: "ID requerido" });
+
+  // Eliminar en Supabase
+  if (supabaseServer) {
+    try {
+      await Promise.all([
+        supabaseServer.from("peliculas").delete().eq("id", id),
+        supabaseServer.from("series").delete().eq("id", id),
+        supabaseServer.from("centauro").delete().eq("id", id)
+      ]);
+
+      await supabaseServer.from("settings").upsert({
+        id: "sync",
+        data: {
+          lastUpdate: new Date().toISOString(),
+          action: "delete",
+          deletedMovieId: id
+        },
+        updatedAt: new Date().toISOString()
+      }, { onConflict: "id" });
+    } catch (supaErr) {
+      console.warn("Aviso eliminando en Supabase desde server.ts:", supaErr);
+    }
+  }
 
   try {
     if (serverDb) {
@@ -423,7 +518,7 @@ app.delete("/api/movies/:id", async (req, res) => {
     return res.json({ success: true });
   } catch (err: any) {
     console.error("Error al eliminar película en Firestore desde server.ts:", err);
-    return res.status(500).json({ error: "Error interno al eliminar de Firestore", message: err?.message });
+    return res.status(500).json({ error: "Error interno al eliminar de base de datos", message: err?.message });
   }
 });
 
