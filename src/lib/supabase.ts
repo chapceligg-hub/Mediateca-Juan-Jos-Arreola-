@@ -171,28 +171,91 @@ export const formatMovieForSupabase = (m: any): any => {
   };
 };
 
+/**
+ * Consulta una tabla de Supabase paginada en bloques de 1,000 en 1,000
+ * utilizando .range(desde, desde + 999) sin reglas de ordenamiento (.order())
+ * para conservar el orden natural de la tabla.
+ */
+export const fetchTableWithRange = async (tableName: 'peliculas' | 'series' | 'centauro'): Promise<Movie[]> => {
+  const accumulated: Movie[] = [];
+  const CHUNK_SIZE = 1000;
+  let from = 0;
+
+  while (true) {
+    const to = from + CHUNK_SIZE - 1;
+    let { data, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .range(from, to);
+
+    // Manejo de errores y tolerancia adaptativa a sobrecarga en bloques grandes
+    if (error) {
+      // Si el bloque de 1,000 falla por timeout/payload excesivo (ej. error 500 o 57014 de PostgreSQL),
+      // se procesa el bloque en sub-lotes más pequeños (200) para garantizar que ningún registro se pierda
+      console.warn(`Aviso en bloque ${from}-${to} de ${tableName} (${error.message}). Reintentando en sub-bloques adaptativos...`);
+      let subFrom = from;
+      let reachEnd = false;
+      while (subFrom <= to) {
+        const subTo = Math.min(to, subFrom + 199);
+        const subRes = await supabase
+          .from(tableName)
+          .select('*')
+          .range(subFrom, subTo);
+
+        if (subRes.error) {
+          console.error(`Error al consultar ${tableName} en rango ${subFrom}-${subTo}:`, subRes.error);
+          throw new Error(`Error en ${tableName} (${subFrom}-${subTo}): ${subRes.error.message}`);
+        }
+
+        if (subRes.data && subRes.data.length > 0) {
+          accumulated.push(...(subRes.data as Movie[]));
+        }
+
+        if (!subRes.data || subRes.data.length < (subTo - subFrom + 1)) {
+          reachEnd = true;
+          break;
+        }
+
+        subFrom += 200;
+      }
+
+      if (reachEnd) {
+        break;
+      }
+
+      from += CHUNK_SIZE;
+      continue;
+    }
+
+    // Acumula el lote descargado
+    if (data && data.length > 0) {
+      accumulated.push(...(data as Movie[]));
+    }
+
+    // Si devolvió menos de 1,000 registros, alcanzamos el final de la tabla
+    if (!data || data.length < CHUNK_SIZE) {
+      break;
+    }
+
+    from += CHUNK_SIZE;
+  }
+
+  return accumulated;
+};
+
 export const fetchAllMoviesFromSupabase = async (): Promise<Movie[]> => {
   try {
-    const [peliRes, seriesRes, centauroRes] = await Promise.all([
-      supabase.from('peliculas').select('*'),
-      supabase.from('series').select('*'),
-      supabase.from('centauro').select('*')
+    // Consultar peliculas en bloques paginados de 1,000 en 1,000 con .range()
+    const [peliculasList, seriesList, centauroList] = await Promise.all([
+      fetchTableWithRange('peliculas'),
+      fetchTableWithRange('series'),
+      fetchTableWithRange('centauro')
     ]);
 
-    const allItems: Movie[] = [];
-    if (peliRes.data) allItems.push(...(peliRes.data as Movie[]));
-    if (seriesRes.data) allItems.push(...(seriesRes.data as Movie[]));
-    if (centauroRes.data) allItems.push(...(centauroRes.data as Movie[]));
-
-    allItems.sort((a, b) => {
-      const timeA = a.createdAt || a.updatedAt || '';
-      const timeB = b.createdAt || b.updatedAt || '';
-      return timeB.localeCompare(timeA);
-    });
-
+    const allItems: Movie[] = [...peliculasList, ...seriesList, ...centauroList];
     return allItems;
   } catch (err) {
-    console.error("Error al consultar tablas en Supabase:", err);
+    console.error("Error al consultar tablas paginadas en Supabase:", err);
     throw err;
   }
 };
@@ -206,13 +269,8 @@ export const subscribeToMovies = (
 
   const dispatchMovies = (movies: Movie[]) => {
     if (isCleanedUp || !Array.isArray(movies)) return;
-    const sorted = [...movies].sort((a, b) => {
-      const timeA = a.createdAt || a.updatedAt || '';
-      const timeB = b.createdAt || b.updatedAt || '';
-      return timeB.localeCompare(timeA);
-    });
-    callback(sorted);
-    notifyMovieSubscribers(sorted);
+    callback(movies);
+    notifyMovieSubscribers(movies);
   };
 
   (async () => {
