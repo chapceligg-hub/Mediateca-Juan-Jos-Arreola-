@@ -181,37 +181,83 @@ export const fetchTableWithRange = async (tableName: 'peliculas' | 'series' | 'c
   const CHUNK_SIZE = 1000;
   let from = 0;
 
+  // Helper para consultar el endpoint proxy del servidor en caso de bloqueo de red/CORS en iframe
+  const fetchFromProxy = async (start: number, end: number): Promise<Movie[]> => {
+    const res = await fetch(`/api/movies?table=${tableName}&from=${start}&to=${end}`);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} al consultar proxy: ${errText}`);
+    }
+    return (await res.json()) || [];
+  };
+
   while (true) {
     const to = from + CHUNK_SIZE - 1;
-    let { data, error } = await supabase
-      .from(tableName)
-      .select('*')
-      .range(from, to);
+    let data: Movie[] | null = null;
+    let error: any = null;
 
-    // Manejo de errores y tolerancia adaptativa a sobrecarga en bloques grandes
+    try {
+      const supaRes = await supabase
+        .from(tableName)
+        .select('*')
+        .range(from, to);
+      data = (supaRes.data as Movie[]) || null;
+      error = supaRes.error;
+    } catch (e: any) {
+      error = e;
+    }
+
+    // Si falló por red/CORS o error en cliente, probar a través del proxy del servidor
     if (error) {
-      // Si el bloque de 1,000 falla por timeout/payload excesivo (ej. error 500 o 57014 de PostgreSQL),
-      // se procesa el bloque en sub-lotes más pequeños (200) para garantizar que ningún registro se pierda
-      console.warn(`Aviso en bloque ${from}-${to} de ${tableName} (${error.message}). Reintentando en sub-bloques adaptativos...`);
+      const isNetworkOrFetchError =
+        error.message?.includes('Failed to fetch') ||
+        error.message?.includes('NetworkError') ||
+        error.message?.includes('Load failed');
+
+      if (isNetworkOrFetchError) {
+        try {
+          data = await fetchFromProxy(from, to);
+          error = null;
+        } catch (proxyErr) {
+          console.warn(`Aviso proxy en ${tableName} (${from}-${to}):`, proxyErr);
+        }
+      }
+    }
+
+    // Manejo adaptativo en caso de timeout de Postgres (57014) o carga pesada
+    if (error) {
+      console.warn(`Aviso en bloque ${from}-${to} de ${tableName} (${error.message || 'error'}). Intentando sub-bloques adaptativos...`);
       let subFrom = from;
       let reachEnd = false;
       while (subFrom <= to) {
         const subTo = Math.min(to, subFrom + 199);
-        const subRes = await supabase
-          .from(tableName)
-          .select('*')
-          .range(subFrom, subTo);
+        let subData: Movie[] | null = null;
 
-        if (subRes.error) {
-          console.error(`Error al consultar ${tableName} en rango ${subFrom}-${subTo}:`, subRes.error);
-          throw new Error(`Error en ${tableName} (${subFrom}-${subTo}): ${subRes.error.message}`);
+        try {
+          const subRes = await supabase
+            .from(tableName)
+            .select('*')
+            .range(subFrom, subTo);
+          if (!subRes.error && subRes.data) {
+            subData = subRes.data as Movie[];
+          }
+        } catch (_) {}
+
+        if (!subData) {
+          // Reintentar por el proxy del servidor
+          try {
+            subData = await fetchFromProxy(subFrom, subTo);
+          } catch (e: any) {
+            console.error(`Error al consultar ${tableName} en rango ${subFrom}-${subTo}:`, e);
+            throw new Error(`Error en ${tableName} (${subFrom}-${subTo}): ${e?.message || 'Error de conexión'}`);
+          }
         }
 
-        if (subRes.data && subRes.data.length > 0) {
-          accumulated.push(...(subRes.data as Movie[]));
+        if (subData && subData.length > 0) {
+          accumulated.push(...subData);
         }
 
-        if (!subRes.data || subRes.data.length < (subTo - subFrom + 1)) {
+        if (!subData || subData.length < (subTo - subFrom + 1)) {
           reachEnd = true;
           break;
         }
@@ -229,7 +275,7 @@ export const fetchTableWithRange = async (tableName: 'peliculas' | 'series' | 'c
 
     // Acumula el lote descargado
     if (data && data.length > 0) {
-      accumulated.push(...(data as Movie[]));
+      accumulated.push(...data);
     }
 
     // Si devolvió menos de 1,000 registros, alcanzamos el final de la tabla

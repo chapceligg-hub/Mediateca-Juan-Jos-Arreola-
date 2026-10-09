@@ -396,10 +396,37 @@ app.post("/api/auth/change-keys", async (req, res) => {
   });
 });
 
-// --- SERVIDOR STATELESS RESPECTO A LAS PELÍCULAS ---
-// Supabase es la base de datos principal, Firestore el respaldo y la memoria caché local es IndexedDB.
-app.get("/api/movies", (_req, res) => {
-  res.json([]);
+// Proxy endpoint para consultar tablas paginadas de Supabase desde el backend (evita bloqueos de red/CORS en iframe)
+app.get("/api/movies", async (req, res) => {
+  const table = String(req.query.table || 'peliculas');
+  const validTable = ['peliculas', 'series', 'centauro'].includes(table) ? validTableMatch(table) : 'peliculas';
+  const from = parseInt(String(req.query.from || '0'), 10) || 0;
+  const to = parseInt(String(req.query.to || (from + 999)), 10);
+
+  function validTableMatch(t: string): 'peliculas' | 'series' | 'centauro' {
+    return t as any;
+  }
+
+  if (!supabaseServer) {
+    return res.status(500).json({ error: "Cliente Supabase no configurado en servidor" });
+  }
+
+  try {
+    const { data, error } = await supabaseServer
+      .from(validTable)
+      .select('*')
+      .range(from, to);
+
+    if (error) {
+      console.warn(`Aviso en /api/movies consultando ${validTable} (${from}-${to}):`, error.message);
+      return res.status(500).json({ error: error.message });
+    }
+
+    return res.json(data || []);
+  } catch (err: any) {
+    console.error(`Error en /api/movies:`, err);
+    return res.status(500).json({ error: err?.message || "Error al consultar películas" });
+  }
 });
 
 app.post("/api/movies", async (req, res) => {
