@@ -396,6 +396,54 @@ app.post("/api/auth/change-keys", async (req, res) => {
   });
 });
 
+// GET & POST /api/settings/favorites-order: Almacena y lee el orden de selección de favoritas del mes
+app.get("/api/settings/favorites-order", async (_req, res) => {
+  if (supabaseServer) {
+    try {
+      const { data, error } = await supabaseServer
+        .from("settings")
+        .select("value")
+        .eq("key", "favorites_order")
+        .single();
+      if (!error && data?.value?.order && Array.isArray(data.value.order)) {
+        return res.json({ order: data.value.order });
+      }
+    } catch (e) {
+      console.warn("Aviso leyendo favorites_order en server:", e);
+    }
+  }
+  return res.json({ order: [] });
+});
+
+app.post("/api/settings/favorites-order", async (req, res) => {
+  const role = (req as any).userRole;
+  if (role !== 'owner' && role !== 'editor') {
+    return res.status(403).json({ error: "NO_ACCESS" });
+  }
+
+  const { order } = req.body || {};
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: "El orden debe ser una lista de IDs" });
+  }
+
+  if (supabaseServer) {
+    try {
+      await supabaseServer.from("settings").upsert({
+        key: "favorites_order",
+        value: {
+          order,
+          updatedAt: new Date().toISOString()
+        },
+        updated_at: new Date().toISOString()
+      }, { onConflict: "key" });
+    } catch (e) {
+      console.warn("Error guardando favorites_order en Supabase:", e);
+    }
+  }
+
+  return res.json({ success: true, count: order.length });
+});
+
 // Proxy endpoint para consultar tablas paginadas de Supabase desde el backend (evita bloqueos de red/CORS en iframe)
 app.get("/api/movies", async (req, res) => {
   const table = String(req.query.table || 'peliculas');

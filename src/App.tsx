@@ -30,7 +30,10 @@ import {
   subscribeToMovies,
   getCachedMovies,
   migrateIndexedDBToSupabase,
-  MigrationProgress
+  MigrationProgress,
+  subscribeToFavoritesOrder,
+  saveFavoritesOrderToSupabase,
+  getCachedFavoritesOrder
 } from './lib/supabase';
 import { KeysAdminManager } from './components/KeysAdminManager';
 import { exportToExcelWithTabs, exportToCleanCSV, exportToJSON, getExportSummary } from './lib/exportUtils';
@@ -1380,6 +1383,37 @@ export default function App() {
   const [isDirectorFilterActive, setIsDirectorFilterActive] = useState(false);
   const [isFavoriteOfMonthActive, setIsFavoriteOfMonthActive] = useState(false);
   const [activeFavIndex, setActiveFavIndex] = useState(0);
+  const [favoritesOrder, setFavoritesOrder] = useState<string[]>([]);
+
+  // Películas del mes ordenadas exactamente según como el editor o administrador las fue seleccionando
+  const sortedFavoritesOfMonth = useMemo(() => {
+    const rawFavs = movies.filter(m => m.favoriteOfMonth);
+    if (rawFavs.length === 0) return [];
+
+    const orderIndexMap = new Map<string, number>();
+    favoritesOrder.forEach((id, idx) => {
+      orderIndexMap.set(id, idx);
+    });
+
+    return [...rawFavs].sort((a, b) => {
+      const indexA = orderIndexMap.has(a.id) ? orderIndexMap.get(a.id)! : -1;
+      const indexB = orderIndexMap.has(b.id) ? orderIndexMap.get(b.id)! : -1;
+
+      // 1. Si ambas están en la lista ordenada por selección
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      // 2. Si solo una tiene orden registrado en la lista
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+
+      // 3. Respaldo por timestamp de updatedAt o createdAt
+      const timeA = a.updatedAt || a.createdAt || '';
+      const timeB = b.updatedAt || b.createdAt || '';
+      return timeA.localeCompare(timeB);
+    });
+  }, [movies, favoritesOrder]);
+
   const favContainerRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
@@ -2468,7 +2502,14 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       }
     );
 
-    return () => unsub(); // Fundamental para no crear listeners infinitos y agotar lecturas
+    const unsubFavOrder = subscribeToFavoritesOrder((order) => {
+      setFavoritesOrder(order);
+    });
+
+    return () => {
+      unsub();
+      unsubFavOrder();
+    }; // Fundamental para no crear listeners infinitos y agotar lecturas
   }, []);
 
   useEffect(() => {
@@ -4430,10 +4471,24 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                         type="button"
                         onClick={async () => {
                           const newVal = !selectedMovie.favoriteOfMonth;
+                          const currentId = selectedMovie.id;
                           setSelectedMovie({ ...selectedMovie, favoriteOfMonth: newVal });
-                          setMovies(prev => prev.map(m => m.id === selectedMovie.id ? { ...m, favoriteOfMonth: newVal } : m));
+                          setMovies(prev => prev.map(m => m.id === currentId ? { ...m, favoriteOfMonth: newVal } : m));
+                          
+                          // Actualizar lista ordenada de favoritas
+                          let nextOrder = [...favoritesOrder];
+                          if (newVal) {
+                            if (!nextOrder.includes(currentId)) {
+                              nextOrder.push(currentId);
+                            }
+                          } else {
+                            nextOrder = nextOrder.filter(id => id !== currentId);
+                          }
+                          setFavoritesOrder(nextOrder);
+                          saveFavoritesOrderToSupabase(nextOrder).catch(() => {});
+
                           try {
-                            await updateMovie(selectedMovie.id, { favoriteOfMonth: newVal });
+                            await updateMovie(currentId, { favoriteOfMonth: newVal });
                           } catch (err) {
                             console.error("Error setting favorite:", err);
                           }
@@ -5478,16 +5533,16 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               </p>
 
               {/* Selection status tag */}
-              {movies.filter(m => m.favoriteOfMonth).length > 0 && (
+              {sortedFavoritesOfMonth.length > 0 && (
                 <div className="mt-5 mb-2">
                   <span className="px-5 py-2 bg-zinc-950/80 border border-white/15 rounded-full text-[9px] md:text-[10px] font-extrabold tracking-[0.25em] text-zinc-300 uppercase shadow-md shadow-black/40">
-                    {activeFavIndex + 1} DE {movies.filter(m => m.favoriteOfMonth).length} SELECCIONADAS
+                    {activeFavIndex + 1} DE {sortedFavoritesOfMonth.length} SELECCIONADAS
                   </span>
                 </div>
               )}
             </div>
 
-            {movies.filter(m => m.favoriteOfMonth).length === 0 ? (
+            {sortedFavoritesOfMonth.length === 0 ? (
               <div className="w-full flex-col flex items-center justify-center py-20 text-zinc-500 font-sans font-bold text-center gap-4 animate-pulse relative z-10">
                 <Star size={48} className="opacity-40" />
                 <p className="tracking-widest uppercase text-xs">No hay favoritas seleccionadas aún.</p>
@@ -5512,12 +5567,11 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 {/* Right navigation arrow button (Boceto Style) */}
                 <button 
                   onClick={() => {
-                    const favList = movies.filter(m => m.favoriteOfMonth);
-                    const newIndex = Math.min(favList.length - 1, activeFavIndex + 1);
+                    const newIndex = Math.min(sortedFavoritesOfMonth.length - 1, activeFavIndex + 1);
                     setActiveFavIndex(newIndex);
                   }}
                   className={`hidden md:flex absolute right-4 sm:right-6 md:right-14 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full border border-white/20 bg-black/60 text-white items-center justify-center transition-all duration-300 hover:bg-transparent hover:border-red-800/80 hover:shadow-[0_0_15px_rgba(153,27,27,0.65)] hover:scale-110 active:scale-95 group ${
-                    activeFavIndex === movies.filter(m => m.favoriteOfMonth).length - 1 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
+                    activeFavIndex === sortedFavoritesOfMonth.length - 1 ? 'opacity-20 pointer-events-none' : 'opacity-100 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]'
                   }`}
                   aria-label="Siguiente película"
                 >
@@ -5543,7 +5597,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     if (touchStartX.current === null || touchEndX.current === null) return;
                     const diffX = touchStartX.current - touchEndX.current;
                     const threshold = 45; // Safe threshold for single card advance
-                    const favList = movies.filter(m => m.favoriteOfMonth);
+                    const favList = sortedFavoritesOfMonth;
                     
                     if (diffX > threshold) {
                       // Swipe left -> Next
@@ -5557,7 +5611,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                     touchEndX.current = null;
                   }}
                 >
-                  {movies.filter(m => m.favoriteOfMonth).map((movie, idx) => {
+                  {sortedFavoritesOfMonth.map((movie, idx) => {
                     const diff = idx - activeFavIndex;
                     const isActive = diff === 0;
                     
@@ -5669,14 +5723,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             )}
 
             {/* Slider bottom description & dot pagination exactly styled as Boceto */}
-            {movies.filter(m => m.favoriteOfMonth).length > 0 && (
+            {sortedFavoritesOfMonth.length > 0 && (
               <div className="mt-8 flex flex-col items-center space-y-5 z-20">
                 <span className="text-[10px] font-extrabold tracking-[0.38em] text-[#DFB15B]/90 uppercase select-none">
                   NAVEGA PARA DESCUBRIR MÁS PELÍCULAS
                 </span>
                 
                 <div className="flex items-center gap-3">
-                  {movies.filter(m => m.favoriteOfMonth).map((_, idx) => (
+                  {sortedFavoritesOfMonth.map((_, idx) => (
                     <button
                       key={idx}
                       onClick={() => {

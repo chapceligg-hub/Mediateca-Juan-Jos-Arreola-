@@ -24,6 +24,7 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON
 });
 
 const IDB_MOVIES_KEY = "videoteca_movies_cache";
+const IDB_FAV_ORDER_KEY = "videoteca_favorites_order_cache";
 const LOCAL_SYNC_KEY = "lastLocalSyncTimestamp";
 
 let movieBroadcastChannel: BroadcastChannel | null = null;
@@ -34,7 +35,115 @@ try {
 } catch (_) {}
 
 let lastKnownMoviesList: Movie[] = [];
+let lastKnownFavoritesOrder: string[] = [];
 const movieSubscribers = new Set<(movies: Movie[]) => void>();
+const favoritesOrderSubscribers = new Set<(order: string[]) => void>();
+
+export const getCachedFavoritesOrder = async (): Promise<string[]> => {
+  if (lastKnownFavoritesOrder && lastKnownFavoritesOrder.length > 0) {
+    return lastKnownFavoritesOrder;
+  }
+  try {
+    const cached = await get(IDB_FAV_ORDER_KEY);
+    if (Array.isArray(cached) && cached.length > 0) {
+      lastKnownFavoritesOrder = cached;
+      return cached;
+    }
+  } catch (_) {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(IDB_FAV_ORDER_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          lastKnownFavoritesOrder = parsed;
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+  return [];
+};
+
+export const setCachedFavoritesOrder = async (order: string[]) => {
+  if (!Array.isArray(order)) return;
+  lastKnownFavoritesOrder = order;
+  try {
+    await set(IDB_FAV_ORDER_KEY, order);
+  } catch (_) {}
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(IDB_FAV_ORDER_KEY, JSON.stringify(order));
+    } catch (_) {}
+  }
+  for (const cb of favoritesOrderSubscribers) {
+    try {
+      cb(order);
+    } catch (_) {}
+  }
+};
+
+export const fetchFavoritesOrderFromSupabase = async (): Promise<string[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'favorites_order')
+      .single();
+
+    if (!error && data?.value?.order && Array.isArray(data.value.order)) {
+      const order = data.value.order as string[];
+      await setCachedFavoritesOrder(order);
+      return order;
+    }
+  } catch (_) {}
+
+  // Fallback a proxy del servidor si fallara
+  try {
+    const res = await fetch('/api/settings/favorites-order');
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json?.order)) {
+        await setCachedFavoritesOrder(json.order);
+        return json.order;
+      }
+    }
+  } catch (_) {}
+
+  return await getCachedFavoritesOrder();
+};
+
+export const saveFavoritesOrderToSupabase = async (order: string[]): Promise<void> => {
+  await setCachedFavoritesOrder(order);
+  if (movieBroadcastChannel) {
+    try {
+      movieBroadcastChannel.postMessage({ type: 'FAVORITES_ORDER_UPDATED', order });
+    } catch (_) {}
+  }
+
+  // 1. Guardar en Supabase
+  try {
+    await supabase.from('settings').upsert({
+      key: 'favorites_order',
+      value: { order, updatedAt: new Date().toISOString() },
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
+  } catch (_) {}
+
+  // 2. Notificar al servidor Express como respaldo
+  try {
+    const authKey = typeof window !== 'undefined' ? localStorage.getItem('app_key') || '' : '';
+    await fetch('/api/settings/favorites-order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authKey ? { 'x-access-key': authKey } : {})
+      },
+      body: JSON.stringify({ order })
+    });
+  } catch (_) {}
+};
 
 export const getMoviesCacheKey = () => IDB_MOVIES_KEY;
 
@@ -50,12 +159,33 @@ export const notifyMovieSubscribers = (movies: Movie[]) => {
   }
 };
 
+export const subscribeToFavoritesOrder = (callback: (order: string[]) => void): (() => void) => {
+  favoritesOrderSubscribers.add(callback);
+  (async () => {
+    const cached = await getCachedFavoritesOrder();
+    if (cached.length > 0) callback(cached);
+    const remote = await fetchFavoritesOrderFromSupabase();
+    if (remote.length > 0) callback(remote);
+  })();
+  return () => {
+    favoritesOrderSubscribers.delete(callback);
+  };
+};
+
 if (movieBroadcastChannel) {
   movieBroadcastChannel.onmessage = async (event: MessageEvent) => {
     if (event.data?.type === 'MOVIES_UPDATED' && Array.isArray(event.data.movies)) {
       lastKnownMoviesList = event.data.movies;
       await set(IDB_MOVIES_KEY, event.data.movies).catch(() => {});
       notifyMovieSubscribers(event.data.movies);
+    } else if (event.data?.type === 'FAVORITES_ORDER_UPDATED' && Array.isArray(event.data.order)) {
+      lastKnownFavoritesOrder = event.data.order;
+      await set(IDB_FAV_ORDER_KEY, event.data.order).catch(() => {});
+      for (const cb of favoritesOrderSubscribers) {
+        try {
+          cb(event.data.order);
+        } catch (_) {}
+      }
     }
   };
 }
@@ -346,7 +476,7 @@ export const subscribeToMovies = (
   })();
 
   // 3. Suscripción en Tiempo Real (Realtime postgres_changes)
-  const channels = ['peliculas', 'series', 'centauro'].map(tableName => {
+  const movieChannels = ['peliculas', 'series', 'centauro'].map(tableName => {
     return supabase
       .channel(`public:${tableName}-changes`)
       .on(
@@ -388,6 +518,23 @@ export const subscribeToMovies = (
       )
       .subscribe();
   });
+
+  const settingsChannel = supabase
+    .channel('public:settings-fav-order')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'settings' },
+      async (payload) => {
+        if (isCleanedUp) return;
+        const record: any = payload.new || {};
+        if (record.key === 'favorites_order' && record.value?.order && Array.isArray(record.value.order)) {
+          await setCachedFavoritesOrder(record.value.order);
+        }
+      }
+    )
+    .subscribe();
+
+  const channels = [...movieChannels, settingsChannel];
 
   return () => {
     isCleanedUp = true;
