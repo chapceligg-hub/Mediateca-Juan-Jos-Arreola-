@@ -3296,22 +3296,27 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
       </button>
     </div>
   ) : (
-     <button 
-       id="btn-login-key"
-       onClick={() => {
-         setKeyLoginError("");
-         setKeyInput("");
-         setShowKeyLoginModal(true);
-       }} 
-       className={`app-login-btn flex items-center justify-center gap-3 cursor-pointer p-3 rounded-xl transition-all duration-300 font-extrabold uppercase tracking-wider text-xs w-full border ${
-         isDayMode 
-           ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-950 border-zinc-300' 
-           : 'bg-white/5 hover:bg-white/10 text-white border-white/10 hover:border-red-500/30'
-       }`}
-       title="Acceso a Editores y Administración"
-     >
-        <Users size={17} className="text-red-500" /> ACCESO A EDITORES
-     </button>
+     <div className="flex items-center justify-start w-full">
+       <button 
+         id="btn-login-key"
+         onClick={() => {
+           setKeyLoginError("");
+           setKeyInput("");
+           setShowKeyLoginModal(true);
+         }} 
+         className={`group app-login-btn relative flex items-center justify-start cursor-pointer h-9 w-9 hover:w-auto max-w-9 hover:max-w-[190px] px-2 hover:px-3 rounded-lg transition-all duration-300 ease-in-out border overflow-hidden shrink-0 shadow-sm ${
+           isDayMode 
+             ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-950 border-zinc-300' 
+             : 'bg-[#0c0c0e] hover:bg-[#151518] text-white border-white/10 hover:border-red-500/40 hover:shadow-[0_0_12px_rgba(180,29,29,0.2)]'
+         }`}
+         title="Acceso a Editores y Administración"
+       >
+          <Users size={15} className="text-red-500 shrink-0 transition-transform duration-300 group-hover:scale-110" />
+          <span className="whitespace-nowrap overflow-hidden max-w-0 opacity-0 group-hover:max-w-xs group-hover:opacity-100 group-hover:ml-2.5 transition-all duration-300 ease-in-out font-black uppercase tracking-wider text-[10px] text-white">
+            ACCESO A EDITORES
+          </span>
+       </button>
+     </div>
   )}
         </div>
       </aside>
