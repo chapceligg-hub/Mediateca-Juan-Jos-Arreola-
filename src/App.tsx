@@ -31,7 +31,10 @@ import {
   getCachedMovies,
   subscribeToFavoritesOrder,
   saveFavoritesOrderToSupabase,
-  getCachedFavoritesOrder
+  getCachedFavoritesOrder,
+  getCachedSettings,
+  fetchSettingsFromSupabase,
+  subscribeToAuthSession
 } from './lib/supabase';
 import { KeysAdminManager } from './components/KeysAdminManager';
 import { exportToExcelWithTabs, exportToCleanCSV, exportToJSON, getExportSummary } from './lib/exportUtils';
@@ -2463,6 +2466,29 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
       }
     })();
 
+    // 2. TABLA DE CONFIGURACIÓN Y CLAVES (settings):
+    // Lee primero los valores de settings desde IndexedDB / localStorage (0 ms)
+    getCachedSettings().then((cachedSettings) => {
+      if (cachedSettings?.auth) {
+        const savedKey = getStoredAccessKey();
+        if (savedKey) {
+          if (savedKey === cachedSettings.auth.masterKey) {
+            setUserRole('owner');
+          } else if (savedKey === cachedSettings.auth.editorPin) {
+            setUserRole('editor');
+          }
+        }
+      }
+    });
+
+    // Escucha cambios de rol y revocación de claves en tiempo real si un administrador modifica settings
+    const unsubAuthSession = subscribeToAuthSession((newRole) => {
+      setUserRole(newRole);
+      if (newRole === 'viewer') {
+        setShowRestrictedModal(true);
+      }
+    });
+
     // REFUERZO ANTI-AGOTAMIENTO DE LECTURAS:
     // Suscripción única en segundo plano respaldada por IndexedDB (persistentLocalCache).
     // Con dependencias vacías [] se ejecuta una sola vez al cargar la aplicación y no se destruye/reinicia en bucle.
@@ -2490,6 +2516,7 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     return () => {
       unsub();
       unsubFavOrder();
+      unsubAuthSession();
     }; // Fundamental para no crear listeners infinitos y agotar lecturas
   }, []);
 

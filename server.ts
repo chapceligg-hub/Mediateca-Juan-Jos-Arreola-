@@ -396,6 +396,23 @@ app.post("/api/auth/change-keys", async (req, res) => {
   });
 });
 
+// GET /api/settings: Consulta todas las filas de la tabla settings de Supabase (con fallback)
+app.get("/api/settings", async (_req, res) => {
+  if (supabaseServer) {
+    try {
+      const { data, error } = await supabaseServer.from("settings").select("*");
+      if (!error && Array.isArray(data)) {
+        return res.json(data);
+      }
+    } catch (e) {
+      console.warn("Aviso en proxy /api/settings:", e);
+    }
+  }
+  return res.json([
+    { key: "auth", value: cachedKeys || { masterKey: DEFAULT_MASTER_KEY, editorPin: DEFAULT_EDITOR_PIN } }
+  ]);
+});
+
 // GET & POST /api/settings/favorites-order: Almacena y lee el orden de selección de favoritas del mes
 app.get("/api/settings/favorites-order", async (_req, res) => {
   if (supabaseServer) {
@@ -444,10 +461,11 @@ app.post("/api/settings/favorites-order", async (req, res) => {
   return res.json({ success: true, count: order.length });
 });
 
-// Proxy endpoint para consultar tablas paginadas de Supabase desde el backend (evita bloqueos de red/CORS en iframe)
+// Proxy endpoint para consultar tablas paginadas o delta sync de Supabase desde el backend (evita bloqueos de red/CORS en iframe)
 app.get("/api/movies", async (req, res) => {
   const table = String(req.query.table || 'peliculas');
   const validTable = ['peliculas', 'series', 'centauro'].includes(table) ? validTableMatch(table) : 'peliculas';
+  const since = req.query.since ? String(req.query.since).trim() : null;
   const from = parseInt(String(req.query.from || '0'), 10) || 0;
   const to = parseInt(String(req.query.to || (from + 999)), 10);
 
@@ -460,13 +478,14 @@ app.get("/api/movies", async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabaseServer
-      .from(validTable)
-      .select('*')
-      .range(from, to);
+    let query = supabaseServer.from(validTable).select('*');
+    if (since) {
+      query = query.gt('updatedAt', since);
+    }
+    const { data, error } = await query.range(from, to);
 
     if (error) {
-      console.warn(`Aviso en /api/movies consultando ${validTable} (${from}-${to}):`, error.message);
+      console.warn(`Aviso en /api/movies consultando ${validTable} (${from}-${to}, since=${since}):`, error.message);
       return res.status(500).json({ error: error.message });
     }
 

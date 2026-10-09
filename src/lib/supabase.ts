@@ -25,6 +25,7 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON
 
 const IDB_MOVIES_KEY = "videoteca_movies_cache";
 const IDB_FAV_ORDER_KEY = "videoteca_favorites_order_cache";
+export const IDB_SETTINGS_KEY = "videoteca_settings_cache";
 const LOCAL_SYNC_KEY = "lastLocalSyncTimestamp";
 
 let movieBroadcastChannel: BroadcastChannel | null = null;
@@ -36,8 +37,58 @@ try {
 
 let lastKnownMoviesList: Movie[] = [];
 let lastKnownFavoritesOrder: string[] = [];
+let lastKnownSettings: Record<string, any> = {};
+
 const movieSubscribers = new Set<(movies: Movie[]) => void>();
 const favoritesOrderSubscribers = new Set<(order: string[]) => void>();
+
+type SettingsListener = (settings: Record<string, any>, changedKey?: string, changedValue?: any) => void;
+const settingsSubscribers = new Set<SettingsListener>();
+
+type SystemKeysListener = (keys: { masterKey: string; editorPin: string }) => void;
+const systemKeysSubscribers = new Set<SystemKeysListener>();
+
+type AuthSessionListener = (role: 'owner' | 'editor' | 'viewer') => void;
+const authSessionSubscribers = new Set<AuthSessionListener>();
+
+export const subscribeToSettings = (callback: SettingsListener): (() => void) => {
+  settingsSubscribers.add(callback);
+  return () => {
+    settingsSubscribers.delete(callback);
+  };
+};
+
+export const subscribeToSystemKeys = (callback: SystemKeysListener): (() => void) => {
+  systemKeysSubscribers.add(callback);
+  return () => {
+    systemKeysSubscribers.delete(callback);
+  };
+};
+
+export const subscribeToAuthSession = (callback: AuthSessionListener): (() => void) => {
+  authSessionSubscribers.add(callback);
+  return () => {
+    authSessionSubscribers.delete(callback);
+  };
+};
+
+export const notifySettingsSubscribers = (settings: Record<string, any>, changedKey?: string, changedValue?: any) => {
+  for (const cb of settingsSubscribers) {
+    try { cb(settings, changedKey, changedValue); } catch (_) {}
+  }
+};
+
+export const notifySystemKeysSubscribers = (keys: { masterKey: string; editorPin: string }) => {
+  for (const cb of systemKeysSubscribers) {
+    try { cb(keys); } catch (_) {}
+  }
+};
+
+export const notifyAuthSessionSubscribers = (role: 'owner' | 'editor' | 'viewer') => {
+  for (const cb of authSessionSubscribers) {
+    try { cb(role); } catch (_) {}
+  }
+};
 
 export const getCachedFavoritesOrder = async (): Promise<string[]> => {
   if (lastKnownFavoritesOrder && lastKnownFavoritesOrder.length > 0) {
@@ -172,6 +223,127 @@ export const subscribeToFavoritesOrder = (callback: (order: string[]) => void): 
   };
 };
 
+export const getCachedSettings = async (): Promise<Record<string, any>> => {
+  if (lastKnownSettings && Object.keys(lastKnownSettings).length > 0) {
+    return lastKnownSettings;
+  }
+  try {
+    const cached = await get(IDB_SETTINGS_KEY);
+    if (cached) {
+      const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      if (parsed && typeof parsed === 'object') {
+        lastKnownSettings = parsed;
+        return parsed;
+      }
+    }
+  } catch (_) {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(IDB_SETTINGS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          lastKnownSettings = parsed;
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  return {};
+};
+
+export const setCachedSettings = async (settings: Record<string, any>): Promise<void> => {
+  if (!settings || typeof settings !== 'object') return;
+  lastKnownSettings = { ...lastKnownSettings, ...settings };
+  try {
+    await set(IDB_SETTINGS_KEY, lastKnownSettings);
+  } catch (_) {}
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(IDB_SETTINGS_KEY, JSON.stringify(lastKnownSettings));
+    } catch (_) {}
+  }
+};
+
+export const setCachedSetting = async (key: string, value: any): Promise<void> => {
+  const current = await getCachedSettings();
+  current[key] = value;
+  await setCachedSettings(current);
+};
+
+export const fetchSettingsFromSupabase = async (): Promise<Record<string, any>> => {
+  let rows: Array<{ key: string; value: any; updated_at?: string }> = [];
+
+  try {
+    const { data, error } = await supabase.from('settings').select('*');
+    if (!error && Array.isArray(data)) {
+      rows = data;
+    }
+  } catch (_) {}
+
+  // Fallback al endpoint proxy del servidor
+  if (rows.length === 0) {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json)) {
+          rows = json;
+        }
+      }
+    } catch (e) {
+      console.warn("Aviso leyendo settings vía proxy:", e);
+    }
+  }
+
+  if (rows.length > 0) {
+    const cached = await getCachedSettings();
+    const remoteMap: Record<string, any> = {};
+    for (const r of rows) {
+      remoteMap[r.key] = r.value;
+    }
+
+    // Comprobar cambios clave por clave
+    for (const [k, v] of Object.entries(remoteMap)) {
+      if (JSON.stringify(cached[k]) !== JSON.stringify(v)) {
+        if (k === 'auth' && v) {
+          notifySystemKeysSubscribers({
+            masterKey: v.masterKey || '',
+            editorPin: v.editorPin || ''
+          });
+
+          // Verificar si la sesión activa del usuario sigue siendo válida
+          if (typeof window !== 'undefined') {
+            const currentAccessKey = (localStorage.getItem('app_key') || '').trim();
+            if (currentAccessKey) {
+              if (currentAccessKey === v.masterKey) {
+                notifyAuthSessionSubscribers('owner');
+              } else if (currentAccessKey === v.editorPin) {
+                notifyAuthSessionSubscribers('editor');
+              } else {
+                // Clave modificada en settings: revocar sesión
+                localStorage.removeItem('app_key');
+                notifyAuthSessionSubscribers('viewer');
+              }
+            }
+          }
+        } else if (k === 'favorites_order' && v?.order && Array.isArray(v.order)) {
+          await setCachedFavoritesOrder(v.order);
+        }
+      }
+    }
+
+    const merged = { ...cached, ...remoteMap };
+    await setCachedSettings(merged);
+    notifySettingsSubscribers(merged);
+    return merged;
+  }
+
+  return await getCachedSettings();
+};
+
 if (movieBroadcastChannel) {
   movieBroadcastChannel.onmessage = async (event: MessageEvent) => {
     if (event.data?.type === 'MOVIES_UPDATED' && Array.isArray(event.data.movies)) {
@@ -186,6 +358,10 @@ if (movieBroadcastChannel) {
           cb(event.data.order);
         } catch (_) {}
       }
+    } else if (event.data?.type === 'SETTINGS_UPDATED' && event.data.settings) {
+      lastKnownSettings = event.data.settings;
+      await set(IDB_SETTINGS_KEY, event.data.settings).catch(() => {});
+      notifySettingsSubscribers(event.data.settings, event.data.key, event.data.value);
     }
   };
 }
@@ -419,19 +595,97 @@ export const fetchTableWithRange = async (tableName: 'peliculas' | 'series' | 'c
   return accumulated;
 };
 
-export const fetchAllMoviesFromSupabase = async (): Promise<Movie[]> => {
-  try {
-    // Consultar peliculas en bloques paginados de 1,000 en 1,000 con .range()
-    const [peliculasList, seriesList, centauroList] = await Promise.all([
-      fetchTableWithRange('peliculas'),
-      fetchTableWithRange('series'),
-      fetchTableWithRange('centauro')
-    ]);
+/**
+ * Consulta ligera (Delta Sync) de una tabla:
+ * Pide ÚNICAMENTE los registros cuyo updatedAt sea superior a sinceIsoString.
+ */
+export const fetchTableDelta = async (
+  tableName: 'peliculas' | 'series' | 'centauro',
+  sinceIsoString: string
+): Promise<Movie[]> => {
+  const accumulated: Movie[] = [];
+  const CHUNK_SIZE = 1000;
+  let from = 0;
 
-    const allItems: Movie[] = [...peliculasList, ...seriesList, ...centauroList];
+  const fetchDeltaFromProxy = async (start: number, end: number): Promise<Movie[]> => {
+    const res = await fetch(`/api/movies?table=${tableName}&since=${encodeURIComponent(sinceIsoString)}&from=${start}&to=${end}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} al consultar proxy delta: ${await res.text().catch(() => '')}`);
+    }
+    return (await res.json()) || [];
+  };
+
+  while (true) {
+    const to = from + CHUNK_SIZE - 1;
+    let data: Movie[] | null = null;
+    let error: any = null;
+
+    try {
+      const supaRes = await supabase
+        .from(tableName)
+        .select('*')
+        .gt('updatedAt', sinceIsoString)
+        .range(from, to);
+      data = (supaRes.data as Movie[]) || null;
+      error = supaRes.error;
+    } catch (e: any) {
+      error = e;
+    }
+
+    if (error) {
+      const isNetworkOrFetchError =
+        error.message?.includes('Failed to fetch') ||
+        error.message?.includes('NetworkError') ||
+        error.message?.includes('Load failed');
+
+      if (isNetworkOrFetchError) {
+        try {
+          data = await fetchDeltaFromProxy(from, to);
+          error = null;
+        } catch (proxyErr) {
+          console.warn(`Aviso proxy delta en ${tableName} (${from}-${to}):`, proxyErr);
+        }
+      }
+    }
+
+    if (error) {
+      console.warn(`Aviso en delta sync de ${tableName}:`, error.message);
+      break;
+    }
+
+    if (data && data.length > 0) {
+      accumulated.push(...data);
+    }
+
+    if (!data || data.length < CHUNK_SIZE) {
+      break;
+    }
+
+    from += CHUNK_SIZE;
+  }
+
+  return accumulated;
+};
+
+export const fetchAllMoviesFromSupabase = async (
+  onProgress?: (accumulated: Movie[]) => void
+): Promise<Movie[]> => {
+  try {
+    const tables: Array<'peliculas' | 'series' | 'centauro'> = ['peliculas', 'series', 'centauro'];
+    const allItems: Movie[] = [];
+
+    // Bucle SECUENCIAL con await sin Promise.all para prevenir timeout 57014 de Postgres
+    for (const tableName of tables) {
+      const tableData = await fetchTableWithRange(tableName);
+      if (Array.isArray(tableData) && tableData.length > 0) {
+        allItems.push(...tableData);
+        onProgress?.([...allItems]);
+      }
+    }
+
     return allItems;
   } catch (err) {
-    console.error("Error al consultar tablas paginadas en Supabase:", err);
+    console.error("Error al consultar tablas paginadas secuenciales en Supabase:", err);
     throw err;
   }
 };
@@ -449,34 +703,112 @@ export const subscribeToMovies = (
     notifyMovieSubscribers(movies);
   };
 
+  // 1. CARGA INICIAL Y DELTA SYNC UNIFICADO
   (async () => {
     try {
-      // 1. Mostrar de inmediato la caché local en 0ms
-      const localCached = await getCachedMovies();
-      if (localCached && localCached.length > 0) {
-        dispatchMovies(localCached);
-      }
+      // Sincronización de configuración y claves (settings) primero en segundo plano
+      // Lee primero los valores de settings desde IndexedDB / localStorage (0 ms)
+      await getCachedSettings();
+      // Consulta Supabase para verificar si hay cambios en la tabla settings
+      fetchSettingsFromSupabase().catch((e) => {
+        console.warn("Aviso sincronizando settings en inicio:", e);
+      });
 
-      // 2. Consulta en segundo plano a Supabase
-      const remoteData = await fetchAllMoviesFromSupabase();
-      if (remoteData && remoteData.length > 0) {
-        await setCachedMovies(remoteData);
-        dispatchMovies(remoteData);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+      // 1. Verificar si existen datos en la caché de IndexedDB
+      const localCached = await getCachedMovies();
+      const hasCache = Array.isArray(localCached) && localCached.length > 0;
+
+      if (hasCache) {
+        // B. USUARIOS RECURRENTES (Ya existen datos en caché):
+        // Muestra inmediatamente los datos de IndexedDB a 0 ms
+        dispatchMovies(localCached);
+
+        // Buscar la fecha más reciente de la caché (updatedAt o createdAt)
+        let latestCachedDate = '';
+        for (const m of localCached) {
+          const t = m.updatedAt || m.createdAt || '';
+          if (t && t > latestCachedDate) {
+            latestCachedDate = t;
+          }
         }
-      } else if (!localCached || localCached.length === 0) {
-        // Ninguno tiene datos
-        dispatchMovies([]);
+
+        if (latestCachedDate) {
+          // Ejecuta una consulta ligera (Delta Sync) pidiendo a Supabase ÚNICAMENTE
+          // los registros cuyo updatedAt sea superior a la fecha más reciente de la caché
+          const deltaItems: Movie[] = [];
+          const tables: Array<'peliculas' | 'series' | 'centauro'> = ['peliculas', 'series', 'centauro'];
+
+          for (const tableName of tables) {
+            try {
+              const tableDeltas = await fetchTableDelta(tableName, latestCachedDate);
+              if (tableDeltas.length > 0) {
+                deltaItems.push(...tableDeltas);
+              }
+            } catch (dErr) {
+              console.warn(`Aviso consultando delta en ${tableName}:`, dErr);
+            }
+          }
+
+          // Si hay registros nuevos o modificados, sobreescribe/agrega SOLAMENTE los modificados
+          if (deltaItems.length > 0) {
+            const currentList = (await getCachedMovies()) || localCached;
+            const movieMap = new Map<string, Movie>();
+            for (const m of currentList) {
+              if (m?.id) movieMap.set(m.id, m);
+            }
+            for (const delta of deltaItems) {
+              if (delta?.id) {
+                const existing = movieMap.get(delta.id);
+                movieMap.set(delta.id, { ...existing, ...delta });
+              }
+            }
+            const mergedList = Array.from(movieMap.values());
+            await setCachedMovies(mergedList);
+            dispatchMovies(mergedList);
+            if (movieBroadcastChannel) {
+              movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: mergedList });
+            }
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+            }
+          }
+        } else {
+          // Si no había marcas de tiempo válidas, refrescar de fondo secuencialmente
+          const remoteData = await fetchAllMoviesFromSupabase();
+          if (remoteData && remoteData.length > 0) {
+            await setCachedMovies(remoteData);
+            dispatchMovies(remoteData);
+          }
+        }
+      } else {
+        // A. PRIMERA VISITA O INCÓGNITO (Caché VACÍA):
+        // Descarga COMPLETA usando bucle while SECUENCIAL con await y .range(desde, desde + 999)
+        // en bloques de 1,000 registros (NO usar Promise.all para evitar timeout 57014).
+        const remoteData = await fetchAllMoviesFromSupabase((progressiveList) => {
+          dispatchMovies(progressiveList);
+        });
+
+        if (remoteData && remoteData.length > 0) {
+          // Acumula los bloques, asígnalos al estado de React y guárdalos completos en IndexedDB
+          await setCachedMovies(remoteData);
+          dispatchMovies(remoteData);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+          }
+        } else {
+          dispatchMovies([]);
+        }
       }
     } catch (fetchErr: any) {
-      console.warn("Aviso en carga inicial desde Supabase:", fetchErr);
+      console.warn("Aviso en sincronización inicial desde Supabase:", fetchErr);
       onError?.(fetchErr);
     }
   })();
 
-  // 3. Suscripción en Tiempo Real (Realtime postgres_changes)
-  const movieChannels = ['peliculas', 'series', 'centauro'].map(tableName => {
+  // 3. TIEMPO REAL (SUPABASE REALTIME) PARA LAS 4 TABLAS:
+  // Escucha los eventos INSERT, UPDATE y DELETE para: peliculas, series, centauro y settings
+  const movieTables: Array<'peliculas' | 'series' | 'centauro'> = ['peliculas', 'series', 'centauro'];
+  const movieChannels = movieTables.map(tableName => {
     return supabase
       .channel(`public:${tableName}-changes`)
       .on(
@@ -498,7 +830,12 @@ export const subscribeToMovies = (
               }
             } else if (payload.eventType === 'UPDATE') {
               const updatedRow = payload.new as Movie;
-              updatedList = updatedList.map(m => m.id === updatedRow.id ? { ...m, ...updatedRow } : m);
+              const exists = updatedList.some(m => m.id === updatedRow.id);
+              if (exists) {
+                updatedList = updatedList.map(m => m.id === updatedRow.id ? { ...m, ...updatedRow } : m);
+              } else {
+                updatedList.unshift(updatedRow);
+              }
             } else if (payload.eventType === 'DELETE') {
               const oldId = payload.old?.id;
               if (oldId) {
@@ -520,15 +857,68 @@ export const subscribeToMovies = (
   });
 
   const settingsChannel = supabase
-    .channel('public:settings-fav-order')
+    .channel('public:settings-changes')
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'settings' },
       async (payload) => {
         if (isCleanedUp) return;
-        const record: any = payload.new || {};
-        if (record.key === 'favorites_order' && record.value?.order && Array.isArray(record.value.order)) {
-          await setCachedFavoritesOrder(record.value.order);
+        try {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const record: any = payload.new || {};
+            const key = record.key;
+            const val = record.value;
+            if (!key) return;
+
+            // Actualizar caché de settings en memoria, IndexedDB y localStorage
+            const currentSettings = await getCachedSettings();
+            const updatedSettings = { ...currentSettings, [key]: val };
+            await setCachedSettings(updatedSettings);
+
+            // Reaccionar según la clave modificada
+            if (key === 'auth' && val) {
+              const mKey = val.masterKey || '';
+              const ePin = val.editorPin || '';
+              notifySystemKeysSubscribers({ masterKey: mKey, editorPin: ePin });
+
+              // Verificar si el usuario conectado sigue teniendo credenciales válidas
+              if (typeof window !== 'undefined') {
+                const currentAccessKey = (localStorage.getItem('app_key') || '').trim();
+                if (currentAccessKey) {
+                  if (currentAccessKey === mKey) {
+                    notifyAuthSessionSubscribers('owner');
+                  } else if (currentAccessKey === ePin) {
+                    notifyAuthSessionSubscribers('editor');
+                  } else {
+                    // Clave revocada o cambiada: invalidar sesión y notificar
+                    localStorage.removeItem('app_key');
+                    notifyAuthSessionSubscribers('viewer');
+                  }
+                }
+              }
+            } else if (key === 'favorites_order' && val?.order && Array.isArray(val.order)) {
+              await setCachedFavoritesOrder(val.order);
+            } else if (key === 'sync' && val?.action === 'delete' && val.movieId) {
+              const current = (await getCachedMovies()) || [];
+              const filtered = current.filter(m => m.id !== val.movieId);
+              if (filtered.length !== current.length) {
+                await setCachedMovies(filtered);
+                dispatchMovies(filtered);
+              }
+            }
+
+            notifySettingsSubscribers(updatedSettings, key, val);
+          } else if (payload.eventType === 'DELETE') {
+            const oldKey = payload.old?.key;
+            if (oldKey) {
+              const currentSettings = await getCachedSettings();
+              delete currentSettings[oldKey];
+              await setCachedSettings(currentSettings);
+              notifySettingsSubscribers(currentSettings, oldKey, null);
+            }
+          }
+        } catch (e) {
+          console.warn("Error procesando realtime en tabla settings:", e);
         }
       }
     )

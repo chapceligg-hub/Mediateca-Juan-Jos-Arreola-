@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { KeyRound, ShieldCheck, Eye, Copy, Check, AlertTriangle, Loader2, Lock } from 'lucide-react';
 import { fetchSystemKeys, changeSystemKeys } from '../lib/firebase';
+import { subscribeToSystemKeys } from '../lib/supabase';
 
 export interface KeysAdminManagerProps {
   isDayMode: boolean;
@@ -47,6 +48,22 @@ export const KeysAdminManager: React.FC<KeysAdminManagerProps> = ({ isDayMode })
 
   useEffect(() => {
     loadKeys();
+
+    // Actualización en tiempo real vía Supabase Realtime si un administrador cambia claves
+    const unsub = subscribeToSystemKeys((keys) => {
+      if (keys.masterKey) {
+        setMasterKey(keys.masterKey);
+        setInputMaster(keys.masterKey);
+      }
+      if (keys.editorPin) {
+        setEditorPin(keys.editorPin);
+        setInputEditor(keys.editorPin);
+      }
+    });
+
+    return () => {
+      unsub();
+    };
   }, []);
 
   const handleCopy = (text: string, isMaster: boolean) => {
