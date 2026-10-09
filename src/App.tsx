@@ -29,8 +29,6 @@ import {
   generateMovieId,
   subscribeToMovies,
   getCachedMovies,
-  migrateIndexedDBToSupabase,
-  MigrationProgress,
   subscribeToFavoritesOrder,
   saveFavoritesOrderToSupabase,
   getCachedFavoritesOrder
@@ -1337,23 +1335,6 @@ export default function App() {
   }, [userRole]);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
-  const [showMigrationModal, setShowMigrationModal] = useState(false);
-  const [isMigrating, setIsMigrating] = useState(false);
-  const [migrationProgress, setMigrationProgress] = useState<MigrationProgress | null>(null);
-
-  const handleStartMigration = async () => {
-    if (isMigrating) return;
-    setIsMigrating(true);
-    try {
-      await migrateIndexedDBToSupabase((prog) => {
-        setMigrationProgress(prog);
-      });
-    } catch (err: any) {
-      console.error("Error en migración a Supabase:", err);
-    } finally {
-      setIsMigrating(false);
-    }
-  };
   const [movies, setMovies] = useState<Movie[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -3267,19 +3248,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                            <FileSpreadsheet className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-red-500 shrink-0" /> 
                            <span>{t("EXPORTAR CSV / EXCEL")}</span>
                          </button>
-                         <button 
-                           id="btn-migrate-supabase"
-                           onClick={() => {
-                             setShowMigrationModal(true);
-                             setMigrationProgress(null);
-                           }} 
-                           className={getSidebarItemClass(false)}
-                           title="Migrar catálogo de la base local a Supabase (1 clic)"
-                         >
-                           <Zap className="w-5 h-5 transition-all duration-300 ease-out group-hover:scale-125 group-hover:text-emerald-400 shrink-0 text-emerald-400" /> 
-                           <span className="text-emerald-400 font-extrabold tracking-wide">{t("MIGRAR A SUPABASE")}</span>
-                         </button>
-
                       </div>
                    </div>
                 </>
@@ -6185,38 +6153,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   )}
                 </div>
 
-                {/* Opción 4: Migración Directa a Supabase */}
-                <div className={`mt-2 p-3.5 rounded-xl border flex items-center justify-between transition-colors ${
-                  isDayMode 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950' 
-                    : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-                      <Zap size={17} />
-                    </div>
-                    <div>
-                      <span className="text-xs font-black uppercase tracking-wider block">
-                        Migrar Catálogo a Supabase
-                      </span>
-                      <span className="text-[10px] opacity-80 block">
-                        Cargar las {movies.length} obras locales directamente en las 4 tablas
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowExportModal(false);
-                      setShowMigrationModal(true);
-                      setMigrationProgress(null);
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold uppercase tracking-wider cursor-pointer shadow-md transition-all shrink-0"
-                  >
-                    Abrir ⚡
-                  </button>
-                </div>
-
                 <button
                   type="button"
                   id="btn-cancel-export-modal"
@@ -6229,181 +6165,6 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 >
                   Cerrar
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUPABASE 1-CLICK MIGRATION MODAL */}
-      {showMigrationModal && (
-        <div 
-          id="modal-migration-supabase"
-          className={`fixed inset-0 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300 ${
-            isDayMode ? 'bg-black/60' : 'bg-black/95'
-          }`}
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !isMigrating) setShowMigrationModal(false);
-          }}
-        >
-          <div className={`rounded-2xl w-full max-w-lg overflow-hidden relative flex flex-col font-sans transition-colors duration-300 shadow-2xl ${
-            isDayMode 
-              ? 'bg-white border border-zinc-200 text-zinc-900' 
-              : 'bg-[#09090b] border border-emerald-500/30 text-white shadow-[0_25px_80px_rgba(0,0,0,0.95)]'
-          }`}>
-            {/* Header */}
-            <div className={`flex items-center justify-between px-6 py-5 border-b transition-colors duration-300 ${
-              isDayMode ? 'bg-emerald-50/70 border-zinc-200' : 'bg-[#0b1310] border-emerald-500/20'
-            }`}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
-                  <Zap size={22} className="animate-pulse" />
-                </div>
-                <div>
-                  <h3 className={`text-base font-black uppercase tracking-wider ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
-                    Migración a Supabase (1 Clic)
-                  </h3>
-                  <p className={`text-xs ${isDayMode ? 'text-zinc-600' : 'text-emerald-300/80'}`}>
-                    Copia y asegura todo el catálogo local en tu base de datos de Supabase
-                  </p>
-                </div>
-              </div>
-              {!isMigrating && (
-                <button 
-                  onClick={() => setShowMigrationModal(false)} 
-                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                    isDayMode ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200' : 'text-zinc-400 hover:text-white hover:bg-white/10'
-                  }`}
-                  title="Cerrar"
-                >
-                  <X size={18} />
-                </button>
-              )}
-            </div>
-
-            {/* Content */}
-            <div className={`p-6 flex flex-col gap-5 ${isDayMode ? 'bg-white' : 'bg-[#09090b]'}`}>
-              {/* Info del proyecto */}
-              <div className={`rounded-xl p-3.5 border flex flex-col gap-2 ${
-                isDayMode ? 'bg-zinc-50 border-zinc-200' : 'bg-white/[0.02] border-white/10'
-              }`}>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-zinc-400 uppercase tracking-wider text-[10px]">Proyecto Supabase</span>
-                  <span className="font-mono text-emerald-400 font-bold text-[11px] truncate max-w-[240px]">hwvxmcpgrgdjyxofsmll</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-zinc-400 uppercase tracking-wider text-[10px]">Tablas de Destino</span>
-                  <span className="text-zinc-300 font-medium text-[11px]">peliculas, series, centauro, settings</span>
-                </div>
-              </div>
-
-              {/* Conteo de Obras en IndexedDB */}
-              <div className="flex flex-col gap-2">
-                <span className={`text-[10px] font-black uppercase tracking-[0.2em] block ${isDayMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  Registros locales a migrar
-                </span>
-                <div className={`rounded-xl p-3.5 grid grid-cols-4 divide-x text-center ${
-                  isDayMode ? 'bg-zinc-100 border border-zinc-200 divide-zinc-200' : 'bg-white/[0.03] border border-white/5 divide-white/5'
-                }`}>
-                  <div className="px-1">
-                    <span className={`text-[10px] uppercase tracking-widest block font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Películas</span>
-                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>{exportSummary.peliculas}</span>
-                  </div>
-                  <div className="px-1">
-                    <span className={`text-[10px] uppercase tracking-widest block font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Series</span>
-                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>{exportSummary.series}</span>
-                  </div>
-                  <div className="px-1">
-                    <span className={`text-[10px] uppercase tracking-widest block font-bold ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>Centauro</span>
-                    <span className={`font-extrabold text-sm mt-0.5 block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>{exportSummary.centauro}</span>
-                  </div>
-                  <div className="px-1">
-                    <span className={`text-[10px] uppercase tracking-widest block font-bold text-emerald-500`}>Total</span>
-                    <span className={`font-extrabold text-sm mt-0.5 block text-emerald-400`}>{movies.length}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Progreso */}
-              {migrationProgress && (
-                <div className={`p-4 rounded-xl border flex flex-col gap-3 ${
-                  migrationProgress.status === 'error' 
-                    ? 'bg-red-500/10 border-red-500/30 text-red-300' 
-                    : migrationProgress.status === 'success'
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                      : 'bg-white/[0.03] border-white/10 text-white'
-                }`}>
-                  <div className="flex items-center justify-between text-xs font-bold">
-                    <span className="flex items-center gap-2">
-                      {isMigrating && <Loader2 size={14} className="animate-spin text-emerald-400" />}
-                      {migrationProgress.status === 'success' && <Check size={14} className="text-emerald-400" />}
-                      {migrationProgress.status === 'error' && <AlertTriangle size={14} className="text-red-400" />}
-                      {migrationProgress.message}
-                    </span>
-                    <span className="font-mono text-emerald-400">{migrationProgress.percent}%</span>
-                  </div>
-                  <div className="w-full h-2.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
-                    <div 
-                      className={`h-full transition-all duration-300 ${
-                        migrationProgress.status === 'error' 
-                          ? 'bg-red-500' 
-                          : 'bg-gradient-to-r from-emerald-500 to-teal-400'
-                      }`}
-                      style={{ width: `${migrationProgress.percent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Botón de acción */}
-              <div className="flex flex-col gap-2 pt-2">
-                {migrationProgress?.status === 'success' ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowMigrationModal(false)}
-                    className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider cursor-pointer shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    <Check size={16} /> ¡Completado! Cerrar ventana
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    id="btn-confirm-start-migration"
-                    disabled={isMigrating || movies.length === 0}
-                    onClick={handleStartMigration}
-                    className={`w-full py-4 rounded-xl text-white text-xs font-black uppercase tracking-[0.16em] cursor-pointer shadow-xl transition-all flex items-center justify-center gap-2.5 ${
-                      isMigrating 
-                        ? 'bg-emerald-700/60 cursor-wait' 
-                        : movies.length === 0 
-                          ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                          : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 hover:shadow-emerald-500/25'
-                    }`}
-                  >
-                    {isMigrating ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" />
-                        <span>Subiendo Obras a Supabase ({migrationProgress?.percent || 0}%)...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap size={16} />
-                        <span>Iniciar Migración a Supabase Ahora</span>
-                      </>
-                    )}
-                  </button>
-                )}
-
-                {!isMigrating && (
-                  <button
-                    type="button"
-                    onClick={() => setShowMigrationModal(false)}
-                    className={`py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center ${
-                      isDayMode ? 'text-zinc-500 hover:text-zinc-900' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    Cancelar
-                  </button>
-                )}
               </div>
             </div>
           </div>
