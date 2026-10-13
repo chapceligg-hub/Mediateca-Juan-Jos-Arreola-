@@ -23,10 +23,19 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON
   }
 });
 
-const IDB_MOVIES_KEY = "videoteca_movies_cache";
-const IDB_FAV_ORDER_KEY = "videoteca_favorites_order_cache";
+export const IDB_PELICULAS_KEY = "videoteca_cache_peliculas";
+export const IDB_SERIES_KEY = "videoteca_cache_series";
+export const IDB_CENTAURO_KEY = "videoteca_cache_centauro";
 export const IDB_SETTINGS_KEY = "videoteca_settings_cache";
+export const IDB_MOVIES_KEY = "videoteca_movies_cache";
+export const IDB_FAV_ORDER_KEY = "videoteca_favorites_order_cache";
 const LOCAL_SYNC_KEY = "lastLocalSyncTimestamp";
+
+export const getTableCacheKey = (tableName: 'peliculas' | 'series' | 'centauro'): string => {
+  if (tableName === 'series') return IDB_SERIES_KEY;
+  if (tableName === 'centauro') return IDB_CENTAURO_KEY;
+  return IDB_PELICULAS_KEY;
+};
 
 let movieBroadcastChannel: BroadcastChannel | null = null;
 try {
@@ -366,11 +375,91 @@ if (movieBroadcastChannel) {
   };
 }
 
+/**
+ * Lee de forma autónoma la caché de IndexedDB para una tabla específica.
+ */
+export const getCachedTableMovies = async (tableName: 'peliculas' | 'series' | 'centauro'): Promise<Movie[]> => {
+  const tableKey = getTableCacheKey(tableName);
+  try {
+    const cached = await get(tableKey);
+    if (Array.isArray(cached) && cached.length > 0) {
+      return cached;
+    }
+  } catch (e) {
+    console.warn(`Aviso leyendo caché de ${tableName}:`, e);
+  }
+
+  // Migración transparente si solo existía la caché combinada anterior
+  try {
+    const legacy = await get(IDB_MOVIES_KEY);
+    if (Array.isArray(legacy) && legacy.length > 0) {
+      const filtered = legacy.filter(m => getTableNameForSection(m?.section) === tableName);
+      if (filtered.length > 0) {
+        await set(tableKey, filtered).catch(() => {});
+        return filtered;
+      }
+    }
+  } catch (_) {}
+
+  return [];
+};
+
+/**
+ * Guarda de forma autónoma los registros de una tabla específica en su clave de IndexedDB.
+ */
+export const setCachedTableMovies = async (
+  tableName: 'peliculas' | 'series' | 'centauro',
+  items: Movie[]
+): Promise<void> => {
+  if (!Array.isArray(items)) return;
+  const tableKey = getTableCacheKey(tableName);
+  try {
+    await set(tableKey, items);
+  } catch (e) {
+    console.error(`Error guardando caché de ${tableName}:`, e);
+  }
+};
+
+/**
+ * Reconstruye el catálogo combinado a partir de las 3 tablas autónomas y lo notifica a la interfaz.
+ */
+export const refreshCombinedMoviesAndDispatch = async (
+  dispatchCallback?: (movies: Movie[]) => void
+): Promise<Movie[]> => {
+  const [p, s, c] = await Promise.all([
+    getCachedTableMovies('peliculas'),
+    getCachedTableMovies('series'),
+    getCachedTableMovies('centauro')
+  ]);
+  const combined = [...p, ...s, ...c];
+  lastKnownMoviesList = combined;
+  await set(IDB_MOVIES_KEY, combined).catch(() => {});
+  if (dispatchCallback) {
+    dispatchCallback(combined);
+  }
+  notifyMovieSubscribers(combined);
+  if (movieBroadcastChannel) {
+    movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: combined });
+  }
+  return combined;
+};
+
 export const getCachedMovies = async (): Promise<Movie[] | null> => {
   if (lastKnownMoviesList && Array.isArray(lastKnownMoviesList) && lastKnownMoviesList.length > 0) {
     return lastKnownMoviesList;
   }
 
+  // Consulta de forma autónoma la caché de cada una de las 3 tablas
+  const [p, s, c] = await Promise.all([
+    getCachedTableMovies('peliculas'),
+    getCachedTableMovies('series'),
+    getCachedTableMovies('centauro')
+  ]);
+  const combined = [...p, ...s, ...c];
+  if (combined.length > 0) {
+    lastKnownMoviesList = combined;
+    return combined;
+  }
 
   try {
     const cached = await get(IDB_MOVIES_KEY);
@@ -425,6 +514,17 @@ export const setCachedMovies = async (newMovies: Movie[]) => {
     if (!Array.isArray(newMovies)) return;
     lastKnownMoviesList = newMovies;
     await set(IDB_MOVIES_KEY, newMovies);
+
+    // Mantiene actualizadas las 3 tablas individuales en IndexedDB
+    const peliItems = newMovies.filter(m => getTableNameForSection(m?.section) === 'peliculas');
+    const seriesItems = newMovies.filter(m => getTableNameForSection(m?.section) === 'series');
+    const centauroItems = newMovies.filter(m => getTableNameForSection(m?.section) === 'centauro');
+
+    await Promise.all([
+      setCachedTableMovies('peliculas', peliItems),
+      setCachedTableMovies('series', seriesItems),
+      setCachedTableMovies('centauro', centauroItems)
+    ]);
   } catch (e) {
     console.error("Error guardando películas en IndexedDB:", e);
   }
@@ -703,104 +803,114 @@ export const subscribeToMovies = (
     notifyMovieSubscribers(movies);
   };
 
-  // 1. CARGA INICIAL Y DELTA SYNC UNIFICADO
+  // 1. CARGA INICIAL Y DELTA SYNC CON VERIFICACIÓN INDEPENDIENTE POR TABLA
   (async () => {
     try {
-      // Sincronización de configuración y claves (settings) primero en segundo plano
-      // Lee primero los valores de settings desde IndexedDB / localStorage (0 ms)
-      await getCachedSettings();
-      // Consulta Supabase para verificar si hay cambios en la tabla settings
-      fetchSettingsFromSupabase().catch((e) => {
-        console.warn("Aviso sincronizando settings en inicio:", e);
-      });
+      // =========================================================================
+      // TABLA 1: settings (Configuración y Claves) - VERIFICACIÓN INDEPENDIENTE
+      // =========================================================================
+      // * Si la caché local de settings está VACÍA, descarga la tabla completa desde Supabase y guárdala en IndexedDB / localStorage.
+      // * Si YA existen datos de settings, realiza una consulta rápida de sincronización para actualizar cualquier cambio en las claves o parámetros de configuración.
+      try {
+        const cachedSettings = await getCachedSettings();
+        const isSettingsEmpty = !cachedSettings || Object.keys(cachedSettings).length === 0;
 
-      // 1. Verificar si existen datos en la caché de IndexedDB
-      const localCached = await getCachedMovies();
-      const hasCache = Array.isArray(localCached) && localCached.length > 0;
-
-      if (hasCache) {
-        // B. USUARIOS RECURRENTES (Ya existen datos en caché):
-        // Muestra inmediatamente los datos de IndexedDB a 0 ms
-        dispatchMovies(localCached);
-
-        // Buscar la fecha más reciente de la caché (updatedAt o createdAt)
-        let latestCachedDate = '';
-        for (const m of localCached) {
-          const t = m.updatedAt || m.createdAt || '';
-          if (t && t > latestCachedDate) {
-            latestCachedDate = t;
-          }
-        }
-
-        if (latestCachedDate) {
-          // Ejecuta una consulta ligera (Delta Sync) pidiendo a Supabase ÚNICAMENTE
-          // los registros cuyo updatedAt sea superior a la fecha más reciente de la caché
-          const deltaItems: Movie[] = [];
-          const tables: Array<'peliculas' | 'series' | 'centauro'> = ['peliculas', 'series', 'centauro'];
-
-          for (const tableName of tables) {
-            try {
-              const tableDeltas = await fetchTableDelta(tableName, latestCachedDate);
-              if (tableDeltas.length > 0) {
-                deltaItems.push(...tableDeltas);
-              }
-            } catch (dErr) {
-              console.warn(`Aviso consultando delta en ${tableName}:`, dErr);
-            }
-          }
-
-          // Si hay registros nuevos o modificados, sobreescribe/agrega SOLAMENTE los modificados
-          if (deltaItems.length > 0) {
-            const currentList = (await getCachedMovies()) || localCached;
-            const movieMap = new Map<string, Movie>();
-            for (const m of currentList) {
-              if (m?.id) movieMap.set(m.id, m);
-            }
-            for (const delta of deltaItems) {
-              if (delta?.id) {
-                const existing = movieMap.get(delta.id);
-                movieMap.set(delta.id, { ...existing, ...delta });
-              }
-            }
-            const mergedList = Array.from(movieMap.values());
-            await setCachedMovies(mergedList);
-            dispatchMovies(mergedList);
-            if (movieBroadcastChannel) {
-              movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: mergedList });
-            }
-            if (typeof window !== 'undefined') {
-              localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
-            }
-          }
+        if (isSettingsEmpty) {
+          console.log("[Supabase] Caché de settings VACÍA. Descargando tabla completa desde Supabase...");
+          await fetchSettingsFromSupabase();
         } else {
-          // Si no había marcas de tiempo válidas, refrescar de fondo secuencialmente
-          const remoteData = await fetchAllMoviesFromSupabase();
-          if (remoteData && remoteData.length > 0) {
-            await setCachedMovies(remoteData);
-            dispatchMovies(remoteData);
-          }
+          console.log("[Supabase] Datos de settings presentes en caché local. Ejecutando consulta rápida de sincronización...");
+          fetchSettingsFromSupabase().catch((e) => {
+            console.warn("Aviso en sincronización rápida de settings:", e);
+          });
         }
-      } else {
-        // A. PRIMERA VISITA O INCÓGNITO (Caché VACÍA):
-        // Descarga COMPLETA usando bucle while SECUENCIAL con await y .range(desde, desde + 999)
-        // en bloques de 1,000 registros (NO usar Promise.all para evitar timeout 57014).
-        const remoteData = await fetchAllMoviesFromSupabase((progressiveList) => {
-          dispatchMovies(progressiveList);
-        });
+      } catch (settingsErr) {
+        console.warn("Aviso al verificar settings:", settingsErr);
+      }
 
-        if (remoteData && remoteData.length > 0) {
-          // Acumula los bloques, asígnalos al estado de React y guárdalos completos en IndexedDB
-          await setCachedMovies(remoteData);
-          dispatchMovies(remoteData);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+      // =========================================================================
+      // TABLAS 2, 3, 4: peliculas, series, centauro - VERIFICACIÓN INDEPENDIENTE
+      // =========================================================================
+      // Evalúa el estado de la caché individualmente para cada una:
+      // * Si IndexedDB no tiene registros guardados para esa tabla específica, ejecuta la descarga completa paginada en bloques de 1,000 (.range()) y guárdala localmente.
+      // * Si la tabla ya tiene registros en la caché, ejecuta únicamente el Delta Sync (updatedAt > fecha_maxima) para esa tabla.
+      // * No utilices ninguna variable global que asuma que "todo el catálogo está cargado". Cada una de las 4 tablas debe consultar su propia caché de forma autónoma al iniciar la aplicación.
+
+      // A. Muestra inmediatamente los datos disponibles en caché a 0 ms
+      const [initPeliculas, initSeries, initCentauro] = await Promise.all([
+        getCachedTableMovies('peliculas'),
+        getCachedTableMovies('series'),
+        getCachedTableMovies('centauro')
+      ]);
+
+      const initialCombined = [...initPeliculas, ...initSeries, ...initCentauro];
+      if (initialCombined.length > 0) {
+        dispatchMovies(initialCombined);
+      }
+
+      // B. Procesamiento autónomo e independiente para cada tabla
+      const heavyCatalogTables: Array<'peliculas' | 'series' | 'centauro'> = ['peliculas', 'series', 'centauro'];
+
+      for (const tableName of heavyCatalogTables) {
+        try {
+          const cachedTableRows = await getCachedTableMovies(tableName);
+          const isTableEmpty = !Array.isArray(cachedTableRows) || cachedTableRows.length === 0;
+
+          if (isTableEmpty) {
+            // * Si IndexedDB NO tiene registros guardados para esa tabla específica:
+            // Descarga completa paginada en bloques de 1,000 (.range()) secuencial sin Promise.all
+            console.log(`[Supabase] Tabla '${tableName}' sin registros en IndexedDB. Iniciando descarga completa paginada en bloques de 1,000...`);
+            const fullTableRows = await fetchTableWithRange(tableName);
+            await setCachedTableMovies(tableName, fullTableRows);
+            await refreshCombinedMoviesAndDispatch(dispatchMovies);
+          } else {
+            // * Si la tabla YA tiene registros en la caché:
+            // Ejecuta ÚNICAMENTE el Delta Sync (updatedAt > fecha_maxima) para esa tabla
+            let maxDate = '';
+            for (const row of cachedTableRows) {
+              const t = row.updatedAt || row.createdAt || '';
+              if (t && t > maxDate) {
+                maxDate = t;
+              }
+            }
+
+            if (maxDate) {
+              console.log(`[Supabase] Tabla '${tableName}' con ${cachedTableRows.length} registros en caché. Ejecutando Delta Sync ligero desde ${maxDate}...`);
+              const deltaRows = await fetchTableDelta(tableName, maxDate);
+
+              if (deltaRows.length > 0) {
+                console.log(`[Supabase] Tabla '${tableName}': ${deltaRows.length} registros nuevos o actualizados.`);
+                const tableMap = new Map<string, Movie>();
+                for (const row of cachedTableRows) {
+                  if (row?.id) tableMap.set(row.id, row);
+                }
+                for (const delta of deltaRows) {
+                  if (delta?.id) {
+                    const prev = tableMap.get(delta.id);
+                    tableMap.set(delta.id, { ...prev, ...delta });
+                  }
+                }
+                const updatedTableRows = Array.from(tableMap.values());
+                await setCachedTableMovies(tableName, updatedTableRows);
+                await refreshCombinedMoviesAndDispatch(dispatchMovies);
+              }
+            } else {
+              // Si no había fecha para Delta Sync, descargar tabla completa
+              const fullTableRows = await fetchTableWithRange(tableName);
+              await setCachedTableMovies(tableName, fullTableRows);
+              await refreshCombinedMoviesAndDispatch(dispatchMovies);
+            }
           }
-        } else {
-          dispatchMovies([]);
+        } catch (tableErr) {
+          console.error(`Error en verificación/sincronización independiente de tabla '${tableName}':`, tableErr);
         }
       }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
+      }
     } catch (fetchErr: any) {
-      console.warn("Aviso en sincronización inicial desde Supabase:", fetchErr);
+      console.warn("Aviso en sincronización inicial independiente desde Supabase:", fetchErr);
       onError?.(fetchErr);
     }
   })();
@@ -817,37 +927,34 @@ export const subscribeToMovies = (
         async (payload) => {
           if (isCleanedUp) return;
           try {
-            const current = (await getCachedMovies()) || [];
-            let updatedList = [...current];
+            const currentTableItems = await getCachedTableMovies(tableName);
+            let updatedTableItems = [...currentTableItems];
 
             if (payload.eventType === 'INSERT') {
               const newRow = payload.new as Movie;
-              const exists = updatedList.some(m => m.id === newRow.id);
+              const exists = updatedTableItems.some(m => m.id === newRow.id);
               if (!exists) {
-                updatedList.unshift(newRow);
+                updatedTableItems.unshift(newRow);
               } else {
-                updatedList = updatedList.map(m => m.id === newRow.id ? { ...m, ...newRow } : m);
+                updatedTableItems = updatedTableItems.map(m => m.id === newRow.id ? { ...m, ...newRow } : m);
               }
             } else if (payload.eventType === 'UPDATE') {
               const updatedRow = payload.new as Movie;
-              const exists = updatedList.some(m => m.id === updatedRow.id);
+              const exists = updatedTableItems.some(m => m.id === updatedRow.id);
               if (exists) {
-                updatedList = updatedList.map(m => m.id === updatedRow.id ? { ...m, ...updatedRow } : m);
+                updatedTableItems = updatedTableItems.map(m => m.id === updatedRow.id ? { ...m, ...updatedRow } : m);
               } else {
-                updatedList.unshift(updatedRow);
+                updatedTableItems.unshift(updatedRow);
               }
             } else if (payload.eventType === 'DELETE') {
               const oldId = payload.old?.id;
               if (oldId) {
-                updatedList = updatedList.filter(m => m.id !== oldId);
+                updatedTableItems = updatedTableItems.filter(m => m.id !== oldId);
               }
             }
 
-            await setCachedMovies(updatedList);
-            dispatchMovies(updatedList);
-            if (movieBroadcastChannel) {
-              movieBroadcastChannel.postMessage({ type: 'MOVIES_UPDATED', movies: updatedList });
-            }
+            await setCachedTableMovies(tableName, updatedTableItems);
+            await refreshCombinedMoviesAndDispatch(dispatchMovies);
           } catch (e) {
             console.warn(`Error procesando realtime en tabla ${tableName}:`, e);
           }
