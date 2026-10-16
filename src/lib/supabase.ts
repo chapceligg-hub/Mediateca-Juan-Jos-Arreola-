@@ -232,6 +232,49 @@ export const subscribeToFavoritesOrder = (callback: (order: string[]) => void): 
   };
 };
 
+/**
+ * Sanitiza el objeto de configuración antes de almacenarlo en localStorage o IndexedDB,
+ * excluyendo explícitamente la propiedad 'auth' y cualquier campo de PIN/contraseña/clave
+ * para evitar almacenar credenciales sensibles en texto plano en el navegador.
+ */
+export const sanitizeSettingsForLocalStorage = (settings: Record<string, any>): Record<string, any> => {
+  if (!settings || typeof settings !== 'object') return {};
+  const sanitized: Record<string, any> = {};
+
+  for (const [k, v] of Object.entries(settings)) {
+    // 1. Omitir estrictamente la propiedad 'auth' completa
+    if (k === 'auth') continue;
+
+    // 2. Omitir cualquier clave relacionada con credenciales o claves de acceso
+    const lower = k.toLowerCase();
+    if (lower.includes('pin') || lower.includes('masterkey') || lower.includes('password')) {
+      continue;
+    }
+
+    // 3. Si el valor es un objeto anidado, sanitizar recursivamente para evitar campos de PIN/contraseña
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const nested: Record<string, any> = {};
+      for (const [subK, subV] of Object.entries(v)) {
+        const subLower = subK.toLowerCase();
+        if (
+          subK === 'auth' ||
+          subLower.includes('pin') ||
+          subLower.includes('masterkey') ||
+          subLower.includes('password')
+        ) {
+          continue;
+        }
+        nested[subK] = subV;
+      }
+      sanitized[k] = nested;
+    } else {
+      sanitized[k] = v;
+    }
+  }
+
+  return sanitized;
+};
+
 export const getCachedSettings = async (): Promise<Record<string, any>> => {
   if (lastKnownSettings && Object.keys(lastKnownSettings).length > 0) {
     return lastKnownSettings;
@@ -241,8 +284,9 @@ export const getCachedSettings = async (): Promise<Record<string, any>> => {
     if (cached) {
       const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
       if (parsed && typeof parsed === 'object') {
-        lastKnownSettings = parsed;
-        return parsed;
+        const sanitized = sanitizeSettingsForLocalStorage(parsed);
+        lastKnownSettings = sanitized;
+        return sanitized;
       }
     }
   } catch (_) {}
@@ -253,8 +297,15 @@ export const getCachedSettings = async (): Promise<Record<string, any>> => {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          lastKnownSettings = parsed;
-          return parsed;
+          // Purgar inmediatamente cualquier propiedad 'auth' o PIN residual del localStorage
+          const sanitized = sanitizeSettingsForLocalStorage(parsed);
+          if (parsed.auth || parsed.editorPin || parsed.masterKey) {
+            try {
+              localStorage.setItem(IDB_SETTINGS_KEY, JSON.stringify(sanitized));
+            } catch (_) {}
+          }
+          lastKnownSettings = sanitized;
+          return sanitized;
         }
       }
     } catch (_) {}
@@ -266,12 +317,17 @@ export const getCachedSettings = async (): Promise<Record<string, any>> => {
 export const setCachedSettings = async (settings: Record<string, any>): Promise<void> => {
   if (!settings || typeof settings !== 'object') return;
   lastKnownSettings = { ...lastKnownSettings, ...settings };
+
+  // Eliminar o excluir la propiedad 'auth' (y cualquier campo de PIN/contraseña) ANTES de guardar en localStorage
+  const sanitizedForStorage = sanitizeSettingsForLocalStorage(lastKnownSettings);
+
   try {
-    await set(IDB_SETTINGS_KEY, lastKnownSettings);
+    await set(IDB_SETTINGS_KEY, sanitizedForStorage);
   } catch (_) {}
+
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(IDB_SETTINGS_KEY, JSON.stringify(lastKnownSettings));
+      localStorage.setItem(IDB_SETTINGS_KEY, JSON.stringify(sanitizedForStorage));
     } catch (_) {}
   }
 };
@@ -369,7 +425,13 @@ if (movieBroadcastChannel) {
       }
     } else if (event.data?.type === 'SETTINGS_UPDATED' && event.data.settings) {
       lastKnownSettings = event.data.settings;
-      await set(IDB_SETTINGS_KEY, event.data.settings).catch(() => {});
+      const sanitized = sanitizeSettingsForLocalStorage(event.data.settings);
+      await set(IDB_SETTINGS_KEY, sanitized).catch(() => {});
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(IDB_SETTINGS_KEY, JSON.stringify(sanitized));
+        } catch (_) {}
+      }
       notifySettingsSubscribers(event.data.settings, event.data.key, event.data.value);
     }
   };
