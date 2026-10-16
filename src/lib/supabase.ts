@@ -583,7 +583,7 @@ export const formatMovieForSupabase = (m: any): any => {
  * photography, companies, reviews, awards, posterCandidates) para ahorrar consumo Egress.
  */
 export const LIGHTWEIGHT_MOVIE_COLUMNS =
-  'id, title, originalTitle, year, rating, duration, country, director, genre, ageRating, format, poster, estante, season, section, needsReview, favoriteOfMonth, favoriteOfMonthOrder, favoriteOfMonthAt, filmaffinityId, tmdbId, isLatestSaved, latestSavedAt, createdAt, updatedAt';
+  'id, title, originalTitle, year, rating, duration, country, director, genre, ageRating, format, poster, estante, season, section, needsReview, favoriteOfMonth, filmaffinityId, tmdbId, isLatestSaved, latestSavedAt, createdAt, updatedAt';
 
 /**
  * Consulta una tabla de Supabase paginada en bloques de 1,000 en 1,000
