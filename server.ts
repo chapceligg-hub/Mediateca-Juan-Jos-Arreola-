@@ -401,6 +401,34 @@ app.post("/api/settings/favorites-order", async (req, res) => {
   return res.json({ success: true, count: order.length });
 });
 
+const LIGHTWEIGHT_MOVIE_COLUMNS = "id, title, originalTitle, year, rating, duration, country, director, genre, ageRating, format, poster, estante, season, section, needsReview, favoriteOfMonth, filmaffinityId, tmdbId, isLatestSaved, latestSavedAt, createdAt, updatedAt";
+
+// Endpoint de detalle puntual (Lazy Loading) por ID: .select('*').eq('id', id).single()
+app.get("/api/movies/:id", async (req, res) => {
+  const id = req.params.id;
+  if (!id) return res.status(400).json({ error: "ID requerido" });
+
+  const table = req.query.table ? String(req.query.table).trim() : null;
+  const candidateTables: Array<'peliculas' | 'series' | 'centauro'> = table && ['peliculas', 'series', 'centauro'].includes(table)
+    ? [table as any, ...((['peliculas', 'series', 'centauro'] as const).filter(t => t !== table))]
+    : ['peliculas', 'series', 'centauro'];
+
+  if (!supabaseServer) {
+    return res.status(500).json({ error: "Cliente Supabase no configurado en servidor" });
+  }
+
+  for (const t of candidateTables) {
+    try {
+      const { data, error } = await supabaseServer.from(t).select('*').eq('id', id).single();
+      if (!error && data) {
+        return res.json(data);
+      }
+    } catch (_) {}
+  }
+
+  return res.status(404).json({ error: "Película no encontrada" });
+});
+
 // Proxy endpoint para consultar tablas paginadas o delta sync de Supabase desde el backend (evita bloqueos de red/CORS en iframe)
 app.get("/api/movies", async (req, res) => {
   const table = String(req.query.table || 'peliculas');
@@ -408,6 +436,7 @@ app.get("/api/movies", async (req, res) => {
   const since = req.query.since ? String(req.query.since).trim() : null;
   const from = parseInt(String(req.query.from || '0'), 10) || 0;
   const to = parseInt(String(req.query.to || (from + 999)), 10);
+  const columnsParam = String(req.query.columns || '').trim();
 
   function validTableMatch(t: string): 'peliculas' | 'series' | 'centauro' {
     return t as any;
@@ -418,7 +447,12 @@ app.get("/api/movies", async (req, res) => {
   }
 
   try {
-    let query = supabaseServer.from(validTable).select('*');
+    // Si se especifica columns=lightweight o si es una descarga inicial sin 'since' y sin columns='all', usar columnas ligeras
+    const selectCols = (columnsParam === 'lightweight' || (!since && columnsParam !== 'all'))
+      ? LIGHTWEIGHT_MOVIE_COLUMNS
+      : '*';
+
+    let query = supabaseServer.from(validTable).select(selectCols);
     if (since) {
       query = query.gt('updatedAt', since);
     }

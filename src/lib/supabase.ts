@@ -578,18 +578,30 @@ export const formatMovieForSupabase = (m: any): any => {
 };
 
 /**
- * Consulta una tabla de Supabase paginada en bloques de 1,000 en 1,000
- * utilizando .range(desde, desde + 999) sin reglas de ordenamiento (.order())
- * para conservar el orden natural de la tabla.
+ * Columnas indispensables y ligeras para renderizar la vista principal/retícula.
+ * Excluye campos pesados con textos largos (synopsis, cast JSON, script, music,
+ * photography, companies, reviews, awards, posterCandidates) para ahorrar consumo Egress.
  */
-export const fetchTableWithRange = async (tableName: 'peliculas' | 'series' | 'centauro'): Promise<Movie[]> => {
+export const LIGHTWEIGHT_MOVIE_COLUMNS =
+  'id, title, originalTitle, year, rating, duration, country, director, genre, ageRating, format, poster, estante, season, section, needsReview, favoriteOfMonth, favoriteOfMonthOrder, favoriteOfMonthAt, filmaffinityId, tmdbId, isLatestSaved, latestSavedAt, createdAt, updatedAt';
+
+/**
+ * Consulta una tabla de Supabase paginada en bloques de 1,000 en 1,000
+ * utilizando .range(desde, desde + 999) con columnas explícitas ligeras
+ * para reducir drásticamente el consumo de transferencia de red (Egress).
+ */
+export const fetchTableWithRange = async (
+  tableName: 'peliculas' | 'series' | 'centauro',
+  columns: string = LIGHTWEIGHT_MOVIE_COLUMNS
+): Promise<Movie[]> => {
   const accumulated: Movie[] = [];
   const CHUNK_SIZE = 1000;
   let from = 0;
 
   // Helper para consultar el endpoint proxy del servidor en caso de bloqueo de red/CORS en iframe
   const fetchFromProxy = async (start: number, end: number): Promise<Movie[]> => {
-    const res = await fetch(`/api/movies?table=${tableName}&from=${start}&to=${end}`);
+    const isLight = columns === LIGHTWEIGHT_MOVIE_COLUMNS;
+    const res = await fetch(`/api/movies?table=${tableName}&from=${start}&to=${end}${isLight ? '&columns=lightweight' : '&columns=all'}`);
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status} al consultar proxy: ${errText}`);
@@ -605,7 +617,7 @@ export const fetchTableWithRange = async (tableName: 'peliculas' | 'series' | 'c
     try {
       const supaRes = await supabase
         .from(tableName)
-        .select('*')
+        .select(columns)
         .range(from, to);
       data = (supaRes.data as Movie[]) || null;
       error = supaRes.error;
@@ -642,7 +654,7 @@ export const fetchTableWithRange = async (tableName: 'peliculas' | 'series' | 'c
         try {
           const subRes = await supabase
             .from(tableName)
-            .select('*')
+            .select(columns)
             .range(subFrom, subTo);
           if (!subRes.error && subRes.data) {
             subData = subRes.data as Movie[];
@@ -767,6 +779,96 @@ export const fetchTableDelta = async (
   return accumulated;
 };
 
+/**
+ * Carga bajo demanda (Lazy Loading) para detalles de una película/serie:
+ * Consulta puntual por ID (.select('*').eq('id', id).single()) únicamente cuando
+ * el usuario selecciona o abre la ficha/modal de un título en particular.
+ * Si ya tiene la ficha completa cargada en memoria o IndexedDB, la retorna inmediatamente a 0 ms.
+ * Tras descargarla de Supabase, mezcla los campos en memoria y actualiza la caché de IndexedDB.
+ */
+export const fetchMovieDetailsById = async (
+  id: string,
+  section?: 'peliculas' | 'series' | 'centauro'
+): Promise<Movie | null> => {
+  if (!id) return null;
+
+  // 1. Verificar si ya tenemos el registro con detalles completos en memoria
+  const memoryMovie = lastKnownMoviesList?.find(m => m.id === id);
+  if (memoryMovie && (memoryMovie.synopsis || (Array.isArray(memoryMovie.cast) && memoryMovie.cast.length > 0) || (memoryMovie as any)._isFullDetail)) {
+    return memoryMovie;
+  }
+
+  // 2. Determinar la tabla adecuada
+  const targetSection = section || (memoryMovie?.section) || 'peliculas';
+  const tableCandidateList: Array<'peliculas' | 'series' | 'centauro'> = [
+    targetSection,
+    ...((['peliculas', 'series', 'centauro'] as const).filter(t => t !== targetSection))
+  ];
+
+  let fullMovie: Movie | null = null;
+
+  for (const tableName of tableCandidateList) {
+    try {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (!error && data) {
+        fullMovie = data as Movie;
+        break;
+      }
+    } catch (e) {
+      console.warn(`Aviso consultando detalle en ${tableName} para ${id}:`, e);
+    }
+  }
+
+  // Si falló cliente Supabase directo (por red o CORS en iframe), consultar por proxy del servidor
+  if (!fullMovie) {
+    try {
+      const proxyRes = await fetch(`/api/movies/${encodeURIComponent(id)}?table=${targetSection}`);
+      if (proxyRes.ok) {
+        const proxyData = await proxyRes.json();
+        if (proxyData && proxyData.id) {
+          fullMovie = proxyData as Movie;
+        }
+      }
+    } catch (proxyErr) {
+      console.warn(`Aviso consultando detalle por proxy para ${id}:`, proxyErr);
+    }
+  }
+
+  if (fullMovie) {
+    (fullMovie as any)._isFullDetail = true;
+
+    // Mezclar con el registro existente
+    const mergedMovie: Movie = {
+      ...(memoryMovie || {}),
+      ...fullMovie
+    };
+
+    // Actualizar en memoria viva
+    if (lastKnownMoviesList) {
+      lastKnownMoviesList = lastKnownMoviesList.map(m => m.id === id ? { ...m, ...mergedMovie } : m);
+      notifyMovieSubscribers(lastKnownMoviesList);
+    }
+
+    // Actualizar en IndexedDB
+    const actualTable = (mergedMovie.section || targetSection) as 'peliculas' | 'series' | 'centauro';
+    getCachedTableMovies(actualTable).then(async (tableRows) => {
+      const updated = tableRows.map(m => m.id === id ? { ...m, ...mergedMovie } : m);
+      await setCachedTableMovies(actualTable, updated);
+    }).catch((e) => {
+      console.warn("Aviso actualizando detalle en caché IndexedDB:", e);
+    });
+
+    return mergedMovie;
+  }
+
+  return memoryMovie || null;
+};
+
 export const fetchAllMoviesFromSupabase = async (
   onProgress?: (accumulated: Movie[]) => void
 ): Promise<Movie[]> => {
@@ -776,7 +878,7 @@ export const fetchAllMoviesFromSupabase = async (
 
     // Bucle SECUENCIAL con await sin Promise.all para prevenir timeout 57014 de Postgres
     for (const tableName of tables) {
-      const tableData = await fetchTableWithRange(tableName);
+      const tableData = await fetchTableWithRange(tableName, LIGHTWEIGHT_MOVIE_COLUMNS);
       if (Array.isArray(tableData) && tableData.length > 0) {
         allItems.push(...tableData);
         onProgress?.([...allItems]);
@@ -850,6 +952,7 @@ export const subscribeToMovies = (
 
       // B. Procesamiento autónomo e independiente para cada tabla
       const heavyCatalogTables: Array<'peliculas' | 'series' | 'centauro'> = ['peliculas', 'series', 'centauro'];
+      let allSyncSuccessful = true;
 
       for (const tableName of heavyCatalogTables) {
         try {
@@ -857,14 +960,15 @@ export const subscribeToMovies = (
           const isTableEmpty = !Array.isArray(cachedTableRows) || cachedTableRows.length === 0;
 
           if (isTableEmpty) {
-            // * Si IndexedDB NO tiene registros guardados para esa tabla específica:
-            // Descarga completa paginada en bloques de 1,000 (.range()) secuencial sin Promise.all
-            console.log(`[Supabase] Tabla '${tableName}' sin registros en IndexedDB. Iniciando descarga completa paginada en bloques de 1,000...`);
-            const fullTableRows = await fetchTableWithRange(tableName);
+            // * Si IndexedDB NO tiene registros guardados para esa tabla específica (Cold Sync):
+            // Descarga completa paginada en bloques de 1,000 (.range()) secuencial ligera
+            console.log(`[Supabase] Tabla '${tableName}' sin registros en IndexedDB. Iniciando descarga Cold Sync optimizada (columnas esenciales)...`);
+            const fullTableRows = await fetchTableWithRange(tableName, LIGHTWEIGHT_MOVIE_COLUMNS);
             await setCachedTableMovies(tableName, fullTableRows);
             await refreshCombinedMoviesAndDispatch(dispatchMovies);
           } else {
-            // * Si la tabla YA tiene registros en la caché:
+            // * Si la tabla YA tiene registros en la caché (Usuarios recurrentes):
+            // NUNCA borrar la base de datos local (IndexedDB / keyval-store) ni forzar un Cold Sync completo por inactividad o antigüedad.
             // Ejecuta ÚNICAMENTE el Delta Sync (updatedAt > fecha_maxima) para esa tabla
             let maxDate = '';
             for (const row of cachedTableRows) {
@@ -874,9 +978,12 @@ export const subscribeToMovies = (
               }
             }
 
-            if (maxDate) {
-              console.log(`[Supabase] Tabla '${tableName}' con ${cachedTableRows.length} registros en caché. Ejecutando Delta Sync ligero desde ${maxDate}...`);
-              const deltaRows = await fetchTableDelta(tableName, maxDate);
+            // Usar fecha máxima o fallback seguro a época base si no existía, sin borrar la caché
+            const deltaSince = maxDate || '1970-01-01T00:00:00.000Z';
+            console.log(`[Supabase] Tabla '${tableName}' con ${cachedTableRows.length} registros en caché. Ejecutando Delta Sync ligero desde ${deltaSince}...`);
+
+            try {
+              const deltaRows = await fetchTableDelta(tableName, deltaSince);
 
               if (deltaRows.length > 0) {
                 console.log(`[Supabase] Tabla '${tableName}': ${deltaRows.length} registros nuevos o actualizados.`);
@@ -894,19 +1001,20 @@ export const subscribeToMovies = (
                 await setCachedTableMovies(tableName, updatedTableRows);
                 await refreshCombinedMoviesAndDispatch(dispatchMovies);
               }
-            } else {
-              // Si no había fecha para Delta Sync, descargar tabla completa
-              const fullTableRows = await fetchTableWithRange(tableName);
-              await setCachedTableMovies(tableName, fullTableRows);
-              await refreshCombinedMoviesAndDispatch(dispatchMovies);
+            } catch (deltaErr) {
+              // En caso de que una petición de sincronización a Supabase falle por problemas de conexión o parpadeos de red, NO borres la memoria local ni ejecutes una descarga de rescate completa con .select('*'). Mantén intactos los datos existentes en IndexedDB y vuelve a intentar el Delta Sync en la siguiente carga.
+              allSyncSuccessful = false;
+              console.warn(`[Supabase] Aviso en Delta Sync de tabla '${tableName}' (manteniendo intacta la caché local existente):`, deltaErr);
             }
           }
         } catch (tableErr) {
+          allSyncSuccessful = false;
           console.error(`Error en verificación/sincronización independiente de tabla '${tableName}':`, tableErr);
         }
       }
 
-      if (typeof window !== 'undefined') {
+      // Asegúrate de actualizar lastLocalSyncTimestamp en localStorage únicamente tras recibir una respuesta de red exitosa.
+      if (allSyncSuccessful && typeof window !== 'undefined') {
         localStorage.setItem(LOCAL_SYNC_KEY, Date.now().toString());
       }
     } catch (fetchErr: any) {

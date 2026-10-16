@@ -34,7 +34,8 @@ import {
   getCachedFavoritesOrder,
   getCachedSettings,
   fetchSettingsFromSupabase,
-  subscribeToAuthSession
+  subscribeToAuthSession,
+  fetchMovieDetailsById
 } from './lib/supabase';
 import { KeysAdminManager } from './components/KeysAdminManager';
 import { exportToExcelWithTabs, exportToCleanCSV, exportToJSON, getExportSummary } from './lib/exportUtils';
@@ -1914,6 +1915,34 @@ export default function App() {
     }
   }, [selectedMovie]);
 
+  // Carga bajo demanda (Lazy Loading) para detalles completos (sinopsis, reparto, etc.)
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  useEffect(() => {
+    if (selectedMovie && selectedMovie.id) {
+      const needsFullDetails = !selectedMovie.synopsis && (!Array.isArray(selectedMovie.cast) || selectedMovie.cast.length === 0);
+      if (needsFullDetails) {
+        let isCancelled = false;
+        setIsLoadingDetails(true);
+        fetchMovieDetailsById(selectedMovie.id, selectedMovie.section)
+          .then((fullData) => {
+            if (!isCancelled && fullData) {
+              setSelectedMovie(prev => (prev && prev.id === fullData.id ? { ...prev, ...fullData } : prev));
+            }
+          })
+          .catch((err) => {
+            console.warn("Aviso en lazy loading de ficha:", err);
+          })
+          .finally(() => {
+            if (!isCancelled) setIsLoadingDetails(false);
+          });
+
+        return () => {
+          isCancelled = true;
+        };
+      }
+    }
+  }, [selectedMovie?.id]);
+
   // Vigilante que reinicia automáticamente el historial si la aplicación continúa abierta al cambiar de día
   useEffect(() => {
     const verifyDailyReset = () => {
@@ -2146,83 +2175,94 @@ export default function App() {
     e.target.value = null;
   };
 
-  const handleCopyFicha = () => {
+  const handleCopyFicha = async () => {
     if (!selectedMovie) return;
     
-    const orderIndex = filteredMovies.findIndex(m => m.id === selectedMovie.id);
-    const orderNumber = orderIndex !== -1 ? orderIndex + 1 : movies.findIndex(m => m.id === selectedMovie.id) + 1 || 1;
+    let movieToCopy = selectedMovie;
+    if (!movieToCopy.synopsis && (!Array.isArray(movieToCopy.cast) || movieToCopy.cast.length === 0)) {
+      try {
+        const fullData = await fetchMovieDetailsById(movieToCopy.id, movieToCopy.section);
+        if (fullData) {
+          movieToCopy = fullData;
+          setSelectedMovie(fullData);
+        }
+      } catch (_) {}
+    }
+
+    const orderIndex = filteredMovies.findIndex(m => m.id === movieToCopy.id);
+    const orderNumber = orderIndex !== -1 ? orderIndex + 1 : movies.findIndex(m => m.id === movieToCopy.id) + 1 || 1;
     
     // Genres separated by bar (slash) e.g. Drama / Comedia
-    const cleanGenres = String(selectedMovie.genre || 'No disponible')
+    const cleanGenres = String(movieToCopy.genre || 'No disponible')
       .split(/[,/|]+/)
       .map(g => g.trim())
       .filter(Boolean)
       .join(' / ') || 'No disponible';
 
-    const cleanCast = Array.isArray(selectedMovie.cast) ? selectedMovie.cast.join(', ') : String(selectedMovie.cast || 'No disponible');
+    const cleanCast = Array.isArray(movieToCopy.cast) ? movieToCopy.cast.join(', ') : String(movieToCopy.cast || 'No disponible');
     
-    let cleanDuration = selectedMovie.duration || 'No disponible';
-    if (cleanDuration && cleanDuration !== 'No disponible' && selectedMovie.section !== 'series') {
+    let cleanDuration = movieToCopy.duration || 'No disponible';
+    if (cleanDuration && cleanDuration !== 'No disponible' && movieToCopy.section !== 'series') {
       const numOnly = parseInt(String(cleanDuration));
       if (!isNaN(numOnly)) {
         cleanDuration = `${numOnly} minutos`;
       }
     }
 
-    const displayTitle = selectedMovie.title || 'No disponible';
+    const displayTitle = movieToCopy.title || 'No disponible';
     const headerTitle = displayTitle.replace(/^⚠️\s*/, '').toUpperCase();
 
     let ficha = "";
-    if (selectedMovie.section === 'series') {
-      const durationVal = selectedMovie.duration || 'No disponible';
-      const seasonVal = selectedMovie.season || 'Primera y única';
+    if (movieToCopy.section === 'series') {
+      const durationVal = movieToCopy.duration || 'No disponible';
+      const seasonVal = movieToCopy.season || 'Primera y única';
       ficha = `${orderNumber}) ${headerTitle}
 🎬 Título Mediateca: ${headerTitle}
-🏷️ Título Original: ${selectedMovie.originalTitle || 'No disponible'}
-📅 Año: ${selectedMovie.year || 'No disponible'}
-⭐ Rating Global: ${selectedMovie.rating ? `${selectedMovie.rating}/10 IMDb` : '0/10 IMDb'}
+🏷️ Título Original: ${movieToCopy.originalTitle || 'No disponible'}
+📅 Año: ${movieToCopy.year || 'No disponible'}
+⭐ Rating Global: ${movieToCopy.rating ? `${movieToCopy.rating}/10 IMDb` : '0/10 IMDb'}
 🎭 Género: ${cleanGenres}
 📺 Temporadas : ${seasonVal}
 ⏱️ Capítulos y Duración: ${durationVal}
-🌍 País: ${selectedMovie.country || 'No disponible'}
-🔞 Clasificación: ${selectedMovie.ageRating || 'No disponible'}
-✍️ Guion: ${selectedMovie.script || 'No disponible'}
-📀 Formato y Edición: ${selectedMovie.format || 'No disponible'}
-🎬 Dirección: ${selectedMovie.director || 'No disponible'}
-🎵 Banda Sonora: ${selectedMovie.music || 'No disponible'}
-📸 Fotografía: ${selectedMovie.photography || 'No disponible'}
-🏢 Estudio / Productora: ${selectedMovie.companies || 'No disponible'}
-📚 Sección (Localización): ${selectedMovie.estante || ''}
+🌍 País: ${movieToCopy.country || 'No disponible'}
+🔞 Clasificación: ${movieToCopy.ageRating || 'No disponible'}
+✍️ Guion: ${movieToCopy.script || 'No disponible'}
+📀 Formato y Edición: ${movieToCopy.format || 'No disponible'}
+🎬 Dirección: ${movieToCopy.director || 'No disponible'}
+🎵 Banda Sonora: ${movieToCopy.music || 'No disponible'}
+📸 Fotografía: ${movieToCopy.photography || 'No disponible'}
+🏢 Estudio / Productora: ${movieToCopy.companies || 'No disponible'}
+📚 Sección (Localización): ${movieToCopy.estante || ''}
 👥 Elenco Principal: ${cleanCast}
 📖 Argumento:
-Sinopsis: ${selectedMovie.synopsis || 'No disponible'}
+Sinopsis: ${movieToCopy.synopsis || 'No disponible'}
 
-Reseñas críticas: ${selectedMovie.reviews || 'No disponible'}
+Reseñas críticas: ${movieToCopy.reviews || 'No disponible'}
 
-Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
+Premios históricos: ${movieToCopy.awards || 'No disponible'}`;
     } else {
-      ficha = `${orderNumber}) ${headerTitle} (${selectedMovie.year || ''})
-🖼️ Póster: ${selectedMovie.poster || 'No disponible'}
+      ficha = `${orderNumber}) ${headerTitle} (${movieToCopy.year || ''})
+🖼️ Póster: ${movieToCopy.poster || 'No disponible'}
 🎬 Título Mediateca: ${headerTitle}
-🏷️ Título Original: ${selectedMovie.originalTitle || 'No disponible'}
-📅 Año: ${selectedMovie.year || 'No disponible'}
-⭐ Rating Global: ${selectedMovie.rating || '0'}/10 IMDb
+🏷️ Título Original: ${movieToCopy.originalTitle || 'No disponible'}
+📅 Año: ${movieToCopy.year || 'No disponible'}
+⭐ Rating Global: ${movieToCopy.rating || '0'}/10 IMDb
 🎭 Género: ${cleanGenres}
 ⏱️ Duración: ${cleanDuration}
-🌍 País: ${selectedMovie.country || 'No disponible'}
-🔞 Clasificación: ${selectedMovie.ageRating || 'No disponible'}
-✍️ Guion: ${selectedMovie.script || 'No disponible'}
-📺 Formato: ${selectedMovie.format || 'No disponible'}
-🎬 Dirección: ${selectedMovie.director || 'No disponible'}
-🎵 Banda Sonora: ${selectedMovie.music || 'No disponible'}
-📸 Fotografía: ${selectedMovie.photography || 'No disponible'}
-🏢 Estudio: ${selectedMovie.companies || 'No disponible'}
-📚 Estante (Localización): ${selectedMovie.estante || ''}
+🌍 País: ${movieToCopy.country || 'No disponible'}
+🔞 Clasificación: ${movieToCopy.ageRating || 'No disponible'}
+✍️ Guion: ${movieToCopy.script || 'No disponible'}
+📺 Formato: ${movieToCopy.format || 'No disponible'}
+🎬 Dirección: ${movieToCopy.director || 'No disponible'}
+🎵 Banda Sonora: ${movieToCopy.music || 'No disponible'}
+📸 Fotografía: ${movieToCopy.photography || 'No disponible'}
+🏢 Estudio: ${movieToCopy.companies || 'No disponible'}
+📚 Estante (Localización): ${movieToCopy.estante || ''}
 👥 Elenco: ${cleanCast}
 📖 Argumento:
-Sinopsis: ${selectedMovie.synopsis || 'No disponible'}
-Reseñas críticas: ${selectedMovie.reviews || 'No disponible'}
-Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
+Sinopsis: ${movieToCopy.synopsis || 'No disponible'}
+Reseñas críticas: ${movieToCopy.reviews || 'No disponible'}
+Premios históricos: ${movieToCopy.awards || 'No disponible'}`;
     }
 
     navigator.clipboard.writeText(ficha);
@@ -4394,7 +4434,14 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                   {/* Synopsis */}
                   <section className="space-y-4">
                      <h4 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-4"><div className="w-10 h-px bg-white/10" /> SINOPSIS</h4>
-                     <p className="text-zinc-300 text-sm md:text-base leading-relaxed font-medium max-w-3xl">{selectedMovie.synopsis}</p>
+                     {isLoadingDetails && !selectedMovie.synopsis ? (
+                       <div className="flex items-center gap-2.5 text-zinc-400 py-3 text-xs font-sans animate-pulse">
+                         <div className="w-4 h-4 border-2 border-[#b41d1d] border-t-transparent rounded-full animate-spin" />
+                         <span>Cargando sinopsis y detalles completos bajo demanda...</span>
+                       </div>
+                     ) : (
+                       <p className="text-zinc-300 text-sm md:text-base leading-relaxed font-medium max-w-3xl">{selectedMovie.synopsis || "Sinopsis no disponible."}</p>
+                     )}
                   </section>
                   
                   {/* Reviews & Awards with Left borders */}
