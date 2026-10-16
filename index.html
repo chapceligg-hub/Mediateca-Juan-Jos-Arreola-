@@ -5,41 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google" content="notranslate" />
     <title>Mediateca</title>
-    <script>
-      (function() {
-        function isFirestoreAssert(err) {
-          if (!err) return false;
-          var str = typeof err === 'string' ? err : (err.message || String(err));
-          return str.indexOf('INTERNAL ASSERTION FAILED') !== -1 ||
-                 str.indexOf('Unexpected state (ID:') !== -1 ||
-                 str.indexOf('ve":-1') !== -1 ||
-                 str.indexOf('INTERNAL UNHANDLED ERROR') !== -1;
-        }
-        var origConsoleError = console.error;
-        console.error = function() {
-          for (var i = 0; i < arguments.length; i++) {
-            if (isFirestoreAssert(arguments[i])) {
-              return;
-            }
-          }
-          return origConsoleError.apply(console, arguments);
-        };
-        window.addEventListener('error', function(e) {
-          if (isFirestoreAssert(e.error) || isFirestoreAssert(e.message)) {
-            e.preventDefault && e.preventDefault();
-            e.stopPropagation && e.stopPropagation();
-            return true;
-          }
-        }, true);
-        window.addEventListener('unhandledrejection', function(e) {
-          if (isFirestoreAssert(e.reason)) {
-            e.preventDefault && e.preventDefault();
-            e.stopPropagation && e.stopPropagation();
-            return true;
-          }
-        }, true);
-      })();
-    </script>
     <!-- Configuración de Favicon Global -->
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
@@ -53,4 +18,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

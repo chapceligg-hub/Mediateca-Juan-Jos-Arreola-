@@ -3,8 +3,6 @@ import path from "path";
 import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { createClient } from "@supabase/supabase-js";
 
 // Inicializar cliente Supabase del servidor
@@ -17,20 +15,6 @@ try {
   console.log("Supabase inicializado en el servidor.");
 } catch (e) {
   console.warn("Aviso inicializando Supabase en server.ts:", e);
-}
-
-// Inicializar cliente Firestore del servidor como respaldo
-let serverDb: any = null;
-try {
-  const firebaseConfigFile = path.join(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(firebaseConfigFile)) {
-    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, "utf-8"));
-    const fbApp = initializeApp(firebaseConfig, "server-app-" + Date.now());
-    serverDb = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId);
-    console.log("Firestore inicializado en el servidor para notificaciones y mutaciones.");
-  }
-} catch (e) {
-  console.warn("Aviso inicializando Firestore en server.ts:", e);
 }
 
 export function sanitizeMovieData(rawData: any): any {
@@ -216,11 +200,9 @@ let globalSyncVersion = 1;
 let globalMovieRevision = 1;
 
 // 2. LÓGICA DE OBTENCIÓN DE CLAVES (getAuthKeys):
-// - SI cachedKeys NO ES NULL: Retorna cachedKeys inmediatamente (0 llamadas a Firestore).
-// - SI cachedKeys ES NULL:
-//   * Intenta leer doc(db, "settings", "auth").
-//   * Si la lectura es exitosa: Guarda el resultado en cachedKeys.
-//   * SI OCURRE UN ERROR (ej. Quota Exceeded): Asigna a cachedKeys los valores por defecto (process.env.MASTER_KEY y process.env.EDITOR_PIN) para evitar que las siguientes peticiones vuelvan a intentar consultar Firestore.
+// - SI cachedKeys NO ES NULL: Retorna cachedKeys inmediatamente (0 llamadas a la base de datos).
+// - SI cachedKeys ES NULL: Consulta la tabla 'settings' en Supabase (key 'auth').
+// - Si la fila no existe o la conexión falla, inicializa con las claves por defecto.
 async function getAuthKeys(): Promise<{ masterKey: string; editorPin: string }> {
   if (cachedKeys !== null) {
     return cachedKeys;
@@ -239,54 +221,26 @@ async function getAuthKeys(): Promise<{ masterKey: string; editorPin: string }> 
           editorPin: ePin
         };
         return cachedKeys;
+      } else if (!error && !data) {
+        // Inicializar documento auth en Supabase si no existe
+        await supabaseServer.from("settings").upsert({
+          key: "auth",
+          value: {
+            masterKey: DEFAULT_MASTER_KEY,
+            editorPin: DEFAULT_EDITOR_PIN
+          },
+          updated_at: new Date().toISOString()
+        }, { onConflict: "key" });
       }
     } catch (supaErr) {
       console.warn("Aviso leyendo auth de Supabase:", supaErr);
     }
   }
 
-  if (!serverDb) {
-    cachedKeys = {
-      masterKey: DEFAULT_MASTER_KEY,
-      editorPin: DEFAULT_EDITOR_PIN
-    };
-    return cachedKeys;
-  }
-
-  try {
-    const authDocRef = doc(serverDb, "settings", "auth");
-    const snap = await getDoc(authDocRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      const mKey = (typeof data?.masterKey === 'string' && data.masterKey.trim()) ? data.masterKey.trim() : DEFAULT_MASTER_KEY;
-      const ePin = (typeof data?.editorPin === 'string' && data.editorPin.trim()) ? data.editorPin.trim() : DEFAULT_EDITOR_PIN;
-      cachedKeys = {
-        masterKey: mKey,
-        editorPin: ePin
-      };
-    } else {
-      // Si el documento settings/auth no existe en Firestore, créalo con las claves por defecto
-      await setDoc(authDocRef, {
-        masterKey: DEFAULT_MASTER_KEY,
-        editorPin: DEFAULT_EDITOR_PIN,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      cachedKeys = {
-        masterKey: DEFAULT_MASTER_KEY,
-        editorPin: DEFAULT_EDITOR_PIN
-      };
-      console.log("Documento settings/auth creado en Firestore con claves por defecto.");
-    }
-  } catch (err) {
-    console.warn("Error leyendo settings/auth de Firestore. Asignando claves por defecto a caché:", err);
-    // En caso de error (ej. Quota Exceeded), asignar valores por defecto a cachedKeys para evitar reintentos continuos
-    cachedKeys = {
-      masterKey: DEFAULT_MASTER_KEY,
-      editorPin: DEFAULT_EDITOR_PIN
-    };
-  }
-
+  cachedKeys = {
+    masterKey: DEFAULT_MASTER_KEY,
+    editorPin: DEFAULT_EDITOR_PIN
+  };
   return cachedKeys;
 }
 
@@ -372,20 +326,6 @@ app.post("/api/auth/change-keys", async (req, res) => {
       }, { onConflict: "key" });
     } catch (e) {
       console.warn("Error guardando settings/auth en Supabase:", e);
-    }
-  }
-
-  // Actualiza el documento doc(db, "settings", "auth") en Firestore como respaldo
-  if (serverDb) {
-    try {
-      const authDocRef = doc(serverDb, "settings", "auth");
-      await setDoc(authDocRef, {
-        masterKey: newMaster,
-        editorPin: newPin,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-    } catch (e) {
-      console.error("Error guardando settings/auth en Firestore:", e);
     }
   }
 
@@ -532,30 +472,7 @@ app.post("/api/movies", async (req, res) => {
     }
   }
 
-  try {
-    if (serverDb) {
-      const movieRef = doc(serverDb, "movies", movie.id);
-      const movieData = {
-        ...movie,
-        updatedAt: serverTimestamp()
-      };
-      await setDoc(movieRef, movieData, { merge: true });
-
-      const syncRef = doc(serverDb, "settings", "sync");
-      await setDoc(syncRef, {
-        lastUpdated: serverTimestamp(),
-        lastUpdate: new Date().toISOString(),
-        action: 'upsert',
-        updatedMovieId: movie.id
-      }, { merge: true });
-
-      return res.json({ success: true, movie: movieData });
-    }
-    return res.json({ success: true, stateless: true });
-  } catch (err: any) {
-    console.error("Error al persistir película en Firestore desde server.ts:", err);
-    return res.status(500).json({ error: "Error interno al sincronizar con base de datos", message: err?.message });
-  }
+  return res.json({ success: true, movie });
 });
 
 app.post("/api/movies/sync", (_req, res) => {
@@ -625,26 +542,7 @@ app.delete("/api/movies/:id", async (req, res) => {
     }
   }
 
-  try {
-    if (serverDb) {
-      const movieRef = doc(serverDb, "movies", id);
-      await deleteDoc(movieRef);
-
-      const syncRef = doc(serverDb, "settings", "sync");
-      await setDoc(syncRef, {
-        lastUpdated: serverTimestamp(),
-        lastUpdate: new Date().toISOString(),
-        action: 'delete',
-        deletedMovieId: id
-      }, { merge: true });
-
-      return res.json({ success: true, id });
-    }
-    return res.json({ success: true });
-  } catch (err: any) {
-    console.error("Error al eliminar película en Firestore desde server.ts:", err);
-    return res.status(500).json({ error: "Error interno al eliminar de base de datos", message: err?.message });
-  }
+  return res.json({ success: true, id });
 });
 
 app.get("/api/movies/deleted", (_req, res) => {

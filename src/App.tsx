@@ -20,7 +20,7 @@ import {
   fetchSystemKeys,
   changeSystemKeys,
   onAuthExpiredOrDenied
-} from './lib/firebase';
+} from './lib/auth';
 import {
   upsertMovie,
   updateMovie,
@@ -1337,7 +1337,7 @@ export default function App() {
     return "Modo Lector";
   }, [userRole]);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [firestoreError, setFirestoreError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [movies, setMovies] = useState<Movie[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1945,7 +1945,6 @@ export default function App() {
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState("");
-  const [syncError, setSyncError] = useState("");
   const [editForm, setEditForm] = useState<Partial<Movie>>({});
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingMove, setIsConfirmingMove] = useState(false);
@@ -2495,17 +2494,11 @@ Premios históricos: ${selectedMovie.awards || 'No disponible'}`;
     const unsub = subscribeToMovies(
       (unifiedMovies: Movie[]) => {
         setMovies(unifiedMovies);
-        setFirestoreError(null);
+        setSyncError(null);
       },
       (err: any) => {
-        const isQuota = err?.message?.includes('Quota') || err?.message?.includes('QUOTA_EXCEEDED') || err?.code === 'resource-exhausted';
-        if (isQuota) {
-          setFirestoreError("QUOTA_EXCEEDED");
-          console.log("[Firebase] Operando con catálogo en memoria local (cuota protegida).");
-        } else {
-          console.error("Error en sincronización en tiempo real:", err);
-          setFirestoreError(err?.message || "Error al sincronizar datos");
-        }
+        console.error("Error en sincronización en tiempo real:", err);
+        setSyncError(err?.message || "Error al sincronizar datos");
       }
     );
 

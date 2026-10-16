@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { Movie } from '../types';
-import { getCachedMovies } from './firebase';
+import { getCachedMovies } from './supabase';
 
 export interface ExportSummary {
   total: number;

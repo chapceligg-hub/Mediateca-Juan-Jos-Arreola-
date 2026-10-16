@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { KeyRound, ShieldCheck, Eye, Copy, Check, AlertTriangle, Loader2, Lock } from 'lucide-react';
-import { fetchSystemKeys, changeSystemKeys } from '../lib/firebase';
+import { fetchSystemKeys, changeSystemKeys } from '../lib/auth';
 import { subscribeToSystemKeys } from '../lib/supabase';
 
 export interface KeysAdminManagerProps {
