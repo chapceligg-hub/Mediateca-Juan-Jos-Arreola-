@@ -3679,7 +3679,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               </div>
             </div>
             <p className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-zinc-500 mb-4 pl-1 font-sans">
-              Convierte texto plano en fichas mágicamente usando IA
+              Convierte texto plano en fichas usando IA
             </p>
 
             {/* SELECCIÓN DE PESTAÑA DESTINO */}
