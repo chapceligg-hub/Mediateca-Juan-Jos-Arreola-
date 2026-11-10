@@ -5835,7 +5835,7 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               ? 'border-t border-transparent text-red-500' 
               : 'border-t border-white/5'
           }`}>
-            <div className="flex flex-col items-center space-y-3">
+            <div className="flex flex-row items-center justify-center gap-3">
               <img 
                 src="/android-chrome-512x512.png" 
                 alt="Mediateca Logo" 
@@ -5845,6 +5845,13 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=128&auto=format&fit=crop&q=60';
                 }}
+              />
+              <img 
+                src="/assets/aistudio/android-chrome-512x512_b22b024b.png" 
+                alt="Biblioteca Pública del Estado de Jalisco Juan José Arreola" 
+                className={`w-12 h-12 rounded-xl object-contain bg-white p-0.5 border opacity-80 transition-all duration-500 ${
+                  isFavoriteOfMonthActive ? 'border-red-600/35 shadow-[0_0_15px_rgba(180,29,29,0.25)]' : 'border-white/10'
+                }`}
               />
             </div>
             <p className={`text-[8px] font-bold tracking-[0.6em] uppercase text-center leading-relaxed transition-colors duration-500 ${
