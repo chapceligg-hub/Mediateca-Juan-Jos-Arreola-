@@ -5830,17 +5830,23 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
             </div>
           )}
 
-          <div className={`flex flex-col items-center space-y-8 w-full pt-16 opacity-40 transition-all duration-500 ${
+          <div className={`flex flex-col items-center space-y-8 w-full pt-16 transition-all duration-500 ${
+            isDayMode ? 'opacity-100' : 'opacity-40'
+          } ${
             isFavoriteOfMonthActive 
               ? 'border-t border-transparent text-red-500' 
-              : 'border-t border-white/5'
+              : (isDayMode ? 'border-t border-black/10' : 'border-t border-white/5')
           }`}>
             <div className="flex flex-row items-center justify-center gap-3">
               <img 
                 src="/android-chrome-512x512.png" 
                 alt="Mediateca Logo" 
-                className={`w-12 h-12 rounded-xl object-cover border opacity-80 transition-all duration-500 ${
-                  isFavoriteOfMonthActive ? 'border-red-600/35 shadow-[0_0_15px_rgba(180,29,29,0.25)]' : 'border-white/10'
+                className={`w-12 h-12 rounded-xl object-cover border transition-all duration-500 ${
+                  isDayMode ? 'opacity-100 shadow-sm' : 'opacity-80'
+                } ${
+                  isFavoriteOfMonthActive
+                    ? 'border-red-600/35 shadow-[0_0_15px_rgba(180,29,29,0.25)]'
+                    : (isDayMode ? 'border-black/15' : 'border-white/10')
                 }`}
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=128&auto=format&fit=crop&q=60';
@@ -5849,12 +5855,18 @@ Premios históricos: ${merged.awards || 'No disponible'}`;
               <img 
                 src="/assets/aistudio/android-chrome-512x512_b22b024b.png" 
                 alt="Biblioteca Pública del Estado de Jalisco Juan José Arreola" 
-                className={`w-12 h-12 rounded-xl object-contain bg-white p-0.5 border opacity-80 transition-all duration-500 ${
-                  isFavoriteOfMonthActive ? 'border-red-600/35 shadow-[0_0_15px_rgba(180,29,29,0.25)]' : 'border-white/10'
+                className={`w-12 h-12 rounded-xl object-contain bg-white p-0.5 border transition-all duration-500 ${
+                  isDayMode ? 'opacity-100 shadow-sm' : 'opacity-80'
+                } ${
+                  isFavoriteOfMonthActive
+                    ? 'border-red-600/35 shadow-[0_0_15px_rgba(180,29,29,0.25)]'
+                    : (isDayMode ? 'border-black/15' : 'border-white/10')
                 }`}
               />
             </div>
             <p className={`text-[8px] font-bold tracking-[0.6em] uppercase text-center leading-relaxed transition-colors duration-500 ${
+              isDayMode ? 'opacity-40' : ''
+            } ${
               isFavoriteOfMonthActive ? 'text-red-500/80' : 'text-zinc-600'
             }`}>© MMXXVI — MEDIATECA PROFESIONAL — ALL RIGHTS RESERVED</p>
           </div>
